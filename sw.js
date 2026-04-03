@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════
 // Radha Naam Jap — Service Worker
-// Update CACHE version when index.html changes
+// v31: crash fixes — forced cache clear on update
 // ═══════════════════════════════════════════════
-const CACHE = 'radha-jap-v26';  // v23: fixed text overlap + loading cleanup + spinning radha rings opening animation + lakh gati tracker + sadhana journey date customisation
+const CACHE = 'radha-jap-v31';
 
 const PRECACHE = [
   './index.html',
@@ -14,7 +14,6 @@ const PRECACHE = [
   'https://apis.google.com/js/api.js'
 ];
 
-// Firebase & Google auth must pass through — their SDKs handle offline internally
 const BYPASS = [
   'firestore.googleapis.com',
   'identitytoolkit.googleapis.com',
@@ -26,62 +25,66 @@ const BYPASS = [
   'accounts.google.com'
 ];
 
-// ── Install: pre-cache critical assets ──
+// Install: force skip waiting + pre-cache
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE).then(cache =>
-      Promise.allSettled(
-        PRECACHE.map(url => cache.add(url).catch(() => {}))
-      )
+      Promise.allSettled(PRECACHE.map(url => cache.add(url).catch(() => {})))
     )
   );
 });
 
-// ── Activate: delete old caches ──
+// Activate: delete ALL old caches, then claim
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys()
-      .then(keys =>
-        Promise.all(
-          keys.filter(k => k !== CACHE).map(k => caches.delete(k))
-        )
-      )
-      .then(() => self.clients.claim())
-  );
-});
-
-// ── Fetch: stale-while-revalidate strategy ──
-self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-
-  const url = new URL(e.request.url);
-
-  // Let Firebase & Google auth requests pass through untouched
-  if (BYPASS.some(h => url.href.includes(h))) return;
-
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      const networkFetch = fetch(e.request).then(resp => {
-        if (resp && resp.status === 200 && resp.type !== 'error') {
-          const clone = resp.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return resp;
-      }).catch(() => null);
-
-      if (cached) return cached;
-
-      return networkFetch.then(resp => {
-        if (resp) return resp;
-        if (e.request.mode === 'navigate') return caches.match('./index.html');
-        return new Response('Offline', { status: 503 });
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    ).then(() => {
+      // Force reload all open tabs with new SW
+      self.clients.matchAll({ type: 'window' }).then(clients => {
+        clients.forEach(client => client.navigate(client.url));
       });
+      return self.clients.claim();
     })
   );
 });
 
-// ── Handle notification requests from the page ──
+// Fetch: network-first for navigation, stale-while-revalidate for assets
+self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
+  if (BYPASS.some(h => url.href.includes(h))) return;
+
+  // Navigation: always try network first (ensures latest index.html)
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).then(resp => {
+        if (resp && resp.status === 200 && resp.type !== 'error') {
+          caches.open(CACHE).then(c => c.put('./index.html', resp.clone()));
+        }
+        return resp;
+      }).catch(async () => (await caches.match('./index.html')) || new Response('Offline — please check your connection and refresh.', { status: 503, headers: { 'Content-Type': 'text/html' } }))
+    );
+    return;
+  }
+
+  // Assets: cache-first with background revalidation
+  e.respondWith(
+    caches.match(e.request).then(cached => {
+      const networkFetch = fetch(e.request).then(resp => {
+        if (resp && resp.status === 200 && resp.type !== 'error') {
+          caches.open(CACHE).then(c => c.put(e.request, resp.clone()));
+        }
+        return resp;
+      }).catch(() => null);
+      if (cached) return cached;
+      return networkFetch.then(resp => resp || new Response('Offline', { status: 503 }));
+    })
+  );
+});
+
+// Handle notification requests from the page
 self.addEventListener('message', e => {
   if (e.data && e.data.type === 'SHOW_NOTIFICATION') {
     e.waitUntil(
@@ -93,9 +96,15 @@ self.addEventListener('message', e => {
       })
     );
   }
+  // Allow manual cache clear from the app
+  if (e.data && e.data.type === 'CLEAR_CACHE') {
+    e.waitUntil(
+      caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))))
+    );
+  }
 });
 
-// ── Handle notification tap — bring app to focus ──
+// Handle notification tap
 self.addEventListener('notificationclick', e => {
   e.notification.close();
   e.waitUntil(
@@ -103,7 +112,7 @@ self.addEventListener('notificationclick', e => {
       for (const client of list) {
         if ('focus' in client) return client.focus();
       }
-      if (clients.openWindow) return clients.openWindow('/');
+      if (clients.openWindow) return clients.openWindow('./');
     })
   );
 });

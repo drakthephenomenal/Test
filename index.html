@@ -780,6 +780,9 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
           <div class="naam-sel-opt" id="naamOptRV" onclick="switchJapMode('rv')">
             <span class="ns-check"></span> राधावल्लभ श्री हरिवंश
           </div>
+          <div class="naam-sel-opt" id="naamOptRam" onclick="switchJapMode('ram')">
+            <span class="ns-check"></span> राम
+          </div>
         </div>
       </div>
       <div class="rn" id="rnTitle">राधा</div>
@@ -1414,6 +1417,15 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
       <div style="font-size:11px;color:var(--td);margin-bottom:10px">= <span id="ltRVMala">0</span> malas lifetime</div>
       <button class="pb" onclick="svtRV('l')" style="background:linear-gradient(135deg,rgba(255,215,0,0.4),rgba(255,180,0,0.3))">Save RV Lifetime Target</button>
     </div>
+    <div style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(46,204,113,0.15)">
+      <div style="font-size:11px;color:var(--green);letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;font-weight:600">🙏 राम Targets</div>
+      <div class="fr" style="margin-bottom:4px"><input type="number" class="fi" id="dtRamIn" placeholder="Daily target (jap)" oninput="document.getElementById('dtRamMala').textContent=Math.floor((parseInt(this.value)||0)/(App.S.ms||108))"><span class="fu">/ day</span></div>
+      <div style="font-size:11px;color:var(--td);margin-bottom:10px">= <span id="dtRamMala">0</span> malas per day</div>
+      <button class="pb" onclick="svtRam('d')" style="margin-bottom:14px;background:linear-gradient(135deg,rgba(46,204,113,0.4),rgba(39,174,96,0.3))">Save Ram Daily Target</button>
+      <div class="fr" style="margin-bottom:4px"><input type="number" class="fi" id="ltRamIn" placeholder="Lifetime target (jap)" oninput="document.getElementById('ltRamMala').textContent=Math.floor((parseInt(this.value)||0)/(App.S.ms||108))"><span class="fu">total</span></div>
+      <div style="font-size:11px;color:var(--td);margin-bottom:10px">= <span id="ltRamMala">0</span> malas lifetime</div>
+      <button class="pb" onclick="svtRam('l')" style="background:linear-gradient(135deg,rgba(46,204,113,0.4),rgba(39,174,96,0.3))">Save Ram Lifetime Target</button>
+    </div>
   </div>
 
   <!-- PREFERENCES -->
@@ -1593,9 +1605,13 @@ const App = {
     japMode: 'radha',
     historyRV: {}, timerHistoryRV: {}, dtRV: 0, ltRV: 0, nameJapDeductRV: 0,
     malaLogRV: [],
-    syncBaselineRV: {}, syncBaselineTimerRV: {}
+    syncBaselineRV: {}, syncBaselineTimerRV: {},
+    historyRam: {}, timerHistoryRam: {}, dtRam: 0, ltRam: 0, nameJapDeductRam: 0,
+    malaLogRam: [],
+    syncBaselineRam: {}, syncBaselineTimerRam: {}
   },
   lmcRV: 0,
+  lmcRam: 0,
   lmc: 0, lm28: 0,
   timerRunning: false, timerSeconds: 0, timerInterval: null,
   timerSavedSeconds: 0, autoStopTimeout: null,
@@ -1678,7 +1694,10 @@ const App = {
       syncBaselineTimer: this.S.syncBaselineTimer, syncBaselineTimer28: this.S.syncBaselineTimer28, migrationV2Done: this.S.migrationV2Done,
       japMode: this.S.japMode, historyRV: this.S.historyRV, timerHistoryRV: this.S.timerHistoryRV,
       dtRV: this.S.dtRV, ltRV: this.S.ltRV, nameJapDeductRV: this.S.nameJapDeductRV, malaLogRV: this.S.malaLogRV,
-      syncBaselineRV: this.S.syncBaselineRV, syncBaselineTimerRV: this.S.syncBaselineTimerRV
+      syncBaselineRV: this.S.syncBaselineRV, syncBaselineTimerRV: this.S.syncBaselineTimerRV,
+      historyRam: this.S.historyRam, timerHistoryRam: this.S.timerHistoryRam,
+      dtRam: this.S.dtRam, ltRam: this.S.ltRam, nameJapDeductRam: this.S.nameJapDeductRam, malaLogRam: this.S.malaLogRam,
+      syncBaselineRam: this.S.syncBaselineRam, syncBaselineTimerRam: this.S.syncBaselineTimerRam
     });
     // Keep per-day stores updated for compatibility with existing offline data
     const tk = this.S.tk;
@@ -1751,6 +1770,16 @@ const App = {
     if (!this.S.syncBaselineTimerRV) this.S.syncBaselineTimerRV = {};
     if (!this.S.historyRV[this.S.tk]) this.S.historyRV[this.S.tk] = 0;
     if (!this.S.timerHistoryRV[this.S.tk]) this.S.timerHistoryRV[this.S.tk] = 0;
+    if (!this.S.historyRam) this.S.historyRam = {};
+    if (!this.S.timerHistoryRam) this.S.timerHistoryRam = {};
+    if (!this.S.dtRam) this.S.dtRam = 0;
+    if (!this.S.ltRam) this.S.ltRam = 0;
+    if (!this.S.nameJapDeductRam) this.S.nameJapDeductRam = 0;
+    if (!this.S.malaLogRam) this.S.malaLogRam = [];
+    if (!this.S.syncBaselineRam) this.S.syncBaselineRam = {};
+    if (!this.S.syncBaselineTimerRam) this.S.syncBaselineTimerRam = {};
+    if (!this.S.historyRam[this.S.tk]) this.S.historyRam[this.S.tk] = 0;
+    if (!this.S.timerHistoryRam[this.S.tk]) this.S.timerHistoryRam[this.S.tk] = 0;
     // Load malaLog — only use if it's from today AND today has actual jap count
     const malaLogRec = await this.dbGet('malaLog', 'today');
     const todayJap = this.S.history[this.S.tk] || 0;
@@ -1773,16 +1802,18 @@ const App = {
 
   gTod() {
     if (this.S.japMode === 'rv') return this.S.historyRV[this.S.tk] || 0;
+    if (this.S.japMode === 'ram') return this.S.historyRam[this.S.tk] || 0;
     return this.S.history[this.S.tk] || 0;
   },
   gTot() {
     if (this.S.japMode === 'rv') return Math.max(0, Object.values(this.S.historyRV).reduce((a,b) => a+b, 0) - (this.S.nameJapDeductRV || 0));
+    if (this.S.japMode === 'ram') return Math.max(0, Object.values(this.S.historyRam).reduce((a,b) => a+b, 0) - (this.S.nameJapDeductRam || 0));
     return Math.max(0, Object.values(this.S.history).reduce((a,b) => a+b, 0) - (this.S.nameJapDeduct || 0));
   },
-  getCurHistory() { return this.S.japMode === 'rv' ? this.S.historyRV : this.S.history; },
-  getCurTimerHistory() { return this.S.japMode === 'rv' ? this.S.timerHistoryRV : this.S.timerHistory; },
-  getCurDt() { return this.S.japMode === 'rv' ? this.S.dtRV : this.S.dt; },
-  getCurLt() { return this.S.japMode === 'rv' ? this.S.ltRV : this.S.lt; },
+  getCurHistory() { return this.S.japMode === 'rv' ? this.S.historyRV : this.S.japMode === 'ram' ? this.S.historyRam : this.S.history; },
+  getCurTimerHistory() { return this.S.japMode === 'rv' ? this.S.timerHistoryRV : this.S.japMode === 'ram' ? this.S.timerHistoryRam : this.S.timerHistory; },
+  getCurDt() { return this.S.japMode === 'rv' ? this.S.dtRV : this.S.japMode === 'ram' ? this.S.dtRam : this.S.dt; },
+  getCurLt() { return this.S.japMode === 'rv' ? this.S.ltRV : this.S.japMode === 'ram' ? this.S.ltRam : this.S.lt; },
 
   // ── Haptic Heartbeat ──
   // 10ms on every tap; triple long pulse (200-80-200-80-300ms) synced with mala complete
@@ -1902,9 +1933,13 @@ const App = {
     const malaDuration = this.timerSeconds - this.malaSessionStart;
     this.malaSessionStart = this.timerSeconds;
     const isRVm = this.S.japMode === 'rv';
+    const isRam = this.S.japMode === 'ram';
     if (isRVm) {
       if (!this.S.malaLogRV) this.S.malaLogRV = [];
       this.S.malaLogRV.push(malaDuration);
+    } else if (isRam) {
+      if (!this.S.malaLogRam) this.S.malaLogRam = [];
+      this.S.malaLogRam.push(malaDuration);
     } else {
       if (!this.S.malaLog) this.S.malaLog = [];
       this.S.malaLog.push(malaDuration);
@@ -1936,8 +1971,11 @@ const App = {
     e.preventDefault();
     const ms = this.S.ms || 108;
     const isRV = this.S.japMode === 'rv';
+    const isRam = this.S.japMode === 'ram';
     if (isRV) {
       this.S.historyRV[this.S.tk] = (this.S.historyRV[this.S.tk] || 0) + 1;
+    } else if (isRam) {
+      this.S.historyRam[this.S.tk] = (this.S.historyRam[this.S.tk] || 0) + 1;
     } else {
       this.S.history[this.S.tk] = (this.S.history[this.S.tk] || 0) + 1;
     }
@@ -1947,22 +1985,25 @@ const App = {
     this.tapTimer();
     if (isRV) {
       spawnRV(e, document.getElementById('tz'));
+    } else if (isRam) {
+      spawnRam(e, document.getElementById('tz'));
     } else {
       spawn(e, document.getElementById('tz'));
     }
     const nm = Math.floor(this.gTod() / ms);
-    const lmcKey = isRV ? 'lmcRV' : 'lmc';
+    const lmcKey = isRV ? 'lmcRV' : isRam ? 'lmcRam' : 'lmc';
     if (nm > this[lmcKey]) { this[lmcKey] = nm; this.malaOk(); App.silentMonkBackup(); }
     this.ua();
-    if (!isRV) checkMilestones();
+    if (!isRV && !isRam) checkMilestones();
   },
 
   undo1() {
     const isRV = this.S.japMode === 'rv';
-    const hist = isRV ? this.S.historyRV : this.S.history;
+    const isRam = this.S.japMode === 'ram';
+    const hist = isRV ? this.S.historyRV : isRam ? this.S.historyRam : this.S.history;
     if ((hist[this.S.tk] || 0) > 0) {
       hist[this.S.tk]--;
-      const lmcKey = isRV ? 'lmcRV' : 'lmc';
+      const lmcKey = isRV ? 'lmcRV' : isRam ? 'lmcRam' : 'lmc';
       this[lmcKey] = Math.floor(this.gTod() / (this.S.ms || 108));
       this.save(); fbDebouncedPush(); this.ua(); this.vib([10]);
     }
@@ -2240,6 +2281,19 @@ function spawnRV(e, zone) {
   zone.appendChild(el); setTimeout(() => el.remove(), 2400);
 }
 
+// Floating Ram naam animation
+function spawnRam(e, zone) {
+  const r = zone.getBoundingClientRect();
+  let x, y;
+  if (e.touches && e.touches[0]) { x = e.touches[0].clientX-r.left; y = e.touches[0].clientY-r.top; }
+  else { x = e.clientX-r.left; y = e.clientY-r.top; }
+  const el = document.createElement('div');
+  el.className = 'fn';
+  el.style.cssText = 'font-size:' + (28+Math.random()*18).toFixed(0) + 'px;color:rgba(46,204,113,0.75);text-shadow:0 0 12px rgba(46,204,113,0.5);left:'+(x-20)+'px;top:'+(y-15)+'px';
+  el.textContent = 'राम';
+  zone.appendChild(el); setTimeout(() => el.remove(), 2400);
+}
+
 // Prevent double-tap zoom
 let lt2 = 0;
 document.addEventListener('touchend', e => { const n = Date.now(); if (n - lt2 < 300) e.preventDefault(); lt2 = n; }, { passive: false });
@@ -2264,8 +2318,13 @@ setInterval(() => {
     if (!App.S.historyRV[App.S.tk]) App.S.historyRV[App.S.tk] = 0;
     if (!App.S.timerHistoryRV) App.S.timerHistoryRV = {};
     if (!App.S.timerHistoryRV[App.S.tk]) App.S.timerHistoryRV[App.S.tk] = 0;
+    if (!App.S.historyRam) App.S.historyRam = {};
+    if (!App.S.historyRam[App.S.tk]) App.S.historyRam[App.S.tk] = 0;
+    if (!App.S.timerHistoryRam) App.S.timerHistoryRam = {};
+    if (!App.S.timerHistoryRam[App.S.tk]) App.S.timerHistoryRam[App.S.tk] = 0;
     App.lmc = 0;
     App.lmcRV = 0;
+    App.lmcRam = 0;
     App.save();
     fbDebouncedPush();
     App.ua();
@@ -2298,9 +2357,23 @@ function svtRV(type) {
   App.save(); fbDebouncedPush(); App.ua(); toast('RV Target saved! 🎯');
 }
 
+// ── Ram Target Save ──
+function svtRam(type) {
+  const ms = App.S.ms || 108;
+  if (type === 'd') {
+    const v = parseInt(document.getElementById('dtRamIn').value) || 0;
+    App.S.dtRam = v;
+  } else {
+    const v = parseInt(document.getElementById('ltRamIn').value) || 0;
+    App.S.ltRam = v;
+  }
+  App.save(); fbDebouncedPush(); App.ua(); toast('Ram Target saved! 🎯');
+}
+
 // ── Init RV mode UI on page load ──
 function initJapModeUI() {
   if (App.S.japMode === 'rv') switchJapMode('rv');
+  else if (App.S.japMode === 'ram') switchJapMode('ram');
   // Populate RV target inputs
   const dtRVIn = document.getElementById('dtRVIn');
   const ltRVIn = document.getElementById('ltRVIn');
@@ -2311,6 +2384,15 @@ function initJapModeUI() {
   const ltRVM = document.getElementById('ltRVMala');
   if (dtRVM) dtRVM.textContent = Math.floor((App.S.dtRV||0)/ms);
   if (ltRVM) ltRVM.textContent = Math.floor((App.S.ltRV||0)/ms);
+  // Ram targets
+  const dtRamIn = document.getElementById('dtRamIn');
+  const ltRamIn = document.getElementById('ltRamIn');
+  if (dtRamIn && App.S.dtRam) dtRamIn.value = App.S.dtRam;
+  if (ltRamIn && App.S.ltRam) ltRamIn.value = App.S.ltRam;
+  const dtRamM = document.getElementById('dtRamMala');
+  const ltRamM = document.getElementById('ltRamMala');
+  if (dtRamM) dtRamM.textContent = Math.floor((App.S.dtRam||0)/ms);
+  if (ltRamM) ltRamM.textContent = Math.floor((App.S.ltRam||0)/ms);
 }
 
 // ── Naam Selector Toggle ──
@@ -2345,14 +2427,19 @@ function switchJapMode(mode) {
   // Update UI
   const optR = document.getElementById('naamOptRadha');
   const optRV = document.getElementById('naamOptRV');
+  const optRam = document.getElementById('naamOptRam');
   const titleEl = document.getElementById('rnTitle');
+  // Clear all
+  [optR, optRV, optRam].forEach(o => { if(o) { o.classList.remove('active'); o.querySelector('.ns-check').textContent = ''; }});
   if (mode === 'rv') {
-    optR.classList.remove('active'); optR.querySelector('.ns-check').textContent = '';
     optRV.classList.add('active'); optRV.querySelector('.ns-check').textContent = '✓';
     titleEl.innerHTML = '<span style="font-size:clamp(18px,5vw,28px);line-height:1.1">राधावल्लभ</span><br><span style="font-size:clamp(16px,4.5vw,24px);line-height:1.1">श्री हरिवंश</span>';
     titleEl.style.textAlign = 'center';
+  } else if (mode === 'ram') {
+    optRam.classList.add('active'); optRam.querySelector('.ns-check').textContent = '✓';
+    titleEl.textContent = 'राम';
+    titleEl.style.textAlign = '';
   } else {
-    optRV.classList.remove('active'); optRV.querySelector('.ns-check').textContent = '';
     optR.classList.add('active'); optR.querySelector('.ns-check').textContent = '✓';
     titleEl.textContent = 'राधा';
     titleEl.style.textAlign = '';
@@ -2361,11 +2448,13 @@ function switchJapMode(mode) {
   const ms = App.S.ms || 108;
   if (mode === 'rv') {
     App.lmcRV = Math.floor((App.S.historyRV[App.S.tk]||0) / ms);
+  } else if (mode === 'ram') {
+    App.lmcRam = Math.floor((App.S.historyRam[App.S.tk]||0) / ms);
   } else {
     App.lmc = Math.floor((App.S.history[App.S.tk]||0) / ms);
   }
   App.save(); App.ua(); uStats();
-  toast(mode === 'rv' ? 'राधावल्लभ श्री हरिवंश 🙏' : 'राधा 🙏');
+  toast(mode === 'rv' ? 'राधावल्लभ श्री हरिवंश 🙏' : mode === 'ram' ? 'राम 🙏 जय श्री राम!' : 'राधा 🙏');
 }
 
 
@@ -2826,7 +2915,9 @@ function exportAllData() {
     sankalpas: App.S.sankalpas||[], occasions: App.S.occasions||{},
     ms: App.S.ms||108, dt: App.S.dt||0, lt: App.S.lt||0, nameJapDeduct: App.S.nameJapDeduct||0, cfg: App.S.cfg||{},
     japMode: App.S.japMode||'radha', historyRV: App.S.historyRV||{}, timerHistoryRV: App.S.timerHistoryRV||{},
-    dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0, nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[]
+    dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0, nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[],
+    historyRam: App.S.historyRam||{}, timerHistoryRam: App.S.timerHistoryRam||{},
+    dtRam: App.S.dtRam||0, ltRam: App.S.ltRam||0, nameJapDeductRam: App.S.nameJapDeductRam||0, malaLogRam: App.S.malaLogRam||[]
   };
   const blob = new Blob([JSON.stringify(backup,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -2866,6 +2957,12 @@ function importAllData(input) {
       if (data.ltRV !== undefined) App.S.ltRV = data.ltRV;
       if (data.nameJapDeductRV !== undefined) App.S.nameJapDeductRV = data.nameJapDeductRV;
       if (data.malaLogRV) App.S.malaLogRV = data.malaLogRV;
+      if (data.historyRam) App.S.historyRam = {...App.S.historyRam, ...data.historyRam};
+      if (data.timerHistoryRam) App.S.timerHistoryRam = {...App.S.timerHistoryRam, ...data.timerHistoryRam};
+      if (data.dtRam !== undefined) App.S.dtRam = data.dtRam;
+      if (data.ltRam !== undefined) App.S.ltRam = data.ltRam;
+      if (data.nameJapDeductRam !== undefined) App.S.nameJapDeductRam = data.nameJapDeductRam;
+      if (data.malaLogRam) App.S.malaLogRam = data.malaLogRam;
       App.S.syncBaseline = JSON.parse(JSON.stringify(App.S.history));
       App.S.syncBaseline28 = JSON.parse(JSON.stringify(App.S.h28));
       App.S.syncBaselineTimer = JSON.parse(JSON.stringify(App.S.timerHistory));
@@ -3081,6 +3178,8 @@ async function fbPushFull() {
     ms: App.S.ms||108, dt: App.S.dt||0, lt: App.S.lt||0, nameJapDeduct: App.S.nameJapDeduct||0, cfg: App.S.cfg||{},
     japMode: App.S.japMode||'radha', historyRV: App.S.historyRV||{}, timerHistoryRV: App.S.timerHistoryRV||{},
     dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0, nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[],
+    historyRam: App.S.historyRam||{}, timerHistoryRam: App.S.timerHistoryRam||{},
+    dtRam: App.S.dtRam||0, ltRam: App.S.ltRam||0, nameJapDeductRam: App.S.nameJapDeductRam||0, malaLogRam: App.S.malaLogRam||[],
     lastSync: firebase.firestore.FieldValue.serverTimestamp(),
     deviceId: fbDeviceId
   };
@@ -3136,6 +3235,16 @@ function fbApplyRemote(d) {
   if (d.ltRV !== undefined) App.S.ltRV = d.ltRV;
   if (d.nameJapDeductRV !== undefined) App.S.nameJapDeductRV = d.nameJapDeductRV;
   if (d.malaLogRV) App.S.malaLogRV = JSON.parse(JSON.stringify(d.malaLogRV || []));
+  if ('historyRam' in d) App.S.historyRam = JSON.parse(JSON.stringify(d.historyRam || {}));
+  if ('timerHistoryRam' in d) App.S.timerHistoryRam = JSON.parse(JSON.stringify(d.timerHistoryRam || {}));
+  if (d.dtRam !== undefined) App.S.dtRam = d.dtRam;
+  if (d.ltRam !== undefined) App.S.ltRam = d.ltRam;
+  if (d.nameJapDeductRam !== undefined) App.S.nameJapDeductRam = d.nameJapDeductRam;
+  if (d.malaLogRam) App.S.malaLogRam = JSON.parse(JSON.stringify(d.malaLogRam || []));
+  if (!App.S.historyRam) App.S.historyRam = {};
+  if (!App.S.timerHistoryRam) App.S.timerHistoryRam = {};
+  if (!App.S.historyRam[App.S.tk]) App.S.historyRam[App.S.tk] = 0;
+  if (!App.S.timerHistoryRam[App.S.tk]) App.S.timerHistoryRam[App.S.tk] = 0;
   if (!App.S.historyRV) App.S.historyRV = {};
   if (!App.S.timerHistoryRV) App.S.timerHistoryRV = {};
   if (!App.S.historyRV[App.S.tk]) App.S.historyRV[App.S.tk] = 0;
@@ -3206,7 +3315,9 @@ async function gdDriveSilentBackup() {
       sankalpas: App.S.sankalpas||[], occasions: App.S.occasions||{},
       ms: App.S.ms||108, dt: App.S.dt||0, lt: App.S.lt||0, nameJapDeduct: App.S.nameJapDeduct||0, cfg: App.S.cfg||{},
       japMode: App.S.japMode||'radha', historyRV: App.S.historyRV||{}, timerHistoryRV: App.S.timerHistoryRV||{},
-      dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0, nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[]
+      dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0, nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[],
+      historyRam: App.S.historyRam||{}, timerHistoryRam: App.S.timerHistoryRam||{},
+      dtRam: App.S.dtRam||0, ltRam: App.S.ltRam||0, nameJapDeductRam: App.S.nameJapDeductRam||0, malaLogRam: App.S.malaLogRam||[]
     }, null, 2);
     // Find existing file
     const listResp = await fetch(
@@ -3964,7 +4075,7 @@ function renderCal(){
   for(let i=0;i<fd;i++)g.appendChild(document.createElement('div'));
   for(let d=1;d<=dim;d++){
     const key=yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
-    const cnt=App.S.history[key]||0, timeSec=App.S.timerHistory[key]||0, time28Sec=App.S.timer28History[key]||0;
+    const cnt=(App.S.history[key]||0)+(App.S.historyRV[key]||0)+(App.S.historyRam[key]||0), timeSec=(App.S.timerHistory[key]||0)+(App.S.timerHistoryRV[key]||0)+(App.S.timerHistoryRam[key]||0), time28Sec=App.S.timer28History[key]||0;
     const occ=App.S.occasions&&App.S.occasions[key];
     const c=document.createElement('div');c.className='cc';
     if(key===ts)c.classList.add('today');
@@ -4157,6 +4268,7 @@ window.addEventListener('load', async () => {
   App.lmc = Math.floor(App.gTod() / (App.S.ms||108));
   App.lm28 = Math.floor((App.S.h28[App.S.tk]||0) / (App.S.ms||108));
   App.lmcRV = Math.floor((App.S.historyRV[App.S.tk]||0) / (App.S.ms||108));
+  App.lmcRam = Math.floor((App.S.historyRam[App.S.tk]||0) / (App.S.ms||108));
 
   // Timer always starts from 0 on each app open.
   // timerSavedSeconds tracks what's already committed to timerHistory this session.

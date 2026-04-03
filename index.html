@@ -213,7 +213,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .cs-header h3{font-size:11px;letter-spacing:2px;text-transform:uppercase;font-weight:600;margin:0;}
 .cs-chevron{font-size:14px;transition:transform 0.3s;display:inline-block;margin-left:8px;opacity:0.7;}
 .cs-body{max-height:0;overflow:hidden;transition:max-height 0.38s ease,padding 0.3s ease;padding:0 16px;}
-.cs-body.open{max-height:12000px;padding:0 16px 16px;}
+.cs-body.open{max-height:none;padding:0 16px 16px;}
 .sg-wrap{border-radius:18px;background:rgba(74,144,226,0.05);border:1px solid rgba(74,144,226,0.15);margin-bottom:12px;overflow:hidden;}
 .sg-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;user-select:none;-webkit-user-select:none;}
 .sg-header span{font-size:11px;color:var(--a2);letter-spacing:2px;text-transform:uppercase;font-weight:600;}
@@ -704,20 +704,6 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
   text-align:center;pointer-events:none;animation:wish-pop 3s ease-out forwards;line-height:1.4;}
 @keyframes wish-pop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.5);}15%{opacity:1;transform:translate(-50%,-50%) scale(1.1);}70%{opacity:1;transform:translate(-50%,-50%) scale(1);}100%{opacity:0;transform:translate(-50%,-50%) scale(0.8) translateY(-30px);}}
 </style>
-
-<script>
-// Error recovery: clear stale SW cache on crash
-window.onerror = function(msg, url, line) {
-  if (msg && (msg.includes('out of memory') || msg.includes('Script error'))) {
-    if ('caches' in window) {
-      caches.keys().then(function(names) {
-        names.forEach(function(name) { caches.delete(name); });
-        location.reload();
-      });
-    }
-  }
-};
-</script>
 </head>
 <body>
 <!-- LOADING -->
@@ -5269,7 +5255,7 @@ const SPIRITUAL_MILESTONES = [
     desc: '• Sarva Siddhi: Is sthiti mein "laabh" shabd hi khatam ho jata hai kyunki sab kuch prapt ho chuka hota hai. Gyan, bhakti aur yog ki saari bhoomikaein jagrut ho jati hain.\n• Leela Pravesh: Gokul, Ayodhya ya Kashi ki divya leelaein sadhak ke samne prakat hone lagti hain.' },
   { count: 12*CRORE, icon: '☸', label: 'Bhagwan Bhakt ke Adheen', tag: 'Bhakti Sthan', eng: 'God Follows Devotee', phase: 'bhagwat',
     desc: '• Bhagwan Adheen: Sadhak ke paas naam ka itna khazana ho jata hai ki swayam Bhagwan uske adheen hokar uske peeche-peeche dolte hain.' },
-  { count: 13*CRORE, icon: '🙏✨', label: 'Moksh Pradaan ki Shakti', tag: 'Moksh Sthan', eng: 'Power to Grant Liberation', phase: 'bhagwat',
+  { count: 13*CRORE, icon: 'ੴ', label: 'Moksh Pradaan ki Shakti', tag: 'Moksh Sthan', eng: 'Power to Grant Liberation', phase: 'bhagwat',
     desc: '• Samarthya: 13 crore naam jap karne wala sadhak itna samarth ho jata hai ki wo kisi bhi paapi vyakti ko moksha pradan kar sakta hai.\n\nMaharaj Ji ka nishkarsh: Naam mein sab kuch virajman hai. Bas ise nirantar bina ruke japte raho.' },
 ];
 
@@ -5800,3 +5786,8 @@ function renderMsView() {
 
 </body>
 </html>
+</script>
+
+</body>
+</html>
+

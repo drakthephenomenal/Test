@@ -1123,49 +1123,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
   <div class="mahima-quote">"Zubaan se naam nahi chhutna chahiye, chahe uthte-baithte kuch bhi kar rahe ho."</div>
   <div class="mahima-quote-attr">— Shri Hit Premanand Ji Maharaj</div>
 
-  <!-- Lakh Gati Tracking -->
-  <div class="lakh-gati-wrap">
-    <div class="lakh-gati-title">
-      <span>📿</span>
-      <span>Jap ki Gati — Lakh Tracker</span>
-    </div>
-    <div class="lakh-gati-grid" id="lakhGatiGrid2"></div>
-  </div>
-
-  <!-- Mala Bead Strip -->
-  <div class="mala-strip-wrap">
-    <div class="mala-strip-head">
-      <span class="mala-strip-lbl">📿 Next Milestone</span>
-      <span><span class="mala-strip-next" id="msNextVal2">1,000</span>&nbsp;<span class="mala-strip-pct" id="msNextPct2"></span></span>
-    </div>
-    <div class="mala-beads" id="malaBeads2"></div>
-    <div class="mala-fill-bar"><div class="mala-fill-inner" id="msProgFill2" style="width:0%"></div></div>
-    <div class="mala-remaining" id="msRemaining2"></div>
-  </div>
-
-  <!-- Velocity Tracker -->
-  <div style="margin-top:14px;padding:14px;background:rgba(74,144,226,0.04);border:1px solid rgba(74,144,226,0.15);border-radius:16px">
-    <div style="font-size:12px;color:var(--a2);letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;font-weight:600">⚡ Velocity Tracker</div>
-    <div class="vel-list" id="velocityList"></div>
-  </div>
-
-  <!-- Sadhana Journey Timeline -->
-  <div class="sj-wrap">
-    <div class="sj-head" onclick="toggleCs('sjBody2','sjChev2')">
-      <h3>🕐 Sadhana Journey</h3>
-      <span class="cs-chevron" id="sjChev2" style="color:var(--a2)">▾</span>
-    </div>
-    <div class="cs-body open sj-body" id="sjBody2">
-      <div class="sj-date-wrap">
-        <span class="sj-date-label">🪔 Journey Start</span>
-        <input type="date" class="sj-date-input" id="sadhanaStartDate2" onchange="saveSadhanaStartDate(this.value)">
-      </div>
-      <div class="sj-date-since" id="sadhanaSince2"></div>
-      <div class="sj-list" id="msLogList2">
-        <div class="sj-empty">No milestones reached yet. Keep chanting! 🙏</div>
-      </div>
-    </div>
-  </div>
+  <!-- Removed: Lakh Gati, Next Milestone, Velocity Tracker, Sadhana Journey -->
 </div>
 
 <!-- STATS VIEW — includes jap entry tools -->
@@ -1641,7 +1599,7 @@ const App = {
   lmc: 0, lm28: 0,
   timerRunning: false, timerSeconds: 0, timerInterval: null,
   timerSavedSeconds: 0, autoStopTimeout: null,
-  malaSessionStart: 0,  // timerSeconds at start of current mala
+  malaWallStart: 0,  // Date.now() at start of current mala (persisted in localStorage)
   fbDebouncePush: null,
 
   // ── IndexedDB ──
@@ -1962,6 +1920,16 @@ const App = {
     uStats();
   },
 
+  // ── Set wall-clock start for new mala if needed ──
+  ensureMalaWallStart() {
+    const ms = this.S.ms || 108;
+    const countInMala = this.gTod() % ms;
+    if (countInMala === 1 || this.malaWallStart === 0) {
+      this.malaWallStart = Date.now();
+      localStorage.setItem('rjap_malaWallStart', String(this.malaWallStart));
+    }
+  },
+
   // ── Mala Complete — Bell sound + TRIPLE vibration + log duration + animate timer ──
   malaOk() {
     const f = document.getElementById('mf');
@@ -1971,8 +1939,10 @@ const App = {
     // Triple long vibration synced with bell
     this.vib([200, 80, 200, 80, 300]);
     // Record mala duration
-    const malaDuration = this.timerSeconds - this.malaSessionStart;
-    this.malaSessionStart = this.timerSeconds;
+    const now = Date.now();
+    const malaDuration = Math.round((now - this.malaWallStart) / 1000);
+    this.malaWallStart = now;
+    localStorage.setItem('rjap_malaWallStart', String(now));
     const isRVm = this.S.japMode === 'rv';
     if (isRVm) {
       if (!this.S.malaLogRV) this.S.malaLogRV = [];
@@ -2013,6 +1983,7 @@ const App = {
     } else {
       this.S.history[this.S.tk] = (this.S.history[this.S.tk] || 0) + 1;
     }
+    this.ensureMalaWallStart();
     this.save(); fbDebouncedPush();
     // Haptic heartbeat — 10ms bead feeling
     this.vib([10]);
@@ -2531,6 +2502,7 @@ function addManualJap() {
   const n = parseInt(document.getElementById('manualJapIn').value) || 0;
   if (n <= 0) { toast('Please enter a number > 0'); return; }
   App.S.history[App.S.tk] = (App.S.history[App.S.tk] || 0) + n;
+  App.ensureMalaWallStart();
   const nm = Math.floor(App.gTod() / (App.S.ms || 108));
   if (nm > App.lmc) { App.lmc = nm; App.malaOk(); }
   App.save(); App.ua(); fbDebouncedPush();
@@ -2818,7 +2790,7 @@ function cr2(tp) {
   document.getElementById('moCf').onclick = doReset;
 }
 function doReset() {
-  if (pr === 'today') { App.S.history[App.S.tk] = 0; App.lmc = 0; App.S.malaLog = []; }
+  if (pr === 'today') { App.S.history[App.S.tk] = 0; App.lmc = 0; App.S.malaLog = []; App.malaWallStart = Date.now(); localStorage.setItem('rjap_malaWallStart', String(App.malaWallStart)); }
   else if (pr === '28today') {
     // Freeze active wishes before zeroing today's count so progress bars drop correctly
     (App.S.sankalpas||[]).filter(s => !s.done && s.startCycles !== null).forEach(s => {
@@ -3155,7 +3127,7 @@ function renderMilestonesTab() {
   }
 
   // Lakh Gati (render to grid2)
-  renderLakhGati2();
+  // renderLakhGati2(); // removed
   
   // Load sadhana start date for tab2
   const saved = localStorage.getItem('rjap_sadhana_start');
@@ -3180,7 +3152,7 @@ function renderMilestonesTab() {
     }
   }
 
-  // Sadhana Journey Timeline
+  // Sadhana Journey Timeline (removed from milestones tab)
   const logList2 = document.getElementById('msLogList2');
   if (logList2) {
     const allReached = MILESTONES.filter(m => data.reached[m.count])
@@ -3215,7 +3187,7 @@ function renderMilestonesTab() {
   }
 
   // Velocity
-  renderVelocityTracker();
+  // renderVelocityTracker(); // removed
 }
 
 function renderLakhGati2() {
@@ -3819,7 +3791,7 @@ function renderMilestonesTab() {
   }
 
   // Lakh Gati (render to grid2)
-  renderLakhGati2();
+  // renderLakhGati2(); // removed
   
   // Load sadhana start date for tab2
   const saved = localStorage.getItem('rjap_sadhana_start');
@@ -3844,7 +3816,7 @@ function renderMilestonesTab() {
     }
   }
 
-  // Sadhana Journey Timeline
+  // Sadhana Journey Timeline (removed from milestones tab)
   const logList2 = document.getElementById('msLogList2');
   if (logList2) {
     const allReached = MILESTONES.filter(m => data.reached[m.count])
@@ -3879,7 +3851,7 @@ function renderMilestonesTab() {
   }
 
   // Velocity
-  renderVelocityTracker();
+  // renderVelocityTracker(); // removed
 }
 
 function renderLakhGati2() {
@@ -4863,7 +4835,17 @@ window.addEventListener('load', async () => {
   // timerSavedSeconds tracks what's already committed to timerHistory this session.
   App.timerSeconds = 0;
   App.timerSavedSeconds = 0;
-  App.malaSessionStart = 0;
+  // Restore wall-clock mala start for cross-session timing
+  const savedMalaWall = localStorage.getItem('rjap_malaWallStart');
+  const todayCount = App.gTod();
+  const ms = App.S.ms || 108;
+  const countInCurrentMala = todayCount % ms;
+  if (savedMalaWall && countInCurrentMala > 0) {
+    App.malaWallStart = parseInt(savedMalaWall);
+  } else {
+    App.malaWallStart = Date.now();
+    localStorage.setItem('rjap_malaWallStart', String(App.malaWallStart));
+  }
   document.getElementById('timerDisplay').textContent = '00:00:00';
 
   // Apply settings UI
@@ -5113,7 +5095,7 @@ function renderMilestonesTab() {
   }
 
   // Lakh Gati (render to grid2)
-  renderLakhGati2();
+  // renderLakhGati2(); // removed
   
   // Load sadhana start date for tab2
   const saved = localStorage.getItem('rjap_sadhana_start');
@@ -5138,7 +5120,7 @@ function renderMilestonesTab() {
     }
   }
 
-  // Sadhana Journey Timeline
+  // Sadhana Journey Timeline (removed from milestones tab)
   const logList2 = document.getElementById('msLogList2');
   if (logList2) {
     const allReached = MILESTONES.filter(m => data.reached[m.count])
@@ -5173,7 +5155,7 @@ function renderMilestonesTab() {
   }
 
   // Velocity
-  renderVelocityTracker();
+  // renderVelocityTracker(); // removed
 }
 
 function renderLakhGati2() {
@@ -6949,7 +6931,7 @@ function renderMilestonesTab() {
   }
 
   // Lakh Gati (render to grid2)
-  renderLakhGati2();
+  // renderLakhGati2(); // removed
   
   // Load sadhana start date for tab2
   const saved = localStorage.getItem('rjap_sadhana_start');
@@ -6974,7 +6956,7 @@ function renderMilestonesTab() {
     }
   }
 
-  // Sadhana Journey Timeline
+  // Sadhana Journey Timeline (removed from milestones tab)
   const logList2 = document.getElementById('msLogList2');
   if (logList2) {
     const allReached = MILESTONES.filter(m => data.reached[m.count])
@@ -7009,7 +6991,7 @@ function renderMilestonesTab() {
   }
 
   // Velocity
-  renderVelocityTracker();
+  // renderVelocityTracker(); // removed
 }
 
 function renderLakhGati2() {

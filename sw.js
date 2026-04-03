@@ -2,7 +2,7 @@
 // Radha Naam Jap — Service Worker
 // Update CACHE version when index.html changes
 // ═══════════════════════════════════════════════
-const CACHE = 'radha-jap-v28';  // v28: iPad dvh fix + Milestones tab + dynamic 10k milestones + velocity tracker + divine celebration
+const CACHE = 'radha-jap-v29';  // v29: Fix mala wall-clock timing + remove milestone sub-sections
 
 const PRECACHE = [
   './index.html',

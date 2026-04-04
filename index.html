@@ -244,6 +244,11 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .cc.tm{background:rgba(109,184,255,0.2);}
 .cc.occ{border-bottom:2px solid var(--gold);}
 .ccc{font-size:8px;color:var(--td);}
+
+/* Brahmacharya calendar cell coloring */
+.cc.bc-m{background:rgba(46,204,113,0.18);border-color:rgba(46,204,113,0.35);}
+.cc.bc-b{background:rgba(231,76,60,0.22);border-color:rgba(231,76,60,0.4);}
+.cc.bc-m .ccc{color:var(--tl);}.cc.bc-b .ccc{color:var(--tl);}
 .cco{font-size:7px;color:var(--gold);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 1px;}
 .cd{background:rgba(74,144,226,0.07);border:1px solid rgba(74,144,226,0.18);border-radius:14px;padding:14px;margin-top:12px;min-height:55px;}
 .cd h4{font-family:'EB Garamond',serif;font-size:15px;color:var(--a2);margin-bottom:6px;}
@@ -1017,50 +1022,37 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 
 <!-- BRAHMACHARYA VIEW -->
 <div class="view" id="vb">
-  <div class="vt">Brahmacharya</div>
+  <div class="vt">📅 Jap & Brahmacharya Calendar</div>
+
+  <!-- Brahmacharya Status Bar -->
   <div class="bsr">
     <div class="bsb g"><div class="bv" id="bcs">0</div><div class="bl">Current Streak</div></div>
     <div class="bsb g"><div class="bv" id="bbs">0</div><div class="bl">Best Streak</div></div>
     <div class="bsb r"><div class="bv" id="bbc">0</div><div class="bl">Total Breaks</div></div>
   </div>
-  <div style="margin-bottom:10px">
-    <div style="display:flex;justify-content:space-between;margin-bottom:7px">
-      <button class="cnb" onclick="cbm(-1)">‹</button>
-      <div class="cmy" id="bmy"></div>
-      <button class="cnb" onclick="cbm(1)">›</button>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:5px">
-      <div style="text-align:center;font-size:10px;color:var(--td)">Su</div><div style="text-align:center;font-size:10px;color:var(--td)">Mo</div>
-      <div style="text-align:center;font-size:10px;color:var(--td)">Tu</div><div style="text-align:center;font-size:10px;color:var(--td)">We</div>
-      <div style="text-align:center;font-size:10px;color:var(--td)">Th</div><div style="text-align:center;font-size:10px;color:var(--td)">Fr</div>
-      <div style="text-align:center;font-size:10px;color:var(--td)">Sa</div>
-    </div>
-    <div class="bcal" id="bcal"></div>
-  </div>
-  <div class="sc">
-    <h3>📊 Summary</h3>
-    <div class="n2s">
-      <div class="ns"><div class="nv" style="color:var(--green)" id="bmd">0</div><div class="nl">Maintained</div></div>
-      <div class="ns"><div class="nv" style="color:var(--red)" id="bbd">0</div><div class="nl">Broken Days</div></div>
-      <div class="ns"><div class="nv" style="color:var(--red)" id="btm">0</div><div class="nl">Total Count</div></div>
-      <div class="ns"><div class="nv" style="color:var(--a2)" id="bmp">0%</div><div class="nl">Success Rate</div></div>
-    </div>
+
+  <!-- Brahmacharya Summary Grid -->
+  <div class="n2s" style="margin-bottom:14px">
+    <div class="ns"><div class="nv" style="color:var(--green)" id="bmd">0</div><div class="nl">Maintained</div></div>
+    <div class="ns"><div class="nv" style="color:var(--red)" id="bbd">0</div><div class="nl">Broken Days</div></div>
+    <div class="ns"><div class="nv" style="color:var(--red)" id="btm">0</div><div class="nl">Total Count</div></div>
+    <div class="ns"><div class="nv" style="color:var(--a2)" id="bmp">0%</div><div class="nl">Success Rate</div></div>
   </div>
 
-  <!-- Jap Calendar (moved here) -->
-  <div style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(74,144,226,0.15)">
-    <div class="vt" style="font-size:16px;margin-bottom:8px">📅 Jap Calendar</div>
-    <div class="ch">
-      <button class="cnb" onclick="chm(-1)">‹</button>
-      <div class="cmy" id="cmy"></div>
-      <button class="cnb" onclick="chm(1)">›</button>
-    </div>
-    <div class="cg" id="cg">
-      <div class="cdl">Sun</div><div class="cdl">Mon</div><div class="cdl">Tue</div>
-      <div class="cdl">Wed</div><div class="cdl">Thu</div><div class="cdl">Fri</div><div class="cdl">Sat</div>
-    </div>
-    <div style="padding:10px 14px 6px;font-size:11px;color:var(--td);text-align:center;letter-spacing:1px;">Tap a date to see details &amp; add occasion</div>
+  <!-- Unified Calendar -->
+  <div class="ch">
+    <button class="cnb" onclick="chm(-1)">&#8249;</button>
+    <div class="cmy" id="cmy"></div>
+    <button class="cnb" onclick="chm(1)">&#8250;</button>
   </div>
+  <div class="cg" id="cg">
+    <div class="cdl">Sun</div><div class="cdl">Mon</div><div class="cdl">Tue</div>
+    <div class="cdl">Wed</div><div class="cdl">Thu</div><div class="cdl">Fri</div><div class="cdl">Sat</div>
+  </div>
+  <div style="padding:6px 14px 4px;display:flex;justify-content:center;gap:14px;font-size:10px;color:var(--td)">
+    <span>🟢 Maintained</span><span>🔴 Broken</span><span>🟡 Occasion</span>
+  </div>
+  <div style="padding:4px 14px 6px;font-size:11px;color:var(--td);text-align:center;letter-spacing:1px;">Tap a date to see details</div>
 </div>
 
 
@@ -1089,6 +1081,19 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
       <div class="cdmo-occ-row">
         <input type="text" class="cdmo-occ-in" id="cdmoOccIn" placeholder="e.g. Janmashtami, Ekadashi…">
         <button class="cdmo-occ-add" onclick="addOccasionFromSheet()">Add</button>
+      </div>
+    </div>
+    <!-- Brahmacharya Controls -->
+    <div class="cdmo-bc" id="cdmoBcSection" style="background:rgba(46,204,113,0.05);border:1px solid rgba(46,204,113,0.2);border-radius:14px;padding:13px 14px;margin-bottom:10px;">
+      <div style="font-size:10px;color:var(--green);letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;font-weight:600">🛡️ Brahmacharya Status</div>
+      <div id="cdmoBcStatus" style="font-size:13px;color:var(--tl);margin-bottom:10px">—</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <button class="blb gb" id="cdmoBcMaint" onclick="sheetMarkBc('m')" style="flex:1;padding:10px;font-size:13px">✅ Mark Maintained</button>
+        <button class="blb rb2" id="cdmoBcBrk" onclick="sheetMarkBc('b')" style="flex:1;padding:10px;font-size:13px">❌ Mark Broken</button>
+      </div>
+      <div id="cdmoBcCntRow" style="display:none;align-items:center;gap:10px;margin-bottom:6px">
+        <label style="font-size:12px;color:var(--tl);flex:1">Break count:</label>
+        <input type="number" id="cdmoBcCnt" value="1" min="1" style="width:70px;background:rgba(0,0,0,0.3);border:1px solid rgba(231,76,60,0.3);border-radius:9px;padding:7px 11px;color:var(--tl);font-size:15px;text-align:center;font-family:'Inter',sans-serif;">
       </div>
     </div>
   </div>
@@ -2416,7 +2421,7 @@ function sv(id, btn) {
   document.getElementById(id).classList.add('active');
   if (btn) btn.classList.add('active');
   if (id === 'vs') uStats();
-  if (id === 'vb') { renderBcal(); renderCal(); }
+  if (id === 'vb') { renderCal(); }
   if (id === 'vst') renderSt();
   if (id === 'v28') { u28(); render28Dots(get28Pos()); }
   else { App.flush28TimeToHistory(); }
@@ -4553,26 +4558,7 @@ const BRAHMA_START = '2026-03-16';
 let bcd = new Date();
 const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-function renderBcal() {
-  const yr=bcd.getFullYear(),mo=bcd.getMonth();
-  document.getElementById('bmy').textContent = MN[mo]+' '+yr;
-  const g=document.getElementById('bcal'); g.innerHTML='';
-  const fd=new Date(yr,mo,1).getDay(),dim=new Date(yr,mo+1,0).getDate(),ts=App.getTk();
-  for(let i=0;i<fd;i++){const e=document.createElement('div');e.className='bcl e';g.appendChild(e);}
-  for(let d=1;d<=dim;d++){
-    const key=yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
-    const en=App.S.brahma[key], isBroken=en&&en.status==='b';
-    const isActive=key>=BRAHMA_START&&key<=ts;
-    const c=document.createElement('div');
-    c.className='bcl '+(isActive?(isBroken?'b':'m'):'e');
-    if(key===ts)c.classList.add('tc');
-    c.innerHTML='<span style="font-size:11px">'+d+'</span>';
-    if(isBroken&&en.count>1)c.innerHTML+='<span style="font-size:8px;display:block">'+en.count+'x</span>';
-    if(isActive){c.style.cursor='pointer';(function(k,brk,cnt){c.onclick=function(){openBcDay(k,brk,cnt);};})(key,isBroken,en&&en.count||1);}
-    g.appendChild(c);
-  }
-  uBStats();
-}
+function renderBcal() { renderCal(); }
 function cbm(d){bcd.setMonth(bcd.getMonth()+d);renderBcal();}
 function openBcDay(key,isBroken,cnt){
   const parts=key.split('-'), label=MN[parseInt(parts[1])-1]+' '+parseInt(parts[2])+', '+parts[0];
@@ -4636,6 +4622,10 @@ function renderCal(){
     const occ=App.S.occasions&&App.S.occasions[key];
     const c=document.createElement('div');c.className='cc';
     if(key===ts)c.classList.add('today');
+    // Brahmacharya coloring
+    const bcEn=App.S.brahma[key], isBcBroken=bcEn&&bcEn.status==='b';
+    const isBcActive=key>=BRAHMA_START&&key<=ts;
+    if(isBcActive){c.classList.add(isBcBroken?'bc-b':'bc-m');}
     const combinedDt=(App.S.dt||0)+(App.S.dtRV||0);
     if(cnt>0){c.classList.add('hd');if(combinedDt>0&&cnt>=combinedDt)c.classList.add('tm');}
     if(occ)c.classList.add('occ');
@@ -4646,6 +4636,7 @@ function renderCal(){
     c.onclick=(()=>{const k=key,n=cnt,t=timeSec,t28=time28Sec;return()=>showDay(k,n,t,t28);})();
     g.appendChild(c);
   }
+  uBStats();
 }
 function chm(d){cald.setMonth(cald.getMonth()+d);renderCal();}
 // ── Calendar day bottom sheet ──
@@ -4671,6 +4662,33 @@ function showDay(key, cnt, timeSec, time28Sec) {
 
   // Occasion
   _renderSheetOcc(key);
+
+  // Brahmacharya section
+  const bcSec = document.getElementById('cdmoBcSection');
+  const bcStatus = document.getElementById('cdmoBcStatus');
+  const bcCntRow = document.getElementById('cdmoBcCntRow');
+  const bcMaintBtn = document.getElementById('cdmoBcMaint');
+  const bcBrkBtn = document.getElementById('cdmoBcBrk');
+  const ts = App.getTk();
+  const isBcActive = key >= BRAHMA_START && key <= ts;
+  if (isBcActive) {
+    bcSec.style.display = '';
+    const bcEn = App.S.brahma[key], isBroken = bcEn && bcEn.status === 'b';
+    if (isBroken) {
+      bcStatus.innerHTML = '❌ <span style="color:var(--red)">Broken</span>' + (bcEn.count > 1 ? ' (' + bcEn.count + 'x)' : '');
+      bcMaintBtn.style.display = '';
+      bcBrkBtn.style.display = 'none';
+      bcCntRow.style.display = 'none';
+    } else {
+      bcStatus.innerHTML = '✅ <span style="color:var(--green)">Maintained</span>';
+      bcMaintBtn.style.display = 'none';
+      bcBrkBtn.style.display = '';
+      bcCntRow.style.display = 'flex';
+    }
+    document.getElementById('cdmoBcCnt').value = (bcEn && bcEn.count) || 1;
+  } else {
+    bcSec.style.display = 'none';
+  }
 
   // Clear input
   document.getElementById('cdmoOccIn').value = '';
@@ -4709,6 +4727,24 @@ function addOccasionFromSheet() {
 function closeDaySheet() {
   document.getElementById('cdmo').classList.remove('show');
   _sheetKey = null;
+}
+function sheetMarkBc(action) {
+  const key = _sheetKey;
+  if (!key) return;
+  if (action === 'b') {
+    const cnt = parseInt(document.getElementById('cdmoBcCnt').value) || 1;
+    App.S.brahma[key] = { status: 'b', count: cnt };
+    toast('Marked as broken 🙏');
+  } else {
+    delete App.S.brahma[key];
+    toast('✅ Restored as maintained!');
+  }
+  App.save(); fbDebouncedPush(); renderCal();
+  // Refresh the sheet to show updated status
+  const cnt2 = (App.S.history[key]||0) + (App.S.historyRV[key]||0);
+  const timeSec2 = (App.S.timerHistory[key]||0) + (App.S.timerHistoryRV[key]||0);
+  const time28Sec2 = App.S.timer28History[key]||0;
+  showDay(key, cnt2, timeSec2, time28Sec2);
 }
 function addOccasion(){
   const date=(document.getElementById('occDate')||{value:''}).value.trim();

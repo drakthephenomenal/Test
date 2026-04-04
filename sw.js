@@ -2,7 +2,7 @@
 // Radha Naam Jap — Service Worker
 // Update CACHE version when index.html changes
 // ═══════════════════════════════════════════════
-const CACHE = 'radha-jap-v40';  // v40: Fix iPad Safari flex children collapsing in #vms milestones view
+const CACHE = 'radha-jap-v41';  // v41: Fix iPad Safari @supports block overriding scroll with min-height
 
 const PRECACHE = [
   './index.html',

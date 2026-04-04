@@ -55,10 +55,9 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 /* iOS/iPad Safari fixes */
 @supports (-webkit-touch-callout: none) {
   .ls{height:-webkit-fill-available;}
-  .view{min-height:-webkit-fill-available;}
-  #vj.active{height:-webkit-fill-available;}
-  
-  body{min-height:-webkit-fill-available;}
+  .view{height:-webkit-fill-available;max-height:-webkit-fill-available;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  #vj.active{height:-webkit-fill-available;overflow:hidden;}
+  body{height:-webkit-fill-available;}
 }
 
 

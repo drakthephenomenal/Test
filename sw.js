@@ -2,7 +2,7 @@
 // Radha Naam Jap — Service Worker
 // Update CACHE version when index.html changes
 // ═══════════════════════════════════════════════
-const CACHE = 'radha-jap-v31';  // v31: Merge Brahmacharya into Jap Calendar + remove milestone sub-sections
+const CACHE = 'radha-jap-v39';  // v39: Fix iPad Milestones rendering by reducing heavy glass card load
 
 const PRECACHE = [
   './index.html',
@@ -11,6 +11,7 @@ const PRECACHE = [
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
   'https://fonts.googleapis.com/css2?family=Tiro+Devanagari+Hindi&family=Hind+Siliguri:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=EB+Garamond:wght@400;600&family=Inter:wght@300;400;500;600&display=swap',
   'https://accounts.google.com/gsi/client',
+  'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js',
   'https://apis.google.com/js/api.js'
 ];
 

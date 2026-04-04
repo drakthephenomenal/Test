@@ -2,7 +2,7 @@
 // Radha Naam Jap — Service Worker
 // Update CACHE version when index.html changes
 // ═══════════════════════════════════════════════
-const CACHE = 'radha-jap-v39';  // v39: Fix iPad Milestones rendering by reducing heavy glass card load
+const CACHE = 'radha-jap-v40';  // v40: Fix iPad Safari flex children collapsing in #vms milestones view
 
 const PRECACHE = [
   './index.html',

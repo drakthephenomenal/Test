@@ -57,15 +57,13 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
   .ls{height:-webkit-fill-available;}
   .view{min-height:-webkit-fill-available;}
   #vj.active{height:-webkit-fill-available;}
-  #vms{min-height:0;}
-  #vms.active{height:-webkit-fill-available;min-height:0;}
-  #msContent{min-height:1px;transform:translateZ(0);}
+  
   body{min-height:-webkit-fill-available;}
 }
 
 
 
-.view{display:none;min-height:100vh;min-height:100dvh;position:relative;z-index:1;flex-direction:column;}
+.view{display:none;height:100vh;height:100dvh;position:relative;z-index:1;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch;}
 .view.active{display:flex;}
 #vj.active{min-height:unset;height:100vh;height:100dvh;overflow:hidden;}
 
@@ -679,9 +677,10 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .fn-rv span{font-family:'Tiro Devanagari Hindi',serif;display:block;}
 
 /* MILESTONES VIEW — dedicated tab */
-#vms{background:radial-gradient(ellipse at top,#0A1535 0%,var(--bd) 60%);padding:22px 12px calc(88px + env(safe-area-inset-bottom));overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0;flex:1 1 auto;overscroll-behavior-y:contain;}
-#vms.active{height:100vh;height:100dvh;min-height:0;}
-#msContent{min-height:1px;}
+#vms{background:radial-gradient(ellipse at top,#0A1535 0%,var(--bd) 60%);padding:22px 12px 80px;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+#vms > *{flex-shrink:0;}
+#msContent{flex:1 0 auto;}
+
 
 
 /* ═══ MILESTONES TAB — GLASSMORPHIC PREMIUM ═══ */
@@ -726,7 +725,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .ms-section-sep{height:1px;background:linear-gradient(90deg,transparent,rgba(74,144,226,0.2),transparent);margin:20px 0;}
 /* Lakh section cards */
 .ms-lakh-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
-.ms-lakh-card{position:relative;background:rgba(15,30,69,0.72);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:12px;cursor:pointer;transition:transform 0.2s;overflow:hidden;}
+.ms-lakh-card{position:relative;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:12px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);cursor:pointer;transition:transform 0.2s;overflow:hidden;}
 .ms-lakh-card:hover,.ms-lakh-card:active{transform:scale(1.02);}
 .ms-lakh-card.achieved{border-color:rgba(255,215,0,0.25);}
 .ms-lakh-card .ms-lakh-label{font-family:'Cinzel Decorative',serif;font-size:11px;color:var(--tl);letter-spacing:1px;}
@@ -2491,7 +2490,7 @@ function sv(id, btn) {
   if (id === 'vst') renderSt();
   if (id === 'v28') { u28(); render28Dots(get28Pos()); }
   else { App.flush28TimeToHistory(); }
-  if (id === 'vms') { window.requestAnimationFrame ? window.requestAnimationFrame(renderMilestonesTab) : setTimeout(renderMilestonesTab, 0); }
+  if (id === 'vms') { renderMilestonesTab(); }
   if (id === 'vset') {
     if (App.S.dt) document.getElementById('dtIn').value = App.S.dt;
     if (App.S.lt) document.getElementById('ltIn').value = App.S.lt;
@@ -3084,15 +3083,17 @@ function renderMilestonesTab() {
   // Build lakh milestones (1L to 130L)
   const lakhMs = [];
   const keyLakhs = [1,2,3,5,10,20,50];
-  for (let l=1; l<=99; l++) {
+  for (let l=1; l<=130; l++) {
     const count = l*100000;
     const isKey = keyLakhs.includes(l);
-    const isMillion = l === 10;
+    const isMillion = l >= 10;
     let tier = 'bronze';
+    if (l >= 10) tier = 'gold';
+    else if (l >= 1 && l < 10) tier = (l<=1?'bronze': l<=5?'silver':'silver');
     if (l <= 1) tier = 'bronze';
     else if (l <= 5) tier = 'silver';
     else tier = 'gold';
-    lakhMs.push({count, label: l+' Lakh', tier, isKey, isMillion});
+    lakhMs.push({count, label: l+' Lakh', tier, isKey, isMillion: l>=10});
   }
 
   // Predict date
@@ -3110,7 +3111,7 @@ function renderMilestonesTab() {
   out += '<div class="ms-phase-sub">10K → 1 CRORE JOURNEY</div>';
 
   // Key lakhs as full cards
-  const keyLakhData = lakhMs.filter(m => m.isKey);
+  const keyLakhData = lakhMs.filter(m => m.isKey || m.isMillion);
   keyLakhData.forEach(m => {
     if (m.count >= CRORE) return; // skip crore+, handled below
     const pct = Math.min(100, (total/m.count)*100);
@@ -3138,7 +3139,7 @@ function renderMilestonesTab() {
   });
 
   // Grid for remaining lakhs
-  const otherLakhs = lakhMs.filter(m => !m.isKey && m.count < CRORE);
+  const otherLakhs = lakhMs.filter(m => !m.isKey && !m.isMillion && m.count < CRORE);
   if (otherLakhs.length) {
     out += '<div class="ms-lakh-grid">';
     otherLakhs.forEach(m => {

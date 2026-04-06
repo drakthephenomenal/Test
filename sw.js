@@ -2,7 +2,7 @@
 // Radha Naam Jap — Service Worker
 // Update CACHE version when index.html changes
 // ═══════════════════════════════════════════════
-const CACHE = 'radha-jap-v45';  // v44: Calendar detail breakdown, lifetime jap time, 28 Names mm:ss format
+const CACHE = 'radha-jap-v48';  // v48: Fix title/data desync on Firebase sync & restore
 
 const PRECACHE = [
   './index.html',

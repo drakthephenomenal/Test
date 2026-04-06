@@ -2,13 +2,13 @@
 // Radha Naam Jap — Service Worker
 // Update CACHE version when index.html changes
 // ═══════════════════════════════════════════════
-const CACHE = 'radha-jap-v49';  // v49: Fix title/data desync on Firebase sync & restore
+const CACHE = 'radha-jap-v48';  // v48: Fix title/data desync on Firebase sync & restore
 
 const PRECACHE = [
   './index.html',
   './guru.jpg',
-  './icon-192.png',
-  './icon-512.png',
+  './icon-192.jpg',
+  './icon-512.jpg',
   './manifest.json',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',

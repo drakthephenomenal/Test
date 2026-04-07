@@ -1768,7 +1768,7 @@ function closeMsDetail() {
 
 function renderLakhGati2() { renderMilestonesTab(); }
 
-</script>
+
 
 // ═══════════════════════════════════════════════════════
 // FIREBASE — Google Sign-In Only (no email/password)
@@ -2168,7 +2168,7 @@ async function gdDriveSilentBackup() {
 }
 
 
-</script>
+
 
 // ═══════════════════════════════════════════════════════
 // 28 NAMES, SANKALP, STOTRAM, BRAHMACHARYA, CALENDAR
@@ -3225,7 +3225,7 @@ if ('serviceWorker' in navigator) {
 }
 
 
-</script>
+
 
 // ═══════════════════════════════════════════════════════
 // GURUDEV PHOTO FALLBACK — beautiful canvas placeholder
@@ -4424,4 +4424,4 @@ function updateSadhanaSince() {
 function renderMsView() { renderMilestonesTab(); }
 
 
-</script>
+

@@ -2,11 +2,12 @@
 // Radha Naam Jap — Service Worker
 // Update CACHE version when index.html changes
 // ═══════════════════════════════════════════════
-const CACHE = 'radha-jap-v50';  // v50: Split into index.html + style.css + app.js
+const CACHE = 'radha-jap-v51';  // v51: Modularized data into stotrams.js
 
 const PRECACHE = [
   './index.html',
   './style.css',
+  './stotrams.js',
   './app.js',
   './guru.jpg',
   './icon-192.png',

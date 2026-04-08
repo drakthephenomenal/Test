@@ -2761,7 +2761,7 @@ function renderSt() {
     if (st.custom) {
       inner += '<div id="slePanel-'+st.id+'" style="display:none;margin-top:10px">'
         +'<div style="font-size:11px;color:var(--a2);margin-bottom:5px;letter-spacing:1px">✏ Edit Lyrics (stored in your account)</div>'
-        +'<textarea id="sle-'+st.id+'" rows="8" style="width:100%;background:rgba(0,0,0,0.35);border:1px solid rgba(74,144,226,0.25);border-radius:9px;padding:9px 11px;color:var(--tl);font-size:14px;font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',serif;resize:vertical;line-height:1.8;box-sizing:border-box" placeholder="Paste full lyrics here…"></textarea>'
+        +'<textarea id="sle-'+st.id+'" rows="8" style="width:100%;background:rgba(0,0,0,0.35);border:1px solid rgba(74,144,226,0.25);border-radius:9px;padding:9px 11px;color:var(--tl);font-size:14px;font-family:Hind Siliguri,serif;resize:vertical;line-height:1.8;box-sizing:border-box" placeholder="Paste full lyrics here…"></textarea>'
         +'<button onclick="editStLyrics(\''+st.id+'\')" style="margin-top:7px;padding:8px 18px;border-radius:9px;border:none;background:linear-gradient(135deg,var(--bg),var(--a));color:white;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">💾 Save Lyrics</button>'
         +'</div>';
     }

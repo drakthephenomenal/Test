@@ -18,18 +18,18 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .ls-img{width:200px;height:200px;border-radius:50%;object-fit:cover;object-position:top center;
   border:3px solid rgba(255,215,0,0.6);animation:glow 2s ease-in-out infinite;position:relative;z-index:10;}
 @keyframes glow{0%,100%{box-shadow:0 0 30px rgba(255,215,0,0.35);}50%{box-shadow:0 0 65px rgba(255,215,0,0.75);}}
-.ls-title{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',serif;font-size:28px;color:var(--gold);letter-spacing:8px;margin-top:40px;
+.ls-title{font-family:'Tiro Devanagari Hindi',serif;font-size:28px;color:var(--gold);letter-spacing:8px;margin-top:40px;
   text-shadow:0 0 20px rgba(255,215,0,0.8),0 2px 8px rgba(0,0,0,0.9);position:relative;z-index:20;}
 .ls-sub{font-size:12px;color:#D6E8FF;letter-spacing:4px;text-transform:uppercase;margin-top:10px;
   text-shadow:0 2px 8px rgba(0,0,0,0.9);position:relative;z-index:20;}
 /* Spinning Radha Text Rings */
-.ls-rings{position:relative;display:flex;align-items:center;justify-content:center;width:min(310px,88vw);height:min(310px,88vw);flex-shrink:0;overflow:hidden;}
-.ls-rings .glow1{position:absolute;width:240px;height:240px;border-radius:50%;background:rgba(255,215,0,0.3);filter:blur(55px);animation:glow 2s ease-in-out infinite;}
-.ls-rings .glow2{position:absolute;width:200px;height:200px;border-radius:50%;background:rgba(255,215,0,0.2);filter:blur(35px);animation:glow 2s ease-in-out infinite;}
-.ls-ring{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);}
-.ls-ring-blue{width:min(260px,72vw);height:min(260px,72vw);animation:spin-rev 12s linear infinite;}
-.ls-ring-yellow{width:min(290px,80vw);height:min(290px,80vw);animation:spin-fwd 15s linear infinite;}
-.ls-ring text{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',sans-serif;font-weight:700;}
+.ls-rings{position:relative;display:flex;align-items:center;justify-content:center;width:min(320px,85vw);height:min(320px,85vw);flex-shrink:0;}
+.ls-rings .glow1{position:absolute;width:280px;height:280px;border-radius:50%;background:rgba(255,215,0,0.3);filter:blur(60px);animation:glow 2s ease-in-out infinite;}
+.ls-rings .glow2{position:absolute;width:240px;height:240px;border-radius:50%;background:rgba(255,215,0,0.2);filter:blur(40px);animation:glow 2s ease-in-out infinite;}
+.ls-ring{position:absolute;}
+.ls-ring-blue{width:min(280px,75vw);height:min(280px,75vw);animation:spin-rev 12s linear infinite;}
+.ls-ring-yellow{width:min(310px,83vw);height:min(310px,83vw);animation:spin-fwd 15s linear infinite;}
+.ls-ring text{font-family:'Kohinoor Devanagari',sans-serif;font-size:18px;font-weight:700;}
 .ls-ring .fill-blue{fill:#4A90E2;}
 .ls-ring .fill-yellow{fill:#FFD700;}
 @keyframes spin-fwd{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
@@ -66,7 +66,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 }
 .rh{display:flex;align-items:center;justify-content:space-between;padding:8px 10px 2px;gap:4px;flex-shrink:0;}
 .rh-center{flex:0 0 62px;display:flex;align-items:center;justify-content:center;}
-.rn{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',serif;font-size:clamp(32px,9vw,48px);color:#FFD700;
+.rn{font-family:'Tiro Devanagari Hindi',serif;font-size:clamp(32px,9vw,48px);color:#FFD700;
   text-shadow:0 0 30px rgba(255,215,0,0.6),0 0 60px rgba(255,215,0,0.25);line-height:1.0;letter-spacing:3px;}
 .rh-card{flex:1;display:flex;flex-direction:column;gap:3px;padding:2px 4px;}
 .rh-card-title{font-size:9px;color:var(--a2);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;opacity:0.85;}
@@ -138,7 +138,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
   opacity:0;transition:opacity 0.25s;}
 .tz.tapped::before{opacity:1;}
 
-.fn{position:absolute;font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',serif;pointer-events:none;z-index:10;animation:fu 2.4s ease-out forwards;}
+.fn{position:absolute;font-family:'Tiro Devanagari Hindi',serif;pointer-events:none;z-index:10;animation:fu 2.4s ease-out forwards;}
 @keyframes fu{0%{opacity:0.9;transform:translateY(0) scale(1);}30%{opacity:1;transform:translateY(-80px) scale(1.15);}100%{opacity:0;transform:translateY(-260px) scale(0.85);}}
 
 /* Mala flash — kept exactly as requested */
@@ -146,7 +146,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
   pointer-events:none;opacity:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;
   border-radius:18px;}
 .mf.show{animation:mc 3s ease-out forwards;}
-.mf-line1{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',serif;font-size:clamp(28px,8vw,44px);color:var(--gold);
+.mf-line1{font-family:'Tiro Devanagari Hindi',serif;font-size:clamp(28px,8vw,44px);color:var(--gold);
   letter-spacing:2px;text-shadow:0 0 20px rgba(255,215,0,0.9),0 0 40px rgba(255,215,0,0.5);line-height:1.3;}
 .mf-line2{font-family:'Cinzel Decorative',serif;font-size:clamp(13px,3.5vw,19px);color:var(--a2);
   letter-spacing:3px;text-shadow:0 0 12px rgba(109,184,255,0.8);line-height:1.4;margin-top:4px;}
@@ -336,10 +336,10 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .lmo.show{display:flex;}
 .lmd{background:var(--bc);border-radius:22px 22px 0 0;padding:16px 16px 44px;width:100%;max-height:90vh;display:flex;flex-direction:column;border-top:2px solid rgba(109,184,255,0.3);}
 .lmh{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;gap:10px;}
-.lmt{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN','Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',serif;font-size:14px;color:var(--gold);flex:1;font-weight:700;line-height:1.5;}
+.lmt{font-family:'Hind Siliguri','Tiro Devanagari Hindi',serif;font-size:14px;color:var(--gold);flex:1;font-weight:700;line-height:1.5;}
 .lmx{background:rgba(255,255,255,0.08);border:none;border-radius:9px;padding:7px 14px;color:var(--td);font-size:13px;cursor:pointer;flex-shrink:0;font-family:'Inter',sans-serif;}
 .lmb{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-right:2px;}
-.lyr{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN','Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',serif;font-size:15.5px;color:var(--tl);line-height:2.1;white-space:pre-wrap;letter-spacing:0.3px;}
+.lyr{font-family:'Hind Siliguri','Tiro Devanagari Hindi',serif;font-size:15.5px;color:var(--tl);line-height:2.1;white-space:pre-wrap;letter-spacing:0.3px;}
 
 /* 28 NAMES */
 #v28{background:radial-gradient(ellipse at top,#091A30 0%,var(--bd) 60%);overflow:hidden;}
@@ -360,7 +360,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
   background:radial-gradient(circle at var(--tx,50%) var(--ty,50%),rgba(109,184,255,0.18) 0%,transparent 60%);
   opacity:0;transition:opacity 0.25s;}
 .n28tz.tapped::before{opacity:1;}
-.n28name{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN','Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',serif;font-size:clamp(34px,10vw,58px);color:var(--gold);
+.n28name{font-family:'Hind Siliguri','Tiro Devanagari Hindi',serif;font-size:clamp(34px,10vw,58px);color:var(--gold);
   font-weight:700;line-height:1.3;text-align:center;padding:0 10px;
   text-shadow:0 0 25px rgba(255,215,0,0.8),0 0 50px rgba(255,215,0,0.35);
   animation:nameIn 0.35s cubic-bezier(0.34,1.56,0.64,1) forwards;}
@@ -393,7 +393,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .n28s{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:14px;}
 .sk-form{background:rgba(232,51,109,0.06);border:1px solid rgba(232,51,109,0.22);border-radius:14px;padding:14px;margin-bottom:12px;}
 .sk-form h3{font-size:12px;color:var(--rose);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;}
-.sk-ta{width:100%;background:rgba(0,0,0,0.3);border:1px solid rgba(232,51,109,0.2);border-radius:9px;padding:9px 11px;color:var(--tl);font-size:13px;font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',sans-serif;resize:none;min-height:68px;margin-bottom:8px;outline:none;}
+.sk-ta{width:100%;background:rgba(0,0,0,0.3);border:1px solid rgba(232,51,109,0.2);border-radius:9px;padding:9px 11px;color:var(--tl);font-size:13px;font-family:'Hind Siliguri',sans-serif;resize:none;min-height:68px;margin-bottom:8px;outline:none;}
 .sk-ta::placeholder{color:var(--td);}
 .sk-ta:focus{border-color:rgba(232,51,109,0.5);}
 .sk-row{display:flex;gap:8px;align-items:center;}
@@ -403,7 +403,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .sk-add{background:linear-gradient(135deg,#E8336D,#FF6B9D);border:none;border-radius:10px;color:white;font-size:12px;font-weight:600;letter-spacing:0.5px;padding:9px 14px;cursor:pointer;white-space:nowrap;flex-shrink:0;}
 .sk-item{background:rgba(255,182,193,0.05);border:1px solid rgba(232,51,109,0.18);border-radius:13px;padding:12px;margin-bottom:10px;}
 .sk-item.done{background:rgba(46,204,113,0.05);border-color:rgba(46,204,113,0.22);}
-.sk-wish{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',sans-serif;font-size:14px;color:var(--tl);line-height:1.55;margin-bottom:5px;}
+.sk-wish{font-family:'Hind Siliguri',sans-serif;font-size:14px;color:var(--tl);line-height:1.55;margin-bottom:5px;}
 .sk-meta{font-size:10px;color:var(--td);letter-spacing:0.3px;margin-bottom:8px;}
 .sk-bar-wrap{background:rgba(255,255,255,0.08);border-radius:6px;height:5px;margin-bottom:5px;overflow:hidden;}
 .sk-bar{height:5px;border-radius:6px;background:linear-gradient(90deg,var(--rose),var(--rl));transition:width 0.5s ease;}
@@ -533,7 +533,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 @keyframes ms-fall{0%{opacity:1;transform:translateY(-20px) rotate(0deg);}100%{opacity:0;transform:translateY(100vh) rotate(720deg);}}
 .ms-icon{font-size:80px;animation:ms-pulse 1.5s ease-in-out infinite;z-index:1;}
 @keyframes ms-pulse{0%,100%{transform:scale(1);filter:drop-shadow(0 0 20px rgba(255,215,0,0.8));}50%{transform:scale(1.15);filter:drop-shadow(0 0 40px rgba(255,215,0,1));}}
-.ms-title{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',serif;font-size:clamp(24px,7vw,36px);color:var(--gold);
+.ms-title{font-family:'Tiro Devanagari Hindi',serif;font-size:clamp(24px,7vw,36px);color:var(--gold);
   text-shadow:0 0 30px rgba(255,215,0,0.8),0 0 60px rgba(255,215,0,0.4);margin-top:16px;text-align:center;z-index:1;letter-spacing:2px;}
 .ms-count{font-family:'EB Garamond',serif;font-size:clamp(18px,5vw,24px);color:var(--a2);
   text-shadow:0 0 25px rgba(109,184,255,0.7);margin:8px 0;z-index:1;letter-spacing:2px;text-transform:uppercase;}
@@ -544,14 +544,14 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
   background:rgba(255,215,0,0.1);color:var(--gold);font-size:14px;cursor:pointer;z-index:1;
   font-family:'Inter',sans-serif;letter-spacing:1px;transition:all 0.2s;}
 .ms-dismiss:active{transform:scale(0.95);background:rgba(255,215,0,0.2);}
-.ms-desc{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',sans-serif;font-size:13px;color:var(--tl);z-index:1;text-align:center;max-width:320px;line-height:1.7;margin-top:10px;}
+.ms-desc{font-family:'Hind Siliguri',sans-serif;font-size:13px;color:var(--tl);z-index:1;text-align:center;max-width:320px;line-height:1.7;margin-top:10px;}
 .ms-sthan{font-size:12px;color:var(--a2);z-index:1;letter-spacing:2px;text-transform:uppercase;margin-top:4px;}
 .ms-author{font-size:11px;color:var(--td);z-index:1;margin-top:10px;font-style:italic;}
 
 /* Milestone section in Stats */
 .mahima-title{font-family:'Cinzel Decorative',cursive;font-size:16px;color:var(--gold);text-align:center;
   letter-spacing:4px;text-shadow:0 0 15px rgba(255,215,0,0.4);margin-bottom:4px;}
-.mahima-sub{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',serif;font-size:18px;color:var(--gold);text-align:center;margin-bottom:2px;}
+.mahima-sub{font-family:'Tiro Devanagari Hindi',serif;font-size:18px;color:var(--gold);text-align:center;margin-bottom:2px;}
 .mahima-attr{font-size:11px;color:var(--td);text-align:center;margin-bottom:14px;}
 .mahima-lifetime{background:rgba(74,144,226,0.08);border:1px solid rgba(74,144,226,0.2);border-radius:14px;padding:14px;text-align:center;margin-bottom:14px;}
 .mahima-lifetime-count{font-family:'EB Garamond',serif;font-size:36px;color:var(--a2);line-height:1;}
@@ -581,10 +581,10 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .mahima-card-bar{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--gold),#FFB700);transition:width 0.5s ease;}
 .mahima-card-pct{font-size:11px;color:var(--td);text-align:right;margin-top:3px;}
 .mahima-card-date{font-size:10px;color:var(--green);margin-top:3px;}
-.mahima-card-desc{font-size:12px;color:var(--tl);line-height:1.7;margin-top:8px;padding:10px 12px;background:rgba(74,144,226,0.06);border-radius:10px;border-left:2px solid rgba(255,215,0,0.3);font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',sans-serif;}
+.mahima-card-desc{font-size:12px;color:var(--tl);line-height:1.7;margin-top:8px;padding:10px 12px;background:rgba(74,144,226,0.06);border-radius:10px;border-left:2px solid rgba(255,215,0,0.3);font-family:'Hind Siliguri',sans-serif;}
 .mahima-card.unlocked .mahima-card-desc{border-left-color:rgba(255,215,0,0.5);background:rgba(255,215,0,0.04);}
 .mahima-card-author{font-size:10px;color:var(--td);font-style:italic;margin-top:6px;text-align:right;}
-.mahima-quote{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',serif;font-size:14px;color:var(--gold);text-align:center;
+.mahima-quote{font-family:'Tiro Devanagari Hindi',serif;font-size:14px;color:var(--gold);text-align:center;
   font-style:italic;margin:18px 14px 4px;line-height:1.8;}
 .mahima-quote-attr{font-size:11px;color:var(--td);text-align:center;margin-bottom:14px;}
 
@@ -655,14 +655,14 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
   box-shadow:0 8px 24px rgba(0,0,0,0.6);display:none;z-index:30;}
 .naam-sel-dd.show{display:block;}
 .naam-sel-opt{padding:8px 12px;border-radius:8px;cursor:pointer;font-size:12px;color:var(--tl);
-  transition:background 0.15s;display:flex;align-items:center;gap:8px;font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',serif;}
+  transition:background 0.15s;display:flex;align-items:center;gap:8px;font-family:'Tiro Devanagari Hindi',serif;}
 .naam-sel-opt:hover{background:rgba(74,144,226,0.12);}
 .naam-sel-opt.active{background:rgba(255,215,0,0.1);color:var(--gold);border:1px solid rgba(255,215,0,0.25);}
 .naam-sel-opt .ns-check{font-size:14px;min-width:18px;}
 /* Two-line floating naam for RV mode */
 .fn-rv{position:absolute;pointer-events:none;z-index:10;animation:fu 2.4s ease-out forwards;
   display:flex;flex-direction:column;align-items:center;line-height:1.15;}
-.fn-rv span{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',serif;display:block;}
+.fn-rv span{font-family:'Tiro Devanagari Hindi',serif;display:block;}
 
 /* MILESTONES VIEW — dedicated tab */
 #vms{background:radial-gradient(ellipse at top,#0A1535 0%,var(--bd) 60%);padding:22px 12px 80px;overflow-y:auto;-webkit-overflow-scrolling:touch;}
@@ -694,10 +694,10 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .ms-label{font-family:'Cinzel Decorative',serif;font-size:13px;color:var(--tl);letter-spacing:1px;}
 .ms-eng{font-size:10px;color:var(--td);letter-spacing:1px;margin-top:1px;}
 .ms-count-label{font-family:'EB Garamond',serif;font-size:11px;color:var(--a2);margin-left:auto;white-space:nowrap;}
-.ms-desc{font-size:12px;line-height:1.7;color:var(--td);margin:8px 0;font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',sans-serif;
+.ms-desc{font-size:12px;line-height:1.7;color:var(--td);margin:8px 0;font-family:'Hind Siliguri',sans-serif;
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;}
 .ms-desc.expanded{display:block;-webkit-line-clamp:unset;}
-.ms-desc.bangla{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',sans-serif;}
+.ms-desc.bangla{font-family:'Noto Sans Bengali','Hind Siliguri',sans-serif;}
 .ms-read-more{font-size:10px;color:var(--a2);cursor:pointer;margin-top:2px;opacity:0.8;}
 .ms-progress-wrap{position:relative;height:3px;background:rgba(255,255,255,0.06);border-radius:3px;margin-top:10px;overflow:hidden;}
 .ms-progress-fill{height:100%;border-radius:3px;transition:width 0.6s ease;}
@@ -731,8 +731,8 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .ms-detail-stat{background:rgba(74,144,226,0.06);border:1px solid rgba(74,144,226,0.15);border-radius:12px;padding:12px;text-align:center;}
 .ms-detail-stat .val{font-family:'EB Garamond',serif;font-size:24px;color:var(--a2);}
 .ms-detail-stat .lbl{font-size:10px;color:var(--td);letter-spacing:1px;text-transform:uppercase;margin-top:3px;}
-.ms-detail-desc{font-size:13px;line-height:1.8;color:var(--tl);margin:14px 0;font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',sans-serif;padding:14px;background:rgba(255,255,255,0.03);border-radius:14px;border:1px solid rgba(255,255,255,0.06);}
-.ms-detail-desc.bangla{font-family:'Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',sans-serif;}
+.ms-detail-desc{font-size:13px;line-height:1.8;color:var(--tl);margin:14px 0;font-family:'Hind Siliguri',sans-serif;padding:14px;background:rgba(255,255,255,0.03);border-radius:14px;border:1px solid rgba(255,255,255,0.06);}
+.ms-detail-desc.bangla{font-family:'Noto Sans Bengali','Hind Siliguri',sans-serif;}
 /* Sadhana start date in milestones */
 .ms-sadhana-bar{display:flex;align-items:center;gap:8px;margin-bottom:16px;padding:10px 14px;background:rgba(74,144,226,0.06);border:1px solid rgba(74,144,226,0.15);border-radius:14px;}
 .ms-sadhana-bar label{font-size:11px;color:var(--td);white-space:nowrap;}

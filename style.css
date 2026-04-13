@@ -13,30 +13,8 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
   radial-gradient(circle at 20% 80%,rgba(74,144,226,0.10) 0%,transparent 40%);
   pointer-events:none;z-index:0;}
 
-.ls{position:fixed;inset:0;background:var(--bd);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;transition:opacity 0.8s;width:100vw;height:100vh;height:100dvh;}
-.ls.hide{opacity:0;pointer-events:none;visibility:hidden;}
-.ls-img{width:200px;height:200px;border-radius:50%;object-fit:cover;object-position:top center;
-  border:3px solid rgba(255,215,0,0.6);animation:glow 2s ease-in-out infinite;position:relative;z-index:10;}
-@keyframes glow{0%,100%{box-shadow:0 0 30px rgba(255,215,0,0.35);}50%{box-shadow:0 0 65px rgba(255,215,0,0.75);}}
-.ls-title{font-family:'Tiro Devanagari Hindi',serif;font-size:28px;color:var(--gold);letter-spacing:8px;margin-top:40px;
-  text-shadow:0 0 20px rgba(255,215,0,0.8),0 2px 8px rgba(0,0,0,0.9);position:relative;z-index:20;}
-.ls-sub{font-size:12px;color:#D6E8FF;letter-spacing:4px;text-transform:uppercase;margin-top:10px;
-  text-shadow:0 2px 8px rgba(0,0,0,0.9);position:relative;z-index:20;}
-/* Spinning Radha Text Rings */
-.ls-rings{position:relative;display:flex;align-items:center;justify-content:center;width:min(320px,85vw);height:min(320px,85vw);flex-shrink:0;}
-.ls-rings .glow1{position:absolute;width:280px;height:280px;border-radius:50%;background:rgba(255,215,0,0.3);filter:blur(60px);animation:glow 2s ease-in-out infinite;}
-.ls-rings .glow2{position:absolute;width:240px;height:240px;border-radius:50%;background:rgba(255,215,0,0.2);filter:blur(40px);animation:glow 2s ease-in-out infinite;}
-.ls-ring{position:absolute;}
-.ls-ring-blue{width:min(280px,75vw);height:min(280px,75vw);animation:spin-rev 12s linear infinite;}
-.ls-ring-yellow{width:min(310px,83vw);height:min(310px,83vw);animation:spin-fwd 15s linear infinite;}
-.ls-ring text{font-family:'Kohinoor Devanagari',sans-serif;font-size:18px;font-weight:700;}
-.ls-ring .fill-blue{fill:#4A90E2;}
-.ls-ring .fill-yellow{fill:#FFD700;}
-@keyframes spin-fwd{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
-@keyframes spin-rev{from{transform:rotate(0deg);}to{transform:rotate(-360deg);}}
 /* iOS/iPad Safari fixes */
 @supports (-webkit-touch-callout: none) {
-  .ls{height:-webkit-fill-available;}
   .view{height:-webkit-fill-available;max-height:-webkit-fill-available;overflow-y:auto;-webkit-overflow-scrolling:touch;}
   #vj.active{height:-webkit-fill-available;overflow:hidden;}
   body{height:-webkit-fill-available;}
@@ -688,6 +666,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .ms-card.million{padding:20px;border-width:2px;border-color:rgba(255,215,0,0.4);}
 .ms-card.million .ms-icon{font-size:28px;}
 @keyframes ms-shimmer{0%{background-position:-200% center;}100%{background-position:200% center;}}
+@keyframes ms-flash{0%{opacity:1;}100%{opacity:0;}}
 .ms-card.million::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 30%,rgba(255,215,0,0.08) 50%,transparent 70%);background-size:200% 100%;animation:ms-shimmer 3s linear infinite;border-radius:18px;pointer-events:none;}
 .ms-card-header{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
 .ms-icon{font-size:22px;flex-shrink:0;}
@@ -697,7 +676,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .ms-desc{font-size:12px;line-height:1.7;color:var(--td);margin:8px 0;font-family:'Hind Siliguri',sans-serif;
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;}
 .ms-desc.expanded{display:block;-webkit-line-clamp:unset;}
-.ms-desc.bangla{font-family:'Noto Sans Bengali','Hind Siliguri',sans-serif;}
+.ms-desc.bangla{font-family:'Hind Siliguri',sans-serif;}
 .ms-read-more{font-size:10px;color:var(--a2);cursor:pointer;margin-top:2px;opacity:0.8;}
 .ms-progress-wrap{position:relative;height:3px;background:rgba(255,255,255,0.06);border-radius:3px;margin-top:10px;overflow:hidden;}
 .ms-progress-fill{height:100%;border-radius:3px;transition:width 0.6s ease;}
@@ -732,7 +711,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .ms-detail-stat .val{font-family:'EB Garamond',serif;font-size:24px;color:var(--a2);}
 .ms-detail-stat .lbl{font-size:10px;color:var(--td);letter-spacing:1px;text-transform:uppercase;margin-top:3px;}
 .ms-detail-desc{font-size:13px;line-height:1.8;color:var(--tl);margin:14px 0;font-family:'Hind Siliguri',sans-serif;padding:14px;background:rgba(255,255,255,0.03);border-radius:14px;border:1px solid rgba(255,255,255,0.06);}
-.ms-detail-desc.bangla{font-family:'Noto Sans Bengali','Hind Siliguri',sans-serif;}
+.ms-detail-desc.bangla{font-family:'Hind Siliguri',sans-serif;}
 /* Sadhana start date in milestones */
 .ms-sadhana-bar{display:flex;align-items:center;gap:8px;margin-bottom:16px;padding:10px 14px;background:rgba(74,144,226,0.06);border:1px solid rgba(74,144,226,0.15);border-radius:14px;}
 .ms-sadhana-bar label{font-size:11px;color:var(--td);white-space:nowrap;}

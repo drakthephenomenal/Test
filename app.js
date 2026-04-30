@@ -2093,35 +2093,7 @@ function fbSignInZoho() {
     });
 }
 
-// ── Sign in with Apple ──
-function fbSignInApple() {
-  if (!fbInit()) { toast('Firebase not ready. Check your connection.'); return; }
-  const provider = new firebase.auth.OAuthProvider('apple.com');
-  provider.addScope('email');
-  provider.addScope('name');
-  fbAuth.signInWithPopup(provider)
-    .then(() => { toast('Signed in with Apple 🍎 Cloud sync active 🙏'); })
-    .catch(e => {
-      if (
-        e.code === 'auth/popup-blocked' ||
-        e.code === 'auth/popup-closed-by-user' ||
-        e.code === 'auth/cancelled-popup-request' ||
-        (e.message && (e.message.includes('sessionStorage') || e.message.includes('storage-partitioned')))
-      ) {
-        toast('Opening in your browser for Apple sign-in…');
-        setTimeout(() => {
-          try { fbAuth.signInWithRedirect(provider); }
-          catch(err) {
-            const el = document.getElementById('fbErr');
-            if (el) { el.textContent = 'Please open this app in Safari/Chrome to sign in with Apple.'; setTimeout(()=>el.textContent='',8000); }
-          }
-        }, 1000);
-      } else {
-        const el = document.getElementById('fbErr');
-        if (el) { el.textContent = e.message; setTimeout(() => el.textContent = '', 5000); }
-      }
-    });
-}
+// ── Sign in with Apple removed ──
 
 function fbSignOut() {
   if (!fbAuth) return;

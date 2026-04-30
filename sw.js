@@ -2,7 +2,7 @@
 // Radha Naam Jap — Service Worker
 // Update CACHE version when index.html changes
 // ═══════════════════════════════════════════════
-const CACHE = 'radha-jap-v54';  // v54: account-bleed fix, full reset, lifetime split stats
+const CACHE = 'radha-jap-v55';  // v55: account-bleed fix, full reset, lifetime split stats
 
 const PRECACHE = [
   './index.html',

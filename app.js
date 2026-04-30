@@ -91,6 +91,49 @@ const App = {
     });
   },
 
+  // Wipe ALL IDB stores + localStorage state — used on sign-out / account switch
+  async clearIDB() {
+    try {
+      const stores = ['state','history','h28','timerHistory','timer28History','malaLog'];
+      for (const s of stores) { try { await this.dbClearStore(s); } catch(e){} }
+    } catch(e) {}
+    try { localStorage.removeItem('rjap5'); } catch(e){}
+    try { localStorage.removeItem('rjap_gd_token'); } catch(e){}
+  },
+
+  // Fresh blank in-memory state
+  defaultState() {
+    return {
+      tk: this.getTk ? this.getTk() : '',
+      ms: 108, dt: 0, lt: 0,
+      cfg: { vib: true, sound: true },
+      history: {}, h28: {}, stotrams: {}, brahma: {},
+      customSt: [], timerHistory: {}, timer28History: {}, sankalpas: [], occasions: {},
+      syncBaseline: {}, syncBaseline28: {}, syncBaselineTimer: {}, syncBaselineTimer28: {},
+      migrationV2Done: false,
+      japMode: 'radha',
+      historyRV: {}, timerHistoryRV: {}, dtRV: 0, ltRV: 0, nameJapDeductRV: 0,
+      malaLog: [], malaLogRV: [],
+      syncBaselineRV: {}, syncBaselineTimerRV: {},
+      brahmacharya_start_date: '', nameJapDeduct: 0
+    };
+  },
+
+  // Reset in-memory state + wipe local storage so a different account cannot bleed
+  async clearLocalData() {
+    this._suspendCloudSync = true;
+    await this.clearIDB();
+    this.S = this.defaultState();
+    this.S.tk = this.getTk();
+    this.S.history[this.S.tk] = 0;
+    this.S.h28[this.S.tk] = 0;
+    this.S.timerHistory[this.S.tk] = 0;
+    this.S.timer28History[this.S.tk] = 0;
+    this.S.historyRV[this.S.tk] = 0;
+    this.S.timerHistoryRV[this.S.tk] = 0;
+    this._suspendCloudSync = false;
+  },
+
   async save() {
     // Save full state snapshot to IDB so all dates and edits persist locally
     await this.dbPut('state', 'main', {
@@ -1878,12 +1921,18 @@ function fbInit() {
           fbWatchSession();
           // Pull data from Firebase on sign-in
           fbAutoSync();
+          // Listen to the global stotram library (read-only for everyone)
+          watchGlobalStotramLibrary();
         });
       } else {
         document.getElementById('fbLoggedOut').style.display = 'block';
         document.getElementById('fbLoggedIn').style.display = 'none';
         // Clean up session listener on sign out
         if (fbSessionListener) { fbSessionListener(); fbSessionListener = null; }
+        // Cancel any in-flight debounced push so the previous account's data
+        // cannot leak to the next account's Firestore doc.
+        if (fbListener) { fbListener(); fbListener = null; }
+        clearTimeout(_fbDeb); _fbDeb = null;
       }
     });
     return true;
@@ -1975,13 +2024,62 @@ function fbSignInZoho() {
     });
 }
 
+// ── Sign in with Apple ──
+function fbSignInApple() {
+  if (!fbInit()) { toast('Firebase not ready. Check your connection.'); return; }
+  const provider = new firebase.auth.OAuthProvider('apple.com');
+  provider.addScope('email');
+  provider.addScope('name');
+  fbAuth.signInWithPopup(provider)
+    .then(() => { toast('Signed in with Apple 🍎 Cloud sync active 🙏'); })
+    .catch(e => {
+      if (
+        e.code === 'auth/popup-blocked' ||
+        e.code === 'auth/popup-closed-by-user' ||
+        e.code === 'auth/cancelled-popup-request' ||
+        (e.message && (e.message.includes('sessionStorage') || e.message.includes('storage-partitioned')))
+      ) {
+        toast('Opening in your browser for Apple sign-in…');
+        setTimeout(() => {
+          try { fbAuth.signInWithRedirect(provider); }
+          catch(err) {
+            const el = document.getElementById('fbErr');
+            if (el) { el.textContent = 'Please open this app in Safari/Chrome to sign in with Apple.'; setTimeout(()=>el.textContent='',8000); }
+          }
+        }, 1000);
+      } else {
+        const el = document.getElementById('fbErr');
+        if (el) { el.textContent = e.message; setTimeout(() => el.textContent = '', 5000); }
+      }
+    });
+}
+
 function fbSignOut() {
   if (!fbAuth) return;
+  // Stop all listeners & cancel any pending push so the OUTGOING account can't
+  // overwrite the incoming account's cloud doc with stale data (account-bleed bug).
   if (fbSessionListener) { fbSessionListener(); fbSessionListener = null; }
   if (fbListener) { fbListener(); fbListener = null; }
+  clearTimeout(_fbDeb); _fbDeb = null;
   gdAccessToken = null;
   localStorage.removeItem('rjap_gd_token');
-  fbAuth.signOut().then(() => toast('Signed out 🙏'));
+  // Wipe local state + IDB BEFORE signing out so the next account cannot inherit it
+  App.clearLocalData().then(() => {
+    fbAuth.signOut().then(() => {
+      toast('Signed out 🙏');
+      try {
+        // Refresh UI panels that depend on App.S so they reflect the cleared state
+        if (typeof renderSt==='function') renderSt();
+        if (typeof u28==='function') u28();
+        if (typeof renderCal==='function') renderCal();
+        if (typeof renderBcal==='function') renderBcal();
+        if (typeof uStats==='function') uStats();
+        if (typeof renderSankalpas==='function') renderSankalpas();
+        if (typeof renderMalaLog==='function') renderMalaLog();
+        if (typeof App.ua==='function') App.ua();
+      } catch(e){}
+    });
+  });
 }
 
 // ── Firestore Full-State Sync ──
@@ -2165,6 +2263,301 @@ async function gdDriveSilentBackup() {
     if (uploadResp.ok) setSyncPill('', '☁️ Drive backed up ' + new Date().toLocaleTimeString());
     else if (uploadResp.status === 401) { gdAccessToken = null; localStorage.removeItem('rjap_gd_token'); }
   } catch(e) { console.warn('Drive backup failed:', e.message); }
+}
+
+// ═══════════════════════════════════════════════════════
+// MANUAL DRIVE BACKUP / RESTORE  (called from Settings buttons)
+// ═══════════════════════════════════════════════════════
+function _gdStatus(msg, color) {
+  const el = document.getElementById('gdStatus');
+  if (el) { el.textContent = msg; el.style.color = color || 'var(--green)'; setTimeout(()=>{ if(el.textContent===msg) el.textContent=''; }, 6000); }
+  if (typeof toast === 'function') toast(msg);
+}
+
+async function gdDriveManualBackup() {
+  if (!gdAccessToken) { _gdStatus('Sign in with Google first to enable Drive backup', 'var(--red)'); return; }
+  _gdStatus('Backing up to Drive…', 'var(--a2)');
+  await gdDriveSilentBackup();
+  _gdStatus('☁️ Backup uploaded to Drive', 'var(--green)');
+}
+
+async function gdDriveManualRestore() {
+  if (!gdAccessToken) { _gdStatus('Sign in with Google first', 'var(--red)'); return; }
+  if (!confirm('Restore from Google Drive? This will OVERWRITE your current data with your last Drive backup.')) return;
+  try {
+    _gdStatus('Looking for backup on Drive…', 'var(--a2)');
+    const listResp = await fetch(
+      'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("name='" + GDRIVE_FILENAME + "' and trashed=false") + '&spaces=drive&fields=files(id,modifiedTime)',
+      { headers: { 'Authorization': 'Bearer ' + gdAccessToken } }
+    );
+    if (!listResp.ok) { _gdStatus('Drive token expired — sign out and sign in again', 'var(--red)'); gdAccessToken = null; localStorage.removeItem('rjap_gd_token'); return; }
+    const listData = await listResp.json();
+    if (!listData.files || !listData.files.length) { _gdStatus('No backup file found on Drive yet', 'var(--red)'); return; }
+    const fileId = listData.files[0].id;
+    const dlResp = await fetch('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media',
+      { headers: { 'Authorization': 'Bearer ' + gdAccessToken } });
+    if (!dlResp.ok) { _gdStatus('Failed to download backup', 'var(--red)'); return; }
+    const data = await dlResp.json();
+    // Merge into App.S (overwrite)
+    App._suspendCloudSync = true;
+    if (data.history) App.S.history = data.history;
+    if (data.h28) App.S.h28 = data.h28;
+    if (data.timerHistory) App.S.timerHistory = data.timerHistory;
+    if (data.timer28History) App.S.timer28History = data.timer28History;
+    if (data.stotrams) App.S.stotrams = data.stotrams;
+    if (data.brahma) App.S.brahma = data.brahma;
+    if (data.customSt) App.S.customSt = data.customSt;
+    if (data.sankalpas) App.S.sankalpas = data.sankalpas;
+    if (data.occasions) App.S.occasions = data.occasions;
+    if (data.ms) App.S.ms = data.ms;
+    if (data.dt!==undefined) App.S.dt = data.dt;
+    if (data.lt!==undefined) App.S.lt = data.lt;
+    if (data.nameJapDeduct!==undefined) App.S.nameJapDeduct = data.nameJapDeduct;
+    if (data.cfg) App.S.cfg = data.cfg;
+    if (data.malaLog) App.S.malaLog = data.malaLog;
+    if (data.historyRV) App.S.historyRV = data.historyRV;
+    if (data.timerHistoryRV) App.S.timerHistoryRV = data.timerHistoryRV;
+    if (data.dtRV!==undefined) App.S.dtRV = data.dtRV;
+    if (data.ltRV!==undefined) App.S.ltRV = data.ltRV;
+    if (data.nameJapDeductRV!==undefined) App.S.nameJapDeductRV = data.nameJapDeductRV;
+    if (data.malaLogRV) App.S.malaLogRV = data.malaLogRV;
+    if (data.japMode) App.S.japMode = data.japMode;
+    await App.save();
+    App._suspendCloudSync = false;
+    if (typeof renderSt==='function') renderSt();
+    if (typeof u28==='function') u28();
+    if (typeof renderCal==='function') renderCal();
+    if (typeof renderBcal==='function') renderBcal();
+    if (typeof uStats==='function') uStats();
+    if (typeof renderSankalpas==='function') renderSankalpas();
+    if (typeof renderMalaLog==='function') renderMalaLog();
+    if (typeof App.ua==='function') App.ua();
+    fbDebouncedPush();
+    _gdStatus('✅ Restored from Drive backup', 'var(--green)');
+  } catch(e) {
+    App._suspendCloudSync = false;
+    console.warn('Drive restore failed:', e);
+    _gdStatus('Restore failed: ' + e.message, 'var(--red)');
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// MIDNIGHT AUTO-BACKUP — schedules a Drive backup at 12:00 AM local
+// every day while the app/tab is open. (Service Worker periodicSync isn't
+// supported in most browsers without install + permission, so this runs
+// whenever the app is open near midnight, plus a catch-up on launch.)
+// ═══════════════════════════════════════════════════════
+function _msUntilNextMidnight() {
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 0, 0, 5, 0);
+  return next.getTime() - now.getTime();
+}
+function scheduleMidnightDriveBackup() {
+  const run = async () => {
+    try {
+      if (gdAccessToken) {
+        await gdDriveSilentBackup();
+        try { localStorage.setItem('rjap_gd_lastAuto', new Date().toISOString().slice(0,10)); } catch(e){}
+      }
+    } catch(e){ console.warn('midnight backup err', e); }
+    // schedule next
+    setTimeout(run, _msUntilNextMidnight());
+  };
+  // Catch-up: if we missed today's midnight backup, run now
+  try {
+    const today = new Date().toISOString().slice(0,10);
+    const last = localStorage.getItem('rjap_gd_lastAuto');
+    if (gdAccessToken && last !== today) {
+      // delay a bit so app finishes loading
+      setTimeout(() => { gdDriveSilentBackup().then(()=>{ try{localStorage.setItem('rjap_gd_lastAuto', today);}catch(e){} }); }, 8000);
+    }
+  } catch(e){}
+  setTimeout(run, _msUntilNextMidnight());
+
+  // Persist data+token snapshot to IDB so the Service Worker can run a
+  // backup even when the app is CLOSED (Periodic Background Sync — Chrome/Edge).
+  _bgSyncMirrorAndRegister();
+  setInterval(_bgSyncMirrorAndRegister, 60_000);
+}
+
+// ── Mirror current state + Drive token into IDB so SW can read on bg sync
+function _bgSyncSnapshot() {
+  return {
+    token: gdAccessToken || null,
+    filename: GDRIVE_FILENAME,
+    payload: {
+      version: 3, exportedAt: new Date().toISOString(),
+      history: App.S.history||{}, h28: App.S.h28||{},
+      timerHistory: App.S.timerHistory||{}, timer28History: App.S.timer28History||{},
+      stotrams: App.S.stotrams||{}, brahma: App.S.brahma||{}, customSt: App.S.customSt||[],
+      sankalpas: App.S.sankalpas||[], occasions: App.S.occasions||{},
+      ms: App.S.ms||108, dt: App.S.dt||0, lt: App.S.lt||0, nameJapDeduct: App.S.nameJapDeduct||0, cfg: App.S.cfg||{},
+      malaLog: App.S.malaLog||[], malaLogDate: App.S.tk,
+      japMode: App.S.japMode||'radha', historyRV: App.S.historyRV||{}, timerHistoryRV: App.S.timerHistoryRV||{},
+      dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0, nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[]
+    }
+  };
+}
+function _bgSyncWriteIDB(snap) {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open('rjap_bg', 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore('snap'); };
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('snap', 'readwrite');
+        tx.objectStore('snap').put(snap, 'latest');
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => { db.close(); resolve(); };
+      };
+      req.onerror = () => resolve();
+    } catch(e) { resolve(); }
+  });
+}
+async function _bgSyncMirrorAndRegister() {
+  try { await _bgSyncWriteIDB(_bgSyncSnapshot()); } catch(e){}
+  // Register periodic background sync (Chrome/Edge, installed PWA, permission granted)
+  try {
+    if ('serviceWorker' in navigator && 'periodicSync' in (navigator.serviceWorker.ready ? await navigator.serviceWorker.ready : {})) {
+      const reg = await navigator.serviceWorker.ready;
+      const status = await navigator.permissions.query({ name: 'periodic-background-sync' }).catch(()=>({state:'denied'}));
+      if (status.state === 'granted') {
+        try {
+          await reg.periodicSync.register('rjap-midnight-backup', { minInterval: 12 * 60 * 60 * 1000 });
+          console.log('[bgsync] periodic sync registered');
+        } catch(e) { console.warn('[bgsync] register failed', e.message); }
+      }
+    }
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════
+// SHARE THIS APP
+// ═══════════════════════════════════════════════════════
+function shareThisApp() {
+  const url = (location.origin && location.origin.startsWith('http')) ? location.origin + location.pathname : 'https://radha-naam-jap.app';
+  const text = '🙏 राधे राधे! Try Radha Naam Jap — a beautiful app for daily naam jap, stotrams & spiritual practice.';
+  const shareText = text + '\n\n' + url;
+  // Try Web Share API first (mobile) — always include url explicitly in text too
+  if (navigator.share) {
+    navigator.share({ title: 'Radha Naam Jap 🙏', text: shareText, url }).catch(()=>{
+      _shareFallback(shareText, url);
+    });
+    return;
+  }
+  _shareFallback(shareText, url);
+}
+function _shareFallback(shareText, url) {
+  // Always present a visible dialog with the link the user can copy
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(shareText).then(()=>{
+      toast('🔗 Link copied! Paste anywhere to share.');
+    }).catch(()=>{});
+  }
+  // Always show modal with link visible (so user sees it)
+  try {
+    const old = document.getElementById('shareModal'); if (old) old.remove();
+    const m = document.createElement('div');
+    m.id = 'shareModal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+    m.innerHTML = '<div style="background:#0e1530;border:1px solid rgba(255,215,0,0.3);border-radius:14px;padding:20px;max-width:420px;width:100%;color:#fff;font-family:Inter,sans-serif">'
+      + '<div style="font-size:16px;font-weight:600;color:#ffd700;margin-bottom:10px">🔗 Share Radha Naam Jap</div>'
+      + '<textarea readonly style="width:100%;height:90px;background:rgba(0,0,0,0.4);border:1px solid rgba(255,215,0,0.25);border-radius:8px;padding:10px;color:#fff;font-size:13px;resize:none;box-sizing:border-box;font-family:Inter,sans-serif">'+shareText.replace(/</g,'&lt;')+'</textarea>'
+      + '<div style="display:flex;gap:8px;margin-top:10px">'
+        + '<button id="shCopy" style="flex:1;padding:10px;border-radius:9px;border:none;background:linear-gradient(135deg,#ffd700,#ffb400);color:#000;font-weight:600;cursor:pointer">📋 Copy</button>'
+        + '<a href="https://wa.me/?text='+encodeURIComponent(shareText)+'" target="_blank" rel="noopener" style="flex:1;padding:10px;border-radius:9px;background:#25D366;color:#fff;text-decoration:none;text-align:center;font-weight:600">WhatsApp</a>'
+        + '<button id="shClose" style="padding:10px 14px;border-radius:9px;border:1px solid rgba(255,255,255,0.2);background:transparent;color:#fff;cursor:pointer">Close</button>'
+      + '</div></div>';
+    document.body.appendChild(m);
+    m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+    document.getElementById('shClose').onclick = ()=>m.remove();
+    document.getElementById('shCopy').onclick = ()=>{
+      const ta = m.querySelector('textarea'); ta.select();
+      try { document.execCommand('copy'); } catch(e){}
+      if (navigator.clipboard) navigator.clipboard.writeText(shareText).catch(()=>{});
+      toast('🔗 Copied!');
+    };
+  } catch(e) { prompt('Copy and share:', shareText); }
+}
+
+// ═══════════════════════════════════════════════════════
+// OWNER-BROADCAST GLOBAL STOTRAM LIBRARY
+// Owner emails can add/edit/delete stotrams that show up for ALL users.
+// Stored at Firestore: library/stotrams { items: [{id,name,sub,lyrics}], updatedAt }
+// ═══════════════════════════════════════════════════════
+const OWNER_EMAILS = [
+  'akthephenomenal@zohomail.com',
+  'drakthephenomenal@gmail.com',
+  'anupkumarpaulshuvo@gmail.com'
+];
+let GLOBAL_LIB = []; // [{id,name,sub,lyrics}]
+let _globalLibListener = null;
+function isOwner() {
+  return !!(fbUser && fbUser.email && OWNER_EMAILS.includes(fbUser.email.toLowerCase()));
+}
+function watchGlobalStotramLibrary() {
+  if (!fbDb) return;
+  if (_globalLibListener) { try{_globalLibListener();}catch(e){} _globalLibListener = null; }
+  try {
+    _globalLibListener = fbDb.collection('library').doc('stotrams').onSnapshot(snap => {
+      const d = snap && snap.exists ? snap.data() : null;
+      GLOBAL_LIB = (d && Array.isArray(d.items)) ? d.items : [];
+      if (typeof renderSt === 'function') renderSt();
+    }, err => console.warn('global lib listener', err.message));
+  } catch(e){ console.warn('library listener err', e.message); }
+}
+async function ownerSaveGlobalLibrary() {
+  if (!fbDb || !isOwner()) { toast('Only owner can edit the global library'); return; }
+  try {
+    await fbDb.collection('library').doc('stotrams').set({
+      items: GLOBAL_LIB,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: fbUser.email
+    });
+    toast('🌐 Global stotram library updated for all users');
+  } catch(e) { toast('Save failed: ' + e.message); }
+}
+function ownerAddGlobalStotram() {
+  if (!isOwner()) { toast('Only owner can add to global library'); return; }
+  const name = prompt('Stotram name (Bengali/Hindi):'); if (!name) return;
+  const sub = prompt('Short description:') || '';
+  const lyrics = prompt('Paste full lyrics:'); if (!lyrics) return;
+  const id = 'glb_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+  GLOBAL_LIB.push({ id, name: name.trim(), sub: sub.trim(), lyrics });
+  ownerSaveGlobalLibrary();
+}
+function ownerEditGlobalStotram(id) {
+  if (!isOwner()) return;
+  const it = GLOBAL_LIB.find(x => x.id === id); if (!it) return;
+  const name = prompt('Edit name:', it.name); if (name === null) return;
+  const sub = prompt('Edit description:', it.sub || ''); if (sub === null) return;
+  const lyrics = prompt('Edit lyrics:', it.lyrics || ''); if (lyrics === null) return;
+  it.name = name.trim(); it.sub = sub.trim(); it.lyrics = lyrics;
+  ownerSaveGlobalLibrary();
+}
+function ownerDeleteGlobalStotram(id) {
+  if (!isOwner()) return;
+  if (!confirm('Delete this stotram for ALL users?')) return;
+  GLOBAL_LIB = GLOBAL_LIB.filter(x => x.id !== id);
+  ownerSaveGlobalLibrary();
+}
+
+// Owner: override a built-in stotram's lyrics for ALL users by inserting a
+// global library entry that re-uses the SAME id (showLyrics prefers global).
+function ownerOverrideBuiltInLyrics(id) {
+  if (!isOwner()) return;
+  const builtin = STLIST.find(x => x.id === id);
+  if (!builtin) return;
+  const existing = GLOBAL_LIB.find(x => x.id === id);
+  const curLyrics = (existing && existing.lyrics) || LYRICS[id] || '';
+  const lyrics = prompt('Edit lyrics for "' + builtin.name + '" (saved for ALL users):', curLyrics);
+  if (lyrics === null) return;
+  if (existing) {
+    existing.name = builtin.name; existing.sub = builtin.sub || ''; existing.lyrics = lyrics;
+  } else {
+    GLOBAL_LIB.push({ id, name: builtin.name, sub: builtin.sub || '', lyrics });
+  }
+  ownerSaveGlobalLibrary();
 }
 
 
@@ -2723,21 +3116,49 @@ function reset28Time(scope) {
 
 function renderSt() {
   const list = document.getElementById('stList'); list.innerHTML = '';
-  const all = [...STLIST,...(App.S.customSt||[]).map(x=>({...x,custom:true}))];
+  // Show/hide owner "Add as Global" checkbox in the manual Add form
+  try {
+    const tog = document.getElementById('ownerGlobalToggle');
+    if (tog) tog.style.display = (typeof isOwner==='function' && isOwner()) ? 'flex' : 'none';
+  } catch(e){}
+  // Owner-only "Add Global Stotram" button on top
+  if (typeof isOwner === 'function' && isOwner()) {
+    const ob = document.createElement('div');
+    ob.style.cssText = 'margin-bottom:10px;padding:10px;border:1px dashed rgba(255,215,0,0.4);border-radius:11px;background:rgba(255,215,0,0.06);text-align:center';
+    ob.innerHTML = '<div style="font-size:11px;color:#ffd700;letter-spacing:1px;margin-bottom:6px">👑 OWNER MODE — edits show for ALL users</div>'
+      + '<button onclick="ownerAddGlobalStotram()" style="padding:8px 16px;border-radius:9px;border:none;background:linear-gradient(135deg,#ffd700,#ffb400);color:#000;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">＋ Add Global Stotram</button>';
+    list.appendChild(ob);
+  }
+  // Globals shown as standalone items only when their id does NOT match a built-in.
+  // For built-in id matches, the global entry just overrides the lyrics (handled in showLyrics).
+  const builtinIds = new Set(STLIST.map(x => x.id));
+  const globals = (typeof GLOBAL_LIB !== 'undefined' && Array.isArray(GLOBAL_LIB))
+    ? GLOBAL_LIB.filter(x => !builtinIds.has(x.id)).map(x => ({...x, global:true}))
+    : [];
+  const all = [...STLIST, ...globals, ...(App.S.customSt||[]).map(x=>({...x,custom:true}))];
   all.forEach(st => {
     const tc = (App.S.stotrams[st.id]||{})[App.S.tk]||0;
     const tot = Object.values(App.S.stotrams[st.id]||{}).reduce((a,b)=>a+b,0);
-    // Show 📖 for built-in (LYRICS[id]) OR custom with lyrics
-    const hasLyrics = !!LYRICS[st.id] || (st.custom && st.lyrics && st.lyrics.trim().length > 0);
+    // Show 📖 for built-in (LYRICS[id]) OR custom/global with lyrics
+    const hasLyrics = !!LYRICS[st.id] || ((st.custom || st.global) && st.lyrics && st.lyrics.trim().length > 0);
     const c = document.createElement('div'); c.className = 'stc';
     let inner = '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:3px">'
-      +'<span class="stn">'+escHtml(st.name)+'</span>'
+      +'<span class="stn">'+escHtml(st.name)+(st.global?' <span style="font-size:10px;color:#ffd700;letter-spacing:1px;vertical-align:middle">🌐 GLOBAL</span>':'')+'</span>'
       +(st.custom
         ?'<div style="display:flex;gap:5px">'
           +'<button class="dsb" style="color:var(--a2);border-color:rgba(74,144,226,0.35)" onclick="toggleStEdit(\''+st.id+'\')">✏</button>'
           +'<button class="dsb" onclick="delSt(\''+st.id+'\')">✕</button>'
           +'</div>'
-        :'')
+        : (st.global && typeof isOwner==='function' && isOwner()
+          ?'<div style="display:flex;gap:5px">'
+            +'<button class="dsb" style="color:#ffd700;border-color:rgba(255,215,0,0.35)" onclick="ownerEditGlobalStotram(\''+st.id+'\')">✏</button>'
+            +'<button class="dsb" onclick="ownerDeleteGlobalStotram(\''+st.id+'\')">✕</button>'
+            +'</div>'
+          : (!st.custom && !st.global && typeof isOwner==='function' && isOwner()
+            ?'<div style="display:flex;gap:5px">'
+              +'<button class="dsb" style="color:#ffd700;border-color:rgba(255,215,0,0.35)" title="Override built-in lyrics for ALL users" onclick="ownerOverrideBuiltInLyrics(\''+st.id+'\')">✏</button>'
+              +'</div>'
+            : '')))
       +'</div>'
       +(st.sub?'<div class="sts">'+escHtml(st.sub)+'</div>':'')
       +'<div class="scr"><div>'
@@ -2773,6 +3194,20 @@ function addSt() {
   if(!name){toast('Please enter a name');return;}
   const sub=document.getElementById('ssIn').value.trim();
   const lyrics=(document.getElementById('slIn').value||'').trim();
+  // Owner: if "Add as Global" is checked, push to global library instead
+  const globalChk = document.getElementById('snGlobal');
+  if (globalChk && globalChk.checked && typeof isOwner==='function' && isOwner()) {
+    const id = 'glb_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    GLOBAL_LIB.push({ id, name, sub, lyrics });
+    ownerSaveGlobalLibrary();
+    document.getElementById('snIn').value='';
+    document.getElementById('ssIn').value='';
+    document.getElementById('slIn').value='';
+    globalChk.checked = false;
+    toggleAsfForm(false);
+    toast('🌐 Global stotram added — visible to ALL users');
+    return;
+  }
   const id='c_'+Date.now();
   if(!App.S.customSt)App.S.customSt=[];
   App.S.customSt.push({id,name,sub,lyrics});
@@ -3197,6 +3632,18 @@ window.addEventListener('load', async () => {
   const savedToken = localStorage.getItem('rjap_gd_token');
   if (savedToken) gdAccessToken = savedToken;
 
+  // Schedule midnight Drive backup (catches up if missed today)
+  try { scheduleMidnightDriveBackup(); } catch(e){ console.warn('midnight backup sched', e); }
+
+  // Start watching the global owner-broadcast stotram library
+  // (works once Firebase has initialised — retry if not ready yet)
+  let _libTries = 0;
+  const _libStart = () => {
+    if (typeof fbDb !== 'undefined' && fbDb) { try { watchGlobalStotramLibrary(); } catch(e){} }
+    else if (_libTries++ < 20) setTimeout(_libStart, 600);
+  };
+  _libStart();
+
   // Hide loading — guaranteed cleanup
   setTimeout(() => {
     const ls = document.getElementById('ls');
@@ -3266,10 +3713,15 @@ window.addEventListener('load', function() {
 
 // ── showLyrics function ──
 function showLyrics(id) {
-  // Built-in stotram lyrics first, then custom stotram lyrics
-  const ly = LYRICS[id] || ((App.S.customSt||[]).find(x=>x.id===id)||{}).lyrics || '';
+  // Owner global library (override) → built-in lyrics → user custom stotrams.
+  // Owner can fix wrong built-in lyrics by adding a global stotram with the SAME id.
+  const globalItem = (typeof GLOBAL_LIB !== 'undefined') ? GLOBAL_LIB.find(x => x.id === id) : null;
+  const ly = (globalItem && globalItem.lyrics)
+    || LYRICS[id]
+    || ((App.S.customSt||[]).find(x=>x.id===id)||{}).lyrics
+    || '';
   if (!ly) { toast('পাঠ্য পাওয়া যায়নি 🙏'); return; }
-  const nm = [...STLIST,...(App.S.customSt||[])].find(x => x.id === id);
+  const nm = [...STLIST, ...((typeof GLOBAL_LIB !== 'undefined') ? GLOBAL_LIB : []), ...(App.S.customSt||[])].find(x => x.id === id);
   document.getElementById('lmTitle').textContent = nm ? nm.name : id;
   document.getElementById('lyrBody').textContent = ly;
   document.getElementById('lmo').classList.add('show');

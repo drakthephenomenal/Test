@@ -1187,6 +1187,18 @@ function uStats() {
   document.getElementById('sLtTime').textContent = ltH > 0 ? ltH+'h '+ltM+'m '+String(ltS).padStart(2,'0')+'s' : ltM+'m '+String(ltS).padStart(2,'0')+'s';
   document.getElementById('sStr').textContent = streak;
   document.getElementById('sBest').textContent = best;
+  // ── Lifetime totals split by jap type ──
+  const ltRadha = Object.values(App.S.history||{}).reduce((a,b)=>a+(b||0),0) - (App.S.nameJapDeduct||0);
+  const ltRV    = Object.values(App.S.historyRV||{}).reduce((a,b)=>a+(b||0),0) - (App.S.nameJapDeductRV||0);
+  const lt28    = Object.values(App.S.h28||{}).reduce((a,b)=>a+(b||0),0);
+  const _setN = (id, n) => { const e = document.getElementById(id); if (e) e.textContent = Math.max(0, n).toLocaleString(); };
+  const _setT = (id, t) => { const e = document.getElementById(id); if (e) e.textContent = t; };
+  _setN('sLtRadha', ltRadha);
+  _setT('sLtRadhaM', Math.floor(Math.max(0,ltRadha)/ms).toLocaleString() + ' malas');
+  _setN('sLtRV', ltRV);
+  _setT('sLtRVM', Math.floor(Math.max(0,ltRV)/ms).toLocaleString() + ' malas');
+  _setN('sLt28', lt28);
+  _setT('sLt28M', Math.floor(Math.max(0,lt28)/ms).toLocaleString() + ' cycles');
   const bars = document.getElementById('cbrs'); bars.innerHTML = '';
   const mx = Math.max(...wk.map(k => curHist[k]||0), 1);
   const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -1412,13 +1424,44 @@ function doReset() {
     const f = document.getElementById('rfrom').value, to = document.getElementById('rto').value;
     Object.keys(App.S.history).forEach(k => { if (k >= f && k <= to) { App.S.history[k] = 0; if (App.S.timerHistory[k]) App.S.timerHistory[k] = 0; if (App.S.timer28History[k]) App.S.timer28History[k] = 0; } });
   } else {
+    // ── FULL RESET — wipe EVERYTHING (Radha jap, RV jap, 28-name, brahmacharya,
+    // sankalpas, occasions, custom stotrams, all timers, malalogs, lifetime,
+    // IDB stores AND localStorage) so nothing can resurrect.
     App.S.history = {}; App.S.h28 = {}; App.S.dt = 0; App.S.lt = 0; App.S.nameJapDeduct = 0;
-    App.S.stotrams = {}; App.S.brahma = {}; App.S.timerHistory = {}; App.S.timer28History = {}; App.S.malaLog = [];
-    App.lmc = 0; App.lm28 = 0;
+    App.S.stotrams = {}; App.S.brahma = {};
+    App.S.timerHistory = {}; App.S.timer28History = {}; App.S.malaLog = [];
+    App.S.customSt = []; App.S.sankalpas = []; App.S.occasions = {};
+    App.S.brahmacharya_start_date = '';
+    // RV-mode counterparts (THE BUG: these were not being reset)
+    App.S.historyRV = {}; App.S.timerHistoryRV = {};
+    App.S.dtRV = 0; App.S.ltRV = 0; App.S.nameJapDeductRV = 0; App.S.malaLogRV = [];
+    // Sync baselines
+    App.S.syncBaseline = {}; App.S.syncBaseline28 = {};
+    App.S.syncBaselineTimer = {}; App.S.syncBaselineTimer28 = {};
+    App.S.syncBaselineRV = {}; App.S.syncBaselineTimerRV = {};
+    App.lmc = 0; App.lm28 = 0; App.lmcRV = 0;
     STLIST.forEach(x => { App.S.stotrams[x.id] = {}; });
     App.resetTimer();
+    if (typeof App.stopAll28Timers === 'function') App.stopAll28Timers();
+    // Wipe per-day IDB stores so deleted dates can't be merged back from old keys
+    ['history','h28','timerHistory','timer28History','malaLog'].forEach(s => {
+      try { App.dbClearStore(s); } catch(e){}
+    });
+    // Wipe legacy localStorage snapshot too
+    try { localStorage.removeItem('rjap5'); } catch(e){}
+    try { localStorage.removeItem('rjap_malaWallStart'); } catch(e){}
+    try { localStorage.removeItem('rjap_milestones'); } catch(e){}
+    try { localStorage.removeItem('rjap_sadhana_start'); } catch(e){}
+    App.malaWallStart = Date.now();
   }
-  App.save(); App.ua(); fbDebouncedPush(); gdDriveSilentBackup(); renderCal(); cm(); toast('Reset complete 🙏');
+  App.save(); App.ua();
+  if (typeof u28==='function') u28();
+  if (typeof render28StatsPanel==='function') render28StatsPanel();
+  if (typeof renderSankalpas==='function') renderSankalpas();
+  if (typeof renderBcal==='function') renderBcal();
+  if (typeof renderSt==='function') renderSt();
+  fbDebouncedPush(); gdDriveSilentBackup(); renderCal(); cm();
+  toast('Everything reset 🙏');
 }
 function cm() { document.getElementById('mo').classList.remove('show'); }
 
@@ -1908,10 +1951,36 @@ function fbInit() {
       console.warn('getRedirectResult:', e.message);
     });
 
-    fbAuth.onAuthStateChanged(user => {
+    fbAuth.onAuthStateChanged(async user => {
       if (fbForcedSignout) { lockSignedOutScreen(); return; }
       fbUser = user;
       if (user) {
+        // ── ACCOUNT-BLEED GUARD ──
+        // If the previous logged-in uid (stored locally) differs from the
+        // incoming user, the local IDB still holds the OTHER account's data.
+        // Wipe it BEFORE pulling/pushing so account A's data can never
+        // overwrite account B's cloud doc (the bug the user reported).
+        let prevUid = null;
+        try { prevUid = localStorage.getItem('rjap_last_uid'); } catch(e) {}
+        if (prevUid && prevUid !== user.uid) {
+          // Stop any pending push from the previous account
+          if (fbListener) { fbListener(); fbListener = null; }
+          clearTimeout(_fbDeb); _fbDeb = null;
+          App._suspendCloudSync = true;
+          try { await App.clearLocalData(); } catch(e) {}
+          App._suspendCloudSync = false;
+          try {
+            // Refresh visible UI to reflect cleared state until cloud pull arrives
+            if (typeof renderSt==='function') renderSt();
+            if (typeof u28==='function') u28();
+            if (typeof renderCal==='function') renderCal();
+            if (typeof uStats==='function') uStats();
+            if (typeof renderMalaLog==='function') renderMalaLog();
+            if (typeof App.ua==='function') App.ua();
+          } catch(e) {}
+        }
+        try { localStorage.setItem('rjap_last_uid', user.uid); } catch(e) {}
+
         document.getElementById('fbLoggedOut').style.display = 'none';
         document.getElementById('fbLoggedIn').style.display = 'block';
         document.getElementById('fbUserEmail').textContent = user.email || user.displayName || 'Google User';
@@ -2063,6 +2132,7 @@ function fbSignOut() {
   clearTimeout(_fbDeb); _fbDeb = null;
   gdAccessToken = null;
   localStorage.removeItem('rjap_gd_token');
+  try { localStorage.removeItem('rjap_last_uid'); } catch(e) {}
   // Wipe local state + IDB BEFORE signing out so the next account cannot inherit it
   App.clearLocalData().then(() => {
     fbAuth.signOut().then(() => {

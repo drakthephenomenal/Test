@@ -2,7 +2,7 @@
 // Radha Naam Jap — Service Worker
 // Update CACHE version when index.html changes
 // ═══════════════════════════════════════════════
-const CACHE = 'radha-jap-v53';  // v53: bg-sync midnight Drive backup, owner global add UI, share modal
+const CACHE = 'radha-jap-v54';  // v54: account-bleed fix, full reset, lifetime split stats
 
 const PRECACHE = [
   './index.html',

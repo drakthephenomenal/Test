@@ -29,6 +29,13 @@ const App = {
   // ── IndexedDB ──
   db: null,
 
+  // ── Current signed-in UID (set by Firebase auth callback) ──
+  _uid: null,
+
+  // ── IDB key prefix scoped to UID (guest = 'guest') ──
+  _stateKey() { return (this._uid || 'guest') + ':main'; },
+  _lsKey()    { return 'rjap5_' + (this._uid || 'guest'); },
+
   async initDB() {
     return new Promise((res, rej) => {
       const req = indexedDB.open('RadhaJapDB', 3);
@@ -93,7 +100,7 @@ const App = {
 
   async save() {
     // Save full state snapshot to IDB so all dates and edits persist locally
-    await this.dbPut('state', 'main', {
+    await this.dbPut('state', this._stateKey(), {
       ms: this.S.ms, dt: this.S.dt, lt: this.S.lt, nameJapDeduct: this.S.nameJapDeduct||0, malaLog: this.S.malaLog||[], malaLogDate: this.S.tk,
       cfg: this.S.cfg, stotrams: this.S.stotrams, brahma: this.S.brahma,
       customSt: this.S.customSt, sankalpas: this.S.sankalpas, occasions: this.S.occasions,
@@ -112,12 +119,7 @@ const App = {
     if (this.S.timerHistory[tk] !== undefined) await this.dbPut('timerHistory', tk, this.S.timerHistory[tk]);
     if (this.S.timer28History[tk] !== undefined) await this.dbPut('timer28History', tk, this.S.timer28History[tk]);
     if (this.S.malaLog) await this.dbPut('malaLog', 'today', { date: tk, log: this.S.malaLog });
-    try {
-      const lsKey = fbUser ? 'rjap5_' + fbUser.uid : 'rjap5';
-      localStorage.setItem(lsKey, JSON.stringify(this.S));
-      // Also clear the generic key to prevent cross-account contamination
-      if (fbUser) localStorage.removeItem('rjap5');
-    } catch(e) {}
+    try { localStorage.setItem(this._lsKey(), JSON.stringify(this.S)); } catch(e) {}
     if (fbUser && !fbForcedSignout && !this._suspendCloudSync) fbDebouncedPush();
   },
 
@@ -125,19 +127,14 @@ const App = {
     await this.initDB();
     this.S.tk = this.getTk();
 
-    // NOTE: fbUser is not yet set at load() time. We use a temp key approach:
-    // After sign-in, fbApplyRemote always overwrites local state from Firebase,
-    // so cross-account contamination via IDB is prevented by the per-UID Firestore data.
-    // For localStorage we use a UID-keyed entry (set in save()) and also wipe generic key.
-
     // Try IndexedDB first
-    const main = await this.dbGet('state', 'main');
+    const main = await this.dbGet('state', this._stateKey());
     if (main) {
       Object.assign(this.S, main);
     } else {
-      // Fallback: migrate from localStorage
+      // Fallback: migrate from localStorage (UID-scoped key first, then legacy)
       try {
-        const ls = localStorage.getItem('rjap5');
+        const ls = localStorage.getItem(this._lsKey()) || localStorage.getItem('rjap5');
         if (ls) { const d = JSON.parse(ls); Object.assign(this.S, d); }
       } catch(e) {}
     }
@@ -156,7 +153,7 @@ const App = {
 
     // Merge localStorage history as fallback for old data
     try {
-      const ls = localStorage.getItem('rjap5');
+      const ls = localStorage.getItem(this._lsKey()) || localStorage.getItem('rjap5');
       if (ls) {
         const d = JSON.parse(ls);
         if (d.history) { for (const k in d.history) if (!this.S.history[k]) this.S.history[k] = d.history[k]; }
@@ -757,6 +754,25 @@ setInterval(() => {
   }
 }, 60000);
 
+// ── Share App ──
+function shareApp() {
+  const url = window.location.href.split('?')[0].split('#')[0];
+  const text = '🙏 Radha Naam Jap Sadhana App — Track your daily jap practice. Jai Radhe! 🌸\n\n' + url;
+  if (navigator.share) {
+    navigator.share({ title: 'Radha Naam Jap', text: '🙏 Jai Radhe! Track your daily jap practice.', url })
+      .then(() => toast('Shared! 🙏 Jai Radhe!'))
+      .catch(() => {});
+  } else {
+    navigator.clipboard.writeText(url).then(() => toast('App link copied! 🙏 Jai Radhe!'))
+      .catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = url; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); ta.remove();
+        toast('App link copied! 🙏 Jai Radhe!');
+      });
+  }
+}
+
 // ── Toast ──
 function toast(msg) {
   let t = document.getElementById('toast');
@@ -881,12 +897,7 @@ function sv(id, btn) {
   if (btn) btn.classList.add('active');
   if (id === 'vs') uStats();
   if (id === 'vb') { initBrahmaStartInput(); renderCal(); }
-  if (id === 'vst') {
-    renderSt();
-    // Show dev panel if developer is signed in
-    const devPanel = document.getElementById('devAddStPanel');
-    if (devPanel) devPanel.style.display = isDevUser() ? 'block' : 'none';
-  }
+  if (id === 'vst') renderSt();
   if (id === 'v28') { u28(); render28Dots(get28Pos()); }
   else { App.flush28TimeToHistory(); }
   if (id === 'vms') { renderMilestonesTab(); }
@@ -895,6 +906,10 @@ function sv(id, btn) {
     if (App.S.lt) document.getElementById('ltIn').value = App.S.lt;
     document.getElementById('msIn').value = App.S.ms || 108;
     initReminderUI();
+    // Show last auto-backup date
+    const lb = localStorage.getItem(GD_AUTO_BACKUP_KEY);
+    const gdLb = document.getElementById('gdLastAutoBackup');
+    if (gdLb) gdLb.textContent = lb ? ('Last auto backup: ' + lb) : 'No auto backup yet — will run at midnight.';
   }
 }
 
@@ -1153,14 +1168,16 @@ function uStats() {
   document.getElementById('sMoM').textContent = Math.floor(ms2/ms) + ' malas';
   document.getElementById('sTot').textContent = tot;
   document.getElementById('sTotM').textContent = Math.floor(tot/ms) + ' malas';
-  // ── Per-type lifetime totals ──
+  // ── SEPARATED LIFETIME TOTALS ──
   const radhaLifetime = Math.max(0, Object.values(App.S.history||{}).reduce((a,b)=>a+b,0) - (App.S.nameJapDeduct||0));
   const rvLifetime = Math.max(0, Object.values(App.S.historyRV||{}).reduce((a,b)=>a+b,0) - (App.S.nameJapDeductRV||0));
-  const names28Lifetime = Object.values(App.S.h28||{}).reduce((a,b)=>a+b,0);
-  const elRL = document.getElementById('sRadhaTotal'), elRV = document.getElementById('sRVTotal'), el28 = document.getElementById('s28Total');
-  if (elRL) elRL.textContent = fmtIN(radhaLifetime);
-  if (elRV) elRV.textContent = fmtIN(rvLifetime);
-  if (el28) el28.textContent = fmtIN(names28Lifetime);
+  const n28Lifetime = Object.values(App.S.h28||{}).reduce((a,b)=>a+b,0);
+  const sRadha = document.getElementById('sRadhaTot'); if (sRadha) sRadha.textContent = radhaLifetime.toLocaleString('en-IN');
+  const sRadhaM = document.getElementById('sRadhaTotM'); if (sRadhaM) sRadhaM.textContent = Math.floor(radhaLifetime/ms) + ' malas';
+  const sRV = document.getElementById('sRVTot'); if (sRV) sRV.textContent = rvLifetime.toLocaleString('en-IN');
+  const sRVM = document.getElementById('sRVTotM'); if (sRVM) sRVM.textContent = Math.floor(rvLifetime/ms) + ' malas';
+  const s28 = document.getElementById('s28Tot'); if (s28) s28.textContent = n28Lifetime.toLocaleString('en-IN');
+  const s28M = document.getElementById('s28TotM'); if (s28M) s28M.textContent = Math.floor(n28Lifetime/28) + ' cycles';
   // Lifetime Jap Time (all jap time + all 28 names time)
   const ltTimeSec = Object.values(App.getCombinedTimerHistory()).reduce((a,b)=>a+b,0) + Object.values(App.S.timer28History||{}).reduce((a,b)=>a+b,0);
   const ltH = Math.floor(ltTimeSec/3600), ltM = Math.floor((ltTimeSec%3600)/60), ltS = ltTimeSec%60;
@@ -1392,23 +1409,24 @@ function doReset() {
     const f = document.getElementById('rfrom').value, to = document.getElementById('rto').value;
     Object.keys(App.S.history).forEach(k => { if (k >= f && k <= to) { App.S.history[k] = 0; if (App.S.timerHistory[k]) App.S.timerHistory[k] = 0; if (App.S.timer28History[k]) App.S.timer28History[k] = 0; } });
   } else {
-    App.S.history = {}; App.S.h28 = {}; App.S.dt = 0; App.S.lt = 0; App.S.nameJapDeduct = 0;
-    App.S.stotrams = {}; App.S.brahma = {}; App.S.timerHistory = {}; App.S.timer28History = {}; App.S.malaLog = [];
-    // Also reset RV jap data, lifetime targets, brahmacharya start date, and name deductions
-    App.S.historyRV = {}; App.S.timerHistoryRV = {}; App.S.nameJapDeductRV = 0;
-    App.S.dtRV = 0; App.S.ltRV = 0; App.S.malaLogRV = [];
-    App.S.brahmacharya_start_date = '';
-    App.S.sankalpas = []; App.S.occasions = {};
-    App.S.syncBaseline = {}; App.S.syncBaseline28 = {};
+    // ── Full Reset: ALL data including lifetime, RV, brahmacharya ──
+    App.S.history = {}; App.S.h28 = {}; App.S.historyRV = {};
+    App.S.dt = 0; App.S.lt = 0; App.S.dtRV = 0; App.S.ltRV = 0;
+    App.S.nameJapDeduct = 0; App.S.nameJapDeductRV = 0;
+    App.S.stotrams = {}; App.S.brahma = {}; App.S.brahmacharya_start_date = '';
+    App.S.timerHistory = {}; App.S.timer28History = {}; App.S.timerHistoryRV = {};
+    App.S.malaLog = []; App.S.malaLogRV = []; App.S.sankalpas = []; App.S.occasions = {};
+    App.S.syncBaseline = {}; App.S.syncBaseline28 = {}; App.S.syncBaselineTimer = {}; App.S.syncBaselineTimer28 = {};
     App.S.syncBaselineRV = {}; App.S.syncBaselineTimerRV = {};
-    // Wipe IDB per-day stores entirely
-    App.dbClearStore('history').catch(()=>{});
-    App.dbClearStore('h28').catch(()=>{});
-    App.dbClearStore('timerHistory').catch(()=>{});
-    App.dbClearStore('timer28History').catch(()=>{});
     App.lmc = 0; App.lm28 = 0; App.lmcRV = 0;
     STLIST.forEach(x => { App.S.stotrams[x.id] = {}; });
-    App.resetTimer();
+    // Clear IDB stores too
+    App.dbClearStore('history'); App.dbClearStore('h28');
+    App.dbClearStore('timerHistory'); App.dbClearStore('timer28History');
+    App.resetTimer(); App.stopAll28Timers();
+    // Clear saved targets from settings UI
+    ['dtIn','ltIn','msIn'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    initBrahmaStartInput();
   }
   App.save(); App.ua(); fbDebouncedPush(); gdDriveSilentBackup(); renderCal(); cm(); toast('Reset complete 🙏');
 }
@@ -1808,16 +1826,17 @@ function renderLakhGati2() { renderMilestonesTab(); }
 // ═══════════════════════════════════════════════════════
 // FIREBASE — Google Sign-In Only (no email/password)
 // ═══════════════════════════════════════════════════════
-const APP_ORIGIN = 'https://drakthephenomenal.github.io/Lalu-Chotopushu';
 const firebaseConfig = {
   apiKey: "AIzaSyCvvXEdsJjXpTbITE2HuyYFnPZfZIkxVWA",
-  authDomain: "drakthephenomenal.github.io",
+  authDomain: "guru-kripahi-kevalam-108.firebaseapp.com",
   projectId: "guru-kripahi-kevalam-108",
   storageBucket: "guru-kripahi-kevalam-108.firebasestorage.app",
   messagingSenderId: "368485403238",
   appId: "1:368485403238:web:a3ab5c1427ad0c40fffba7",
   measurementId: "G-SJP0N1FDZD"
 };
+// NOTE: Make sure drakthephenomenal.github.io is added as an Authorized Domain
+// in Firebase Console → Authentication → Settings → Authorized domains
 
 let fbApp = null, fbAuth = null, fbDb = null, fbUser = null;
 let fbListener = null;
@@ -1894,7 +1913,6 @@ function fbInit() {
       if (result && result.credential && result.credential.accessToken) {
         gdAccessToken = result.credential.accessToken;
         localStorage.setItem('rjap_gd_token', gdAccessToken);
-        scheduleMidnightDriveBackup();
         toast('Signed in with Google! ☁️ Drive backup active 🙏');
       }
     }).catch(e => {
@@ -1902,10 +1920,33 @@ function fbInit() {
       console.warn('getRedirectResult:', e.message);
     });
 
-    fbAuth.onAuthStateChanged(user => {
+    fbAuth.onAuthStateChanged(async user => {
       if (fbForcedSignout) { lockSignedOutScreen(); return; }
+      const prevUid = App._uid;
       fbUser = user;
       if (user) {
+        // ── CRITICAL: if UID changed, reload data scoped to new user ──
+        if (prevUid !== user.uid) {
+          App._uid = user.uid;
+          // Reset in-memory state to defaults before loading new user's data
+          App.S = {
+            tk: App.getTk(), ms: 108, dt: 0, lt: 0,
+            cfg: { vib: true, sound: true },
+            history: {}, h28: {}, stotrams: {}, brahma: {},
+            customSt: [], timerHistory: {}, timer28History: {}, sankalpas: [], occasions: {},
+            syncBaseline: {}, syncBaseline28: {}, syncBaselineTimer: {}, syncBaselineTimer28: {},
+            migrationV2Done: false, japMode: 'radha',
+            historyRV: {}, timerHistoryRV: {}, dtRV: 0, ltRV: 0, nameJapDeductRV: 0,
+            malaLogRV: [], syncBaselineRV: {}, syncBaselineTimerRV: {}
+          };
+          // Load THIS user's local data first (will be overwritten by cloud pull)
+          await App.load();
+          App.lmc = Math.floor(App.gTod() / (App.S.ms||108));
+          App.lmcRV = Math.floor((App.S.historyRV[App.S.tk]||0) / (App.S.ms||108));
+          App.lm28 = Math.floor((App.S.h28[App.S.tk]||0) / (App.S.ms||108));
+          switchJapMode(App.S.japMode || 'radha');
+          App.ua(); renderSt(); u28(); renderBcal(); renderCal(); uStats(); renderSankalpas(); renderMalaLog();
+        }
         document.getElementById('fbLoggedOut').style.display = 'none';
         document.getElementById('fbLoggedIn').style.display = 'block';
         document.getElementById('fbUserEmail').textContent = user.email || user.displayName || 'Google User';
@@ -1915,7 +1956,7 @@ function fbInit() {
           fbWatchSession();
           // Pull data from Firebase on sign-in
           fbAutoSync();
-          // Load global stotrams added by dev users
+          // Load global stotrams (inbuilt overrides + global stotrams for all users)
           loadGlobalStotrams();
         });
       } else {
@@ -1945,9 +1986,6 @@ function fbSignInGoogle() {
       if (credential && credential.accessToken) {
         gdAccessToken = credential.accessToken;
         localStorage.setItem('rjap_gd_token', gdAccessToken);
-        // Also request a GIS token so Drive works beyond the 1hr Firebase token expiry
-        setTimeout(() => gdGetToken(true), 2000);
-        scheduleMidnightDriveBackup();
       }
       toast('Signed in with Google! ☁️ Drive backup active 🙏');
     })
@@ -2023,6 +2061,7 @@ function fbSignOut() {
   if (fbListener) { fbListener(); fbListener = null; }
   gdAccessToken = null;
   localStorage.removeItem('rjap_gd_token');
+  App._uid = null;
   fbAuth.signOut().then(() => toast('Signed out 🙏'));
 }
 
@@ -2067,8 +2106,8 @@ async function fbPushFull() {
 
 function fbApplyRemote(d) {
   if (d.deviceId && d.deviceId === fbDeviceId) return;
-  // ── CRITICAL: Full replace (not merge) to prevent cross-account contamination ──
-  // Always replace entire state with cloud data so switching accounts is clean.
+  // Ensure UID is set before saving (prevents saving to wrong UID key)
+  if (fbUser && App._uid !== fbUser.uid) App._uid = fbUser.uid;
   if ('history' in d) App.S.history = JSON.parse(JSON.stringify(d.history || {}));
   if ('h28' in d) App.S.h28 = JSON.parse(JSON.stringify(d.h28 || {}));
   if ('timerHistory' in d) App.S.timerHistory = JSON.parse(JSON.stringify(d.timerHistory || {}));
@@ -2149,17 +2188,6 @@ async function fbMigrate() {
 
 function fbAutoSync() {
   if (fbListener) { fbListener(); fbListener = null; }
-  // ── CRITICAL: Clear IDB on each sign-in so stale data from another account
-  // can never bleed into the newly signed-in account's view.
-  // Firebase will push the correct cloud data moments later.
-  App.dbClearStore('history').catch(()=>{});
-  App.dbClearStore('h28').catch(()=>{});
-  App.dbClearStore('timerHistory').catch(()=>{});
-  App.dbClearStore('timer28History').catch(()=>{});
-  App.dbClearStore('malaLog').catch(()=>{});
-  App.dbPut('state', 'main', null).catch(()=>{});
-  // Also clear generic (non-UID) localStorage key
-  localStorage.removeItem('rjap5');
   setTimeout(() => fbMigrate(), 1500);
   try {
     const docRef = fbDb.collection('users').doc(fbUser.uid).collection('data').doc('main');
@@ -2178,192 +2206,14 @@ function fbDebouncedPush() {
 }
 
 // ═══════════════════════════════════════════════════════
-// GOOGLE IDENTITY SERVICES — Token Client for Drive API
-// Uses GIS to get/refresh OAuth2 access tokens for Drive
-// Token from Firebase sign-in expires in ~1hr; GIS gives
-// a fresh token on demand without re-prompting the user.
-// ═══════════════════════════════════════════════════════
-const GD_CLIENT_ID = '368485403238-i3jeru8uq0clb2dcgiu5jlrlb9lphe1j.apps.googleusercontent.com';
-const GD_SCOPE = 'https://www.googleapis.com/auth/drive.file';
-
-let _gisTokenClient = null;
-let _gisTokenResolve = null;
-let _gisTokenReject = null;
-let _gdTokenExpiry = 0; // epoch ms when current token expires
-
-function gisInitTokenClient() {
-  if (_gisTokenClient) return;
-  if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
-    setTimeout(gisInitTokenClient, 500);
-    return;
-  }
-  _gisTokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: GD_CLIENT_ID,
-    scope: GD_SCOPE,
-    prompt: '',  // no re-prompt if consent already given
-    hint: fbUser ? (fbUser.email || '') : '',  // pre-fill the account
-    callback: (tokenResponse) => {
-      if (tokenResponse && tokenResponse.access_token) {
-        gdAccessToken = tokenResponse.access_token;
-        localStorage.setItem('rjap_gd_token', gdAccessToken);
-        // GIS tokens last 3600s; refresh 5 min early
-        _gdTokenExpiry = Date.now() + (tokenResponse.expires_in - 300) * 1000;
-        if (_gisTokenResolve) { _gisTokenResolve(gdAccessToken); _gisTokenResolve = null; _gisTokenReject = null; }
-        scheduleMidnightDriveBackup();
-      } else {
-        if (_gisTokenReject) { _gisTokenReject(new Error('Token request failed')); _gisTokenResolve = null; _gisTokenReject = null; }
-      }
-    },
-    error_callback: (err) => {
-      if (_gisTokenReject) { _gisTokenReject(new Error(err.type || 'GIS error')); _gisTokenResolve = null; _gisTokenReject = null; }
-    }
-  });
-}
-
-// Returns a valid Drive token, silently refreshing if expired
-async function gdGetToken(forceRefresh) {
-  // If token still valid, return it
-  if (!forceRefresh && gdAccessToken && Date.now() < _gdTokenExpiry) return gdAccessToken;
-  // If user not signed in with Google, can't get token
-  if (!fbUser) return null;
-  // Init token client if not done yet
-  if (!_gisTokenClient) gisInitTokenClient();
-  if (!_gisTokenClient) return gdAccessToken; // GIS not loaded yet, use old token
-  return new Promise((resolve, reject) => {
-    _gisTokenResolve = resolve;
-    _gisTokenReject = reject;
-    try {
-      // Pass logged-in user email as hint so no account picker shown
-      const hint = fbUser ? (fbUser.email || '') : '';
-      _gisTokenClient.requestAccessToken({ prompt: '', login_hint: hint });
-    } catch(e) {
-      _gisTokenResolve = null; _gisTokenReject = null;
-      resolve(gdAccessToken); // fall back to existing token
-    }
-  });
-}
-
-// ═══════════════════════════════════════════════════════
-// GOOGLE DRIVE — Midnight Auto-Backup (like WhatsApp)
-// Backs up daily at midnight regardless of app open state
-// ═══════════════════════════════════════════════════════
-let _gdMidnightTimer = null;
-
-function scheduleMidnightDriveBackup() {
-  if (_gdMidnightTimer) { clearTimeout(_gdMidnightTimer); _gdMidnightTimer = null; }
-  const now = new Date();
-  const midnight = new Date(now);
-  midnight.setDate(midnight.getDate() + 1);
-  midnight.setHours(0, 0, 30, 0); // 00:00:30 next day
-  const msUntilMidnight = midnight.getTime() - now.getTime();
-  _gdMidnightTimer = setTimeout(async () => {
-    await gdDriveNamedBackup(); // dated backup file
-    scheduleMidnightDriveBackup(); // reschedule for next midnight
-  }, msUntilMidnight);
-  console.log('Next Drive backup in', Math.round(msUntilMidnight/60000), 'minutes');
-}
-
-// Creates a dated backup file (visible JSON in Drive)
-async function gdDriveNamedBackup() {
-  const token = await gdGetToken();
-  if (!token) return;
-  gdAccessToken = token;
-  const dateStr = App.getTk();
-  const fileName = 'radha-naam-jap-backup-' + dateStr + '.json';
-  try {
-    const data = JSON.stringify({
-      version: 3, exportedAt: new Date().toISOString(), backupType: 'auto-midnight',
-      history: App.S.history||{}, h28: App.S.h28||{},
-      timerHistory: App.S.timerHistory||{}, timer28History: App.S.timer28History||{},
-      stotrams: App.S.stotrams||{}, brahma: App.S.brahma||{}, customSt: App.S.customSt||[],
-      sankalpas: App.S.sankalpas||[], occasions: App.S.occasions||{},
-      ms: App.S.ms||108, dt: App.S.dt||0, lt: App.S.lt||0, nameJapDeduct: App.S.nameJapDeduct||0, cfg: App.S.cfg||{},
-      malaLog: App.S.malaLog||[], malaLogDate: App.S.tk, brahmacharya_start_date: App.S.brahmacharya_start_date||'',
-      japMode: App.S.japMode||'radha', historyRV: App.S.historyRV||{}, timerHistoryRV: App.S.timerHistoryRV||{},
-      dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0, nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[]
-    }, null, 2);
-
-    // Check if a backup for today already exists
-    const listResp = await fetch(
-      'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("name='" + fileName + "' and trashed=false") + '&spaces=drive&fields=files(id)',
-      { headers: { 'Authorization': 'Bearer ' + gdAccessToken } }
-    );
-    if (!listResp.ok) { gdAccessToken = null; return; }
-    const listData = await listResp.json();
-    const existingId = listData.files && listData.files.length ? listData.files[0].id : null;
-
-    const boundary = 'rjap_' + Date.now();
-    const metadata = JSON.stringify({ name: fileName, mimeType: 'application/json' });
-    const body = '--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+metadata+'\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+data+'\r\n--'+boundary+'--';
-    const method = existingId ? 'PATCH' : 'POST';
-    const url = existingId
-      ? 'https://www.googleapis.com/upload/drive/v3/files/' + existingId + '?uploadType=multipart'
-      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-    const uploadResp = await fetch(url, {
-      method, headers: { 'Authorization': 'Bearer ' + gdAccessToken, 'Content-Type': 'multipart/related; boundary=' + boundary },
-      body
-    });
-    if (uploadResp.ok) {
-      setSyncPill('', '☁️ Auto backup: ' + dateStr);
-      console.log('Midnight Drive backup complete:', fileName);
-    } else if (uploadResp.status === 401) { gdAccessToken = null; localStorage.removeItem('rjap_gd_token'); }
-  } catch(e) { console.warn('Midnight Drive backup failed:', e.message); }
-}
-
-// List all Drive backup files for restore UI
-async function gdListBackupFiles() {
-  const token = await gdGetToken();
-  if (!token) { toast('Please sign in with Google first 🙏'); return; }
-  gdAccessToken = token;
-  const el = document.getElementById('gdBackupList');
-  if (!el) return;
-  el.innerHTML = '<div style="font-size:12px;color:var(--td);padding:8px 0">Loading backups…</div>';
-  try {
-    const listResp = await fetch(
-      'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("name contains 'radha-naam-jap-backup' and trashed=false") + '&spaces=drive&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc',
-      { headers: { 'Authorization': 'Bearer ' + gdAccessToken } }
-    );
-    if (!listResp.ok) { el.innerHTML = '<div style="color:var(--red);font-size:12px">Failed to list backups. Try signing in again.</div>'; return; }
-    const data = await listResp.json();
-    const files = data.files || [];
-    if (!files.length) { el.innerHTML = '<div style="font-size:12px;color:var(--td);padding:8px 0">No backups found in Drive yet.</div>'; return; }
-    el.innerHTML = files.map(f => {
-      const dt = new Date(f.modifiedTime).toLocaleString('en-IN', {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:rgba(74,144,226,0.07);border:1px solid rgba(74,144,226,0.15);border-radius:9px;margin-bottom:6px">'
-        +'<div><div style="font-size:12px;color:var(--tl)">'+escHtml(f.name)+'</div><div style="font-size:10px;color:var(--td)">'+dt+'</div></div>'
-        +'<button onclick="gdRestoreFile(\''+f.id+'\',\''+escHtml(f.name)+'\')" style="padding:5px 12px;border-radius:8px;border:1px solid rgba(46,204,113,0.4);background:rgba(46,204,113,0.1);color:var(--green);font-size:12px;cursor:pointer">Restore</button>'
-        +'</div>';
-    }).join('');
-  } catch(e) { el.innerHTML = '<div style="color:var(--red);font-size:12px">Error: ' + e.message + '</div>'; }
-}
-
-async function gdRestoreFile(fileId, fileName) {
-  if (!confirm('Restore from "' + fileName + '"?\n\nThis will REPLACE your current data with the backup.')) return;
-  const token = await gdGetToken();
-  if (!token) { toast('Please sign in with Google first'); return; }
-  gdAccessToken = token;
-  toast('Downloading backup…');
-  try {
-    const resp = await fetch('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media', {
-      headers: { 'Authorization': 'Bearer ' + gdAccessToken }
-    });
-    if (!resp.ok) { toast('Download failed. Try signing in again.'); return; }
-    const data = await resp.json();
-    // Reuse the same import logic
-    const fakeInput = { files: [new File([JSON.stringify(data)], fileName, {type:'application/json'})] };
-    importAllData(fakeInput);
-    toast('✅ Restored from Drive backup! 🙏 Jai Radhe!');
-  } catch(e) { toast('Restore failed: ' + e.message); }
-}
+// GOOGLE DRIVE — Silent Monk Auto Backup
 // Uses the access token from Google Sign-In (same login)
 // ═══════════════════════════════════════════════════════
 const GDRIVE_FILENAME = 'radha-naam-jap-backup.json';
 let gdAccessToken = localStorage.getItem('rjap_gd_token') || null;
 
 async function gdDriveSilentBackup() {
-  const token = await gdGetToken();
-  if (!token) return;
-  gdAccessToken = token;
+  if (!gdAccessToken) return; // Not signed in with Google Drive scope
   try {
     const data = JSON.stringify({
       version: 3, exportedAt: new Date().toISOString(),
@@ -2404,7 +2254,151 @@ async function gdDriveSilentBackup() {
 
 
 // ═══════════════════════════════════════════════════════
-// 28 NAMES, SANKALP, STOTRAM, BRAHMACHARYA, CALENDAR
+// AUTO MIDNIGHT GOOGLE DRIVE BACKUP (like WhatsApp)
+// Backs up at midnight every night. Uses a dated filename
+// so each day creates its own visible JSON in Drive.
+// Also works silently when app is open.
+// ═══════════════════════════════════════════════════════
+const GD_AUTO_BACKUP_KEY = 'rjap_gd_lastAutoBackup';
+
+async function gdMidnightBackup() {
+  if (!gdAccessToken) return;
+  const today = App.getTk();
+  const lastBackup = localStorage.getItem(GD_AUTO_BACKUP_KEY);
+  if (lastBackup === today) return; // Already backed up today
+  const filename = 'radha-naam-jap-auto-' + today + '.json';
+  try {
+    const data = JSON.stringify({
+      version: 3, exportedAt: new Date().toISOString(), backupType: 'auto-midnight',
+      history: App.S.history||{}, h28: App.S.h28||{},
+      timerHistory: App.S.timerHistory||{}, timer28History: App.S.timer28History||{},
+      stotrams: App.S.stotrams||{}, brahma: App.S.brahma||{}, customSt: App.S.customSt||[],
+      sankalpas: App.S.sankalpas||[], occasions: App.S.occasions||{},
+      ms: App.S.ms||108, dt: App.S.dt||0, lt: App.S.lt||0, nameJapDeduct: App.S.nameJapDeduct||0, cfg: App.S.cfg||{},
+      malaLog: App.S.malaLog||[], malaLogDate: App.S.tk, brahmacharya_start_date: App.S.brahmacharya_start_date||'',
+      japMode: App.S.japMode||'radha', historyRV: App.S.historyRV||{}, timerHistoryRV: App.S.timerHistoryRV||{},
+      dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0, nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[]
+    }, null, 2);
+
+    // Check if a backup for this date already exists in Drive
+    const listResp = await fetch(
+      'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("name='" + filename + "' and trashed=false") + '&spaces=drive&fields=files(id)',
+      { headers: { 'Authorization': 'Bearer ' + gdAccessToken } }
+    );
+    if (!listResp.ok) { gdAccessToken = null; localStorage.removeItem('rjap_gd_token'); return; }
+    const listData = await listResp.json();
+    const fileId = listData.files && listData.files.length ? listData.files[0].id : null;
+    const boundary = 'rjap_mid_' + Date.now();
+    const metadata = JSON.stringify({ name: filename, mimeType: 'application/json' });
+    const body = '--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+metadata+'\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+data+'\r\n--'+boundary+'--';
+    const method = fileId ? 'PATCH' : 'POST';
+    const url = fileId
+      ? 'https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=multipart'
+      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+    const uploadResp = await fetch(url, {
+      method, headers: { 'Authorization': 'Bearer ' + gdAccessToken, 'Content-Type': 'multipart/related; boundary=' + boundary },
+      body
+    });
+    if (uploadResp.ok) {
+      localStorage.setItem(GD_AUTO_BACKUP_KEY, today);
+      setSyncPill('', '☁️ Auto backup: ' + today);
+      console.log('Auto midnight backup done:', filename);
+    } else if (uploadResp.status === 401) {
+      gdAccessToken = null; localStorage.removeItem('rjap_gd_token');
+    }
+  } catch(e) { console.warn('Auto backup failed:', e.message); }
+}
+
+// ── Midnight backup scheduler — runs every minute to catch the midnight moment ──
+function _scheduleMidnightBackup() {
+  setInterval(() => {
+    const now = new Date();
+    // Run between midnight and 12:05 AM to catch midnight
+    if (now.getHours() === 0 && now.getMinutes() < 5) {
+      gdMidnightBackup();
+    }
+  }, 60000);
+
+  // Also run on app open — back up previous day if missed
+  setTimeout(() => {
+    const lastBackup = localStorage.getItem(GD_AUTO_BACKUP_KEY);
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+    const yKey = yesterday.getFullYear() + '-' + String(yesterday.getMonth()+1).padStart(2,'0') + '-' + String(yesterday.getDate()).padStart(2,'0');
+    // If we never backed up yesterday and it's past midnight, back up now
+    if (lastBackup !== App.getTk()) {
+      gdMidnightBackup();
+    }
+  }, 10000);
+}
+_scheduleMidnightBackup();
+
+// Manual restore from Drive: list available auto-backup files and let user pick
+async function gdListDriveBackups() {
+  const el = document.getElementById('gdRestoreList');
+  if (!el) return;
+  if (!gdAccessToken) { el.innerHTML = '<div style="font-size:12px;color:var(--red)">Please sign in with Google first.</div>'; return; }
+  el.innerHTML = '<div style="font-size:12px;color:var(--td)">Loading backups from Drive…</div>';
+  try {
+    const resp = await fetch(
+      'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("name contains 'radha-naam-jap' and trashed=false") + '&spaces=drive&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=30',
+      { headers: { 'Authorization': 'Bearer ' + gdAccessToken } }
+    );
+    if (!resp.ok) { el.innerHTML = '<div style="font-size:12px;color:var(--red)">Auth error. Please sign in again.</div>'; return; }
+    const data = await resp.json();
+    if (!data.files || !data.files.length) {
+      el.innerHTML = '<div style="font-size:12px;color:var(--td);text-align:center;padding:8px">No Drive backups found.</div>';
+      return;
+    }
+    el.innerHTML = data.files.map(f => {
+      const dt = new Date(f.modifiedTime).toLocaleString('en-IN', {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid rgba(255,255,255,0.06)">'
+        + '<div style="flex:1"><div style="font-size:12px;color:var(--tl)">' + escHtml(f.name) + '</div><div style="font-size:10px;color:var(--td)">' + dt + '</div></div>'
+        + '<button onclick="gdRestoreBackup(\'' + f.id + '\',\'' + escHtml(f.name) + '\')" style="padding:5px 12px;border-radius:8px;border:1px solid rgba(74,144,226,0.4);background:rgba(74,144,226,0.1);color:var(--a2);font-size:11px;cursor:pointer;white-space:nowrap">Restore</button>'
+        + '</div>';
+    }).join('');
+  } catch(e) { el.innerHTML = '<div style="font-size:12px;color:var(--red)">Error: ' + e.message + '</div>'; }
+}
+
+async function gdRestoreBackup(fileId, filename) {
+  if (!confirm('Restore "' + filename + '"? Current data will be overwritten.')) return;
+  const st = document.getElementById('gdRestoreStatus');
+  if (st) st.textContent = 'Downloading…';
+  try {
+    const resp = await fetch('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media', {
+      headers: { 'Authorization': 'Bearer ' + gdAccessToken }
+    });
+    if (!resp.ok) throw new Error('Download failed: ' + resp.status);
+    const data = await resp.json();
+    // Reuse existing importAllData logic
+    const input = { files: [new File([JSON.stringify(data)], filename, {type:'application/json'})] };
+    // Apply data directly
+    if (data.history) App.S.history = {...App.S.history, ...data.history};
+    if (data.h28) App.S.h28 = {...App.S.h28, ...data.h28};
+    if (data.timerHistory) App.S.timerHistory = {...App.S.timerHistory, ...data.timerHistory};
+    if (data.timer28History) App.S.timer28History = {...App.S.timer28History, ...data.timer28History};
+    if (data.stotrams) App.S.stotrams = {...App.S.stotrams, ...data.stotrams};
+    if (data.brahma) App.S.brahma = {...App.S.brahma, ...data.brahma};
+    if (data.customSt) App.S.customSt = data.customSt;
+    if (data.sankalpas) App.S.sankalpas = data.sankalpas;
+    if (data.occasions) App.S.occasions = {...App.S.occasions, ...data.occasions};
+    if (data.ms) App.S.ms = data.ms;
+    if (data.dt !== undefined) App.S.dt = data.dt;
+    if (data.lt !== undefined) App.S.lt = data.lt;
+    if (data.nameJapDeduct !== undefined) App.S.nameJapDeduct = data.nameJapDeduct;
+    if (data.historyRV) App.S.historyRV = {...App.S.historyRV, ...data.historyRV};
+    if (data.timerHistoryRV) App.S.timerHistoryRV = {...App.S.timerHistoryRV, ...data.timerHistoryRV};
+    if (data.brahmacharya_start_date) App.S.brahmacharya_start_date = data.brahmacharya_start_date;
+    App.save();
+    switchJapMode(App.S.japMode || 'radha');
+    renderSt(); u28(); renderBcal(); renderCal(); uStats(); renderSankalpas(); renderMalaLog();
+    if (st) { st.textContent = '✅ Restored from ' + filename + '! 🙏'; st.style.color = 'var(--green)'; }
+    toast('✅ Drive backup restored! 🙏 Jai Radhe!');
+  } catch(e) {
+    if (st) { st.textContent = '❌ ' + e.message; st.style.color = 'var(--red)'; }
+  }
+}
+
+
 // (same logic as original, using App.S instead of S)
 // ═══════════════════════════════════════════════════════
 
@@ -2956,22 +2950,29 @@ function reset28Time(scope) {
 
 function renderSt() {
   const list = document.getElementById('stList'); list.innerHTML = '';
-  const all = [...STLIST,...(App.S.customSt||[]).map(x=>({...x,custom:true}))];
+  // Merge: inbuilt + global (from Firestore) + personal custom
+  const globalSt = (_globalStotrams||[]).map(x=>({...x,global:true}));
+  const all = [...STLIST,...globalSt,...(App.S.customSt||[]).map(x=>({...x,custom:true}))];
+  // Show dev panel toggle button for developers
+  const devBtn = document.getElementById('devStBtn');
+  if (devBtn) devBtn.style.display = isDeveloper() ? '' : 'none';
   all.forEach(st => {
     const tc = (App.S.stotrams[st.id]||{})[App.S.tk]||0;
     const tot = Object.values(App.S.stotrams[st.id]||{}).reduce((a,b)=>a+b,0);
-    // Show 📖 for built-in (LYRICS[id]) OR custom with lyrics
-    const hasLyrics = !!LYRICS[st.id] || (st.custom && st.lyrics && st.lyrics.trim().length > 0);
+    // Show 📖 for built-in (via LYRICS or override), global, or custom with lyrics
+    const effLyrics = getEffectiveLyrics(st.id);
+    const hasLyrics = !!(effLyrics && effLyrics.trim().length > 0);
     const c = document.createElement('div'); c.className = 'stc';
-    const isDev = isDevUser();
+    // Tag for global stotrams
+    const globalTag = st.global ? '<span style="font-size:9px;color:var(--gold);border:1px solid rgba(255,215,0,0.3);border-radius:4px;padding:1px 5px;margin-left:5px;vertical-align:middle">🌍 GLOBAL</span>' : '';
     let inner = '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:3px">'
-      +'<span class="stn">'+escHtml(st.name)+'</span>'
+      +'<span class="stn">'+escHtml(st.name)+globalTag+'</span>'
       +(st.custom
         ?'<div style="display:flex;gap:5px">'
           +'<button class="dsb" style="color:var(--a2);border-color:rgba(74,144,226,0.35)" onclick="toggleStEdit(\''+st.id+'\')">✏</button>'
           +'<button class="dsb" onclick="delSt(\''+st.id+'\')">✕</button>'
           +'</div>'
-        :(isDev ? '<button class="dsb" style="color:var(--gold);border-color:rgba(255,215,0,0.4);font-size:10px" onclick="toggleDevLyrEdit(\''+st.id+'\')">👑 Edit</button>' : ''))
+        :'')
       +'</div>'
       +(st.sub?'<div class="sts">'+escHtml(st.sub)+'</div>':'')
       +'<div class="scr"><div>'
@@ -2991,18 +2992,139 @@ function renderSt() {
         +'<button onclick="editStLyrics(\''+st.id+'\')" style="margin-top:7px;padding:8px 18px;border-radius:9px;border:none;background:linear-gradient(135deg,var(--bg),var(--a));color:white;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">💾 Save Lyrics</button>'
         +'</div>';
     }
-    // Dev: edit built-in stotram lyrics (visible to all users when saved)
-    if (!st.custom && isDevUser()) {
-      inner += '<div id="devLyrPanel-'+st.id+'" style="display:none;margin-top:10px;padding:10px;background:rgba(255,215,0,0.05);border:1px solid rgba(255,215,0,0.2);border-radius:9px">'
-        +'<div style="font-size:11px;color:var(--gold);margin-bottom:6px;letter-spacing:1px">👑 DEV: Edit built-in lyrics (saves for ALL users)</div>'
-        +'<textarea id="devLyrEdit-'+st.id+'" rows="10" style="width:100%;background:rgba(0,0,0,0.45);border:1px solid rgba(255,215,0,0.3);border-radius:9px;padding:9px 11px;color:var(--tl);font-size:13px;font-family:Hind Siliguri,serif;resize:vertical;line-height:1.8;box-sizing:border-box" placeholder="Paste full lyrics here…">'+escHtml(LYRICS[st.id]||'')+'</textarea>'
-        +'<button onclick="devSaveBuiltinLyrics(\''+st.id+'\')" style="margin-top:7px;padding:8px 18px;border-radius:9px;border:none;background:linear-gradient(135deg,rgba(255,215,0,0.3),rgba(255,165,0,0.4));color:var(--gold);font-size:13px;font-weight:600;cursor:pointer">💾 Save for All Users</button>'
-        +'</div>';
-    }
     c.innerHTML = inner;
     list.appendChild(c);
   });
 }
+
+// ─────────────────────────────────────────────────────────
+// DEVELOPER STOTRAM MANAGEMENT
+// Developer IDs: drakthephenomenal@gmail.com, akthephenomenal@zohomail.com, anupkumarpaulshuvo@gmail.com
+// ─────────────────────────────────────────────────────────
+const DEV_IDS = [
+  'drakthephenomenal@gmail.com',
+  'akthephenomenal@zohomail.com',
+  'anupkumarpaulshuvo@gmail.com'
+];
+
+function isDeveloper() {
+  if (!fbUser) return false;
+  const email = (fbUser.email || '').toLowerCase().trim();
+  return DEV_IDS.map(e=>e.toLowerCase()).includes(email);
+}
+
+// Global stotrams stored in Firestore — visible to ALL users
+let _globalStotrams = [];
+let _globalLyricsOverrides = {}; // {stotramId: newLyrics}
+
+async function loadGlobalStotrams() {
+  if (!fbDb) return;
+  try {
+    const snap = await fbDb.collection('global_stotrams').orderBy('createdAt', 'asc').get();
+    _globalStotrams = snap.docs.map(d => ({id: d.id, ...d.data()}));
+  } catch(e) {
+    // Collection may not exist yet
+    _globalStotrams = [];
+  }
+  try {
+    const overrides = await fbDb.collection('stotram_overrides').get();
+    _globalLyricsOverrides = {};
+    overrides.docs.forEach(d => { _globalLyricsOverrides[d.id] = d.data().lyrics || ''; });
+  } catch(e) {
+    _globalLyricsOverrides = {};
+  }
+  renderSt();
+}
+
+function getEffectiveLyrics(id) {
+  if (_globalLyricsOverrides[id]) return _globalLyricsOverrides[id];
+  return LYRICS[id] || ((App.S.customSt||[]).find(x=>x.id===id)||{}).lyrics
+       || ((_globalStotrams||[]).find(x=>x.id===id)||{}).lyrics || '';
+}
+
+async function devSaveInbuiltLyrics(id) {
+  if (!isDeveloper()) { toast('Access denied'); return; }
+  const ta = document.getElementById('devLyrEdit-' + id);
+  if (!ta) return;
+  const lyrics = ta.value.trim();
+  if (!lyrics) { toast('Lyrics cannot be empty'); return; }
+  try {
+    await fbDb.collection('stotram_overrides').doc(id).set({ lyrics, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: fbUser.email });
+    _globalLyricsOverrides[id] = lyrics;
+    renderSt();
+    toast('✅ Lyrics saved for all users! 🙏');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+async function devAddGlobalStotram() {
+  if (!isDeveloper()) { toast('Access denied'); return; }
+  const name = (document.getElementById('devStName').value || '').trim();
+  const sub = (document.getElementById('devStSub').value || '').trim();
+  const lyrics = (document.getElementById('devStLyrics').value || '').trim();
+  if (!name) { toast('Stotram name required'); return; }
+  const id = 'gs_' + Date.now();
+  try {
+    await fbDb.collection('global_stotrams').doc(id).set({
+      name, sub, lyrics, createdAt: firebase.firestore.FieldValue.serverTimestamp(), createdBy: fbUser.email
+    });
+    _globalStotrams.push({ id, name, sub, lyrics });
+    document.getElementById('devStName').value = '';
+    document.getElementById('devStSub').value = '';
+    document.getElementById('devStLyrics').value = '';
+    renderSt();
+    renderDevStotramPanel();
+    toast('✅ Global stotram added for all users! 🙏');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+async function devDeleteGlobalStotram(id) {
+  if (!isDeveloper()) { toast('Access denied'); return; }
+  if (!confirm('Delete this global stotram for all users?')) return;
+  try {
+    await fbDb.collection('global_stotrams').doc(id).delete();
+    _globalStotrams = _globalStotrams.filter(s => s.id !== id);
+    renderSt();
+    renderDevStotramPanel();
+    toast('Deleted.');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+let _devPanelOpen = false;
+function toggleDevPanel() {
+  _devPanelOpen = !_devPanelOpen;
+  const panel = document.getElementById('devStPanel');
+  if (panel) { panel.style.display = _devPanelOpen ? 'block' : 'none'; }
+  if (_devPanelOpen) renderDevStotramPanel();
+}
+
+function renderDevStotramPanel() {
+  const el = document.getElementById('devStList');
+  if (!el) return;
+  let html = '';
+  // Section 1: Edit inbuilt stotram lyrics
+  html += '<div style="font-size:12px;color:var(--gold);letter-spacing:1px;margin-bottom:8px;text-transform:uppercase">✏ Edit Inbuilt Stotram Lyrics</div>';
+  STLIST.forEach(st => {
+    const cur = getEffectiveLyrics(st.id);
+    const hasOverride = !!_globalLyricsOverrides[st.id];
+    html += '<div style="margin-bottom:10px;border:1px solid rgba(255,215,0,0.2);border-radius:9px;padding:9px">';
+    html += '<div style="font-size:12px;color:var(--tl);margin-bottom:6px">' + escHtml(st.name) + (hasOverride ? ' <span style="color:var(--green);font-size:10px">● overridden</span>' : '') + '</div>';
+    html += '<textarea id="devLyrEdit-' + st.id + '" rows="4" style="width:100%;background:rgba(0,0,0,0.3);border:1px solid rgba(255,215,0,0.2);border-radius:7px;padding:7px;color:var(--tl);font-size:12px;font-family:Hind Siliguri,serif;resize:vertical;box-sizing:border-box">' + escHtml(cur) + '</textarea>';
+    html += '<button onclick="devSaveInbuiltLyrics(\'' + st.id + '\')" style="margin-top:5px;padding:6px 14px;border-radius:7px;border:none;background:linear-gradient(135deg,rgba(255,215,0,0.3),rgba(255,180,0,0.2));color:var(--gold);font-size:12px;cursor:pointer">💾 Save for All Users</button>';
+    html += '</div>';
+  });
+  // Section 2: Global stotrams list
+  if (_globalStotrams.length) {
+    html += '<div style="font-size:12px;color:var(--gold);letter-spacing:1px;margin:12px 0 8px;text-transform:uppercase">🌍 Global Stotrams Added</div>';
+    _globalStotrams.forEach(st => {
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:7px;background:rgba(255,215,0,0.05);border-radius:7px;margin-bottom:6px">';
+      html += '<div style="flex:1;font-size:12px;color:var(--tl)">' + escHtml(st.name) + (st.sub ? '<br><span style="font-size:10px;color:var(--td)">'+escHtml(st.sub)+'</span>' : '') + '</div>';
+      html += '<button onclick="devDeleteGlobalStotram(\'' + st.id + '\')" style="padding:4px 10px;border-radius:7px;border:1px solid rgba(232,51,109,0.3);background:rgba(232,51,109,0.08);color:var(--rl);font-size:11px;cursor:pointer">Delete</button>';
+      html += '</div>';
+    });
+  }
+  el.innerHTML = html;
+}
+
 function adjSt(id,d) {
   if(!App.S.stotrams[id])App.S.stotrams[id]={};
   if(!App.S.stotrams[id][App.S.tk])App.S.stotrams[id][App.S.tk]=0;
@@ -3050,12 +3172,6 @@ function toggleStEdit(id) {
     if(st && ta) ta.value = st.lyrics||'';
   }
 }
-function toggleDevLyrEdit(id) {
-  const panel = document.getElementById('devLyrPanel-' + id);
-  if (!panel) return;
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-}
-
 function delSt(id) { App.S.customSt=(App.S.customSt||[]).filter(x=>x.id!==id); delete App.S.stotrams[id]; App.save(); fbDebouncedPush(); renderSt(); toast('Removed'); }
 
 // ── Brahmacharya ──
@@ -3440,18 +3556,10 @@ window.addEventListener('load', async () => {
   fbInit();
   initSunTimes();
   buildPwaManifest();
-  gisInitTokenClient(); // init GIS Drive token client
-
-  // Set share URL
-  const shareUrlEl = document.getElementById('appShareUrl');
-  if (shareUrlEl) shareUrlEl.textContent = window.location.href.split('?')[0];
 
   // Restore Drive token if re-opened
   const savedToken = localStorage.getItem('rjap_gd_token');
-  if (savedToken) {
-    gdAccessToken = savedToken;
-    scheduleMidnightDriveBackup(); // re-arm midnight backup
-  }
+  if (savedToken) gdAccessToken = savedToken;
 
   // Hide loading — guaranteed cleanup
   setTimeout(() => {
@@ -3520,101 +3628,12 @@ window.addEventListener('load', function() {
 
 // ═══════════════════════════════════════════════════════
 
-// ─── DEVELOPER IDs — can edit built-in stotrams and add new ones ───
-const DEV_EMAILS = [
-  'drakthephenomenal@gmail.com',
-  'akthephenomenal@zohomail.com',
-  'anupkumarpaulshuvo@gmail.com'
-];
-
-function isDevUser() {
-  if (!fbUser) return false;
-  const email = (fbUser.email || '').toLowerCase().trim();
-  return DEV_EMAILS.some(e => e.toLowerCase() === email);
-}
-
-// Dev: save edited built-in stotram lyrics to Firestore so all users see it
-async function devSaveBuiltinLyrics(id) {
-  if (!isDevUser()) { toast('Access denied 🚫'); return; }
-  const el = document.getElementById('devLyrEdit-' + id);
-  if (!el) return;
-  const newLyrics = el.value.trim();
-  if (!newLyrics) { toast('Cannot save empty lyrics'); return; }
-  try {
-    await fbDb.collection('shared').doc('stotramLyrics').set({ [id]: newLyrics }, { merge: true });
-    // Update local LYRICS cache
-    LYRICS[id] = newLyrics;
-    toast('✅ Built-in lyrics updated for all users! 🙏');
-    // Close panel
-    const panel = document.getElementById('devLyrPanel-' + id);
-    if (panel) panel.style.display = 'none';
-  } catch(e) { toast('Save failed: ' + e.message); }
-}
-
-// Dev: add a new global stotram visible to all users
-async function devAddGlobalStotram() {
-  if (!isDevUser()) { toast('Access denied 🚫'); return; }
-  const name = (document.getElementById('devSnIn').value || '').trim();
-  const sub = (document.getElementById('devSsIn').value || '').trim();
-  const lyrics = (document.getElementById('devSlIn').value || '').trim();
-  if (!name) { toast('Please enter stotram name'); return; }
-  const id = 'global_' + Date.now();
-  try {
-    await fbDb.collection('shared').doc('globalStotrams').set({
-      list: firebase.firestore.FieldValue.arrayUnion({ id, name, sub, lyrics, addedBy: fbUser.email, addedAt: new Date().toISOString() })
-    }, { merge: true });
-    // Add to STLIST locally
-    STLIST.push({ id, name, sub });
-    LYRICS[id] = lyrics;
-    if (!App.S.stotrams[id]) App.S.stotrams[id] = {};
-    App.save();
-    document.getElementById('devSnIn').value = '';
-    document.getElementById('devSsIn').value = '';
-    document.getElementById('devSlIn').value = '';
-    renderSt();
-    toast('✅ Global stotram added for all users! 🙏');
-  } catch(e) { toast('Save failed: ' + e.message); }
-}
-
-// Load global stotrams added by devs (called on startup)
-async function loadGlobalStotrams() {
-  if (!fbDb) return;
-  try {
-    const snap = await fbDb.collection('shared').doc('globalStotrams').get();
-    if (snap.exists) {
-      const data = snap.data();
-      const list = data.list || [];
-      list.forEach(st => {
-        if (!STLIST.find(x => x.id === st.id)) STLIST.push({ id: st.id, name: st.name, sub: st.sub });
-        if (st.lyrics) LYRICS[st.id] = st.lyrics;
-        if (!App.S.stotrams[st.id]) App.S.stotrams[st.id] = {};
-      });
-    }
-    // Also load any edited built-in lyrics
-    const lyricsSnap = await fbDb.collection('shared').doc('stotramLyrics').get();
-    if (lyricsSnap.exists) {
-      const lyrData = lyricsSnap.data();
-      Object.assign(LYRICS, lyrData);
-    }
-    renderSt();
-  } catch(e) { console.warn('loadGlobalStotrams:', e.message); }
-}
-
-// ── Share App ──
-function shareApp() {
-  const url = window.location.href.split('?')[0];
-  if (navigator.share) {
-    navigator.share({ title: 'Radha Naam Jap 🌸', text: '🌸 Jai Shri Radhe! Join me in naam jap with this beautiful app 🙏', url }).catch(() => {});
-  } else {
-    navigator.clipboard.writeText(url).then(() => toast('App link copied! 📋 Share it with devotees 🙏')).catch(() => { prompt('Copy this link and share:', url); });
-  }
-}
-
+// ── showLyrics function ──
 function showLyrics(id) {
-  // Built-in stotram lyrics first, then custom stotram lyrics
-  const ly = LYRICS[id] || ((App.S.customSt||[]).find(x=>x.id===id)||{}).lyrics || '';
+  const ly = getEffectiveLyrics(id);
   if (!ly) { toast('পাঠ্য পাওয়া যায়নি 🙏'); return; }
-  const nm = [...STLIST,...(App.S.customSt||[])].find(x => x.id === id);
+  const allSt = [...STLIST,...(_globalStotrams||[]),...(App.S.customSt||[])];
+  const nm = allSt.find(x => x.id === id);
   document.getElementById('lmTitle').textContent = nm ? nm.name : id;
   document.getElementById('lyrBody').textContent = ly;
   document.getElementById('lmo').classList.add('show');

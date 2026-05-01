@@ -2,7 +2,8 @@
 // Radha Naam Jap — Service Worker
 // Update CACHE version when index.html changes
 // ═══════════════════════════════════════════════
-const CACHE = 'radha-jap-v55';  // v55: account-bleed fix, full reset, lifetime split stats
+const CACHE = 'radha-jap-v52';  // v52: GitHub Pages + OAuth + Drive auto-backup
+const APP_URL = 'https://drakthephenomenal.github.io';
 
 const PRECACHE = [
   './index.html',
@@ -109,70 +110,9 @@ self.addEventListener('notificationclick', e => {
   e.waitUntil(
     clients.matchAll({ type: 'window' }).then(list => {
       for (const client of list) {
-        if ('focus' in client) return client.focus();
+        if (client.url.includes('drakthephenomenal.github.io') && 'focus' in client) return client.focus();
       }
-      if (clients.openWindow) return clients.openWindow('/');
+      if (clients.openWindow) return clients.openWindow(APP_URL);
     })
   );
-});
-
-// ═══════════════════════════════════════════════
-// Periodic Background Sync — runs even when the app is CLOSED
-// (Chrome/Edge on installed PWA with permission granted)
-// Reads latest snapshot + token written by app to IDB 'rjap_bg' / 'snap'
-// ═══════════════════════════════════════════════
-function _readSnap() {
-  return new Promise(resolve => {
-    try {
-      const req = indexedDB.open('rjap_bg', 1);
-      req.onupgradeneeded = () => { req.result.createObjectStore('snap'); };
-      req.onsuccess = () => {
-        const db = req.result;
-        const tx = db.transaction('snap', 'readonly');
-        const g = tx.objectStore('snap').get('latest');
-        g.onsuccess = () => { db.close(); resolve(g.result || null); };
-        g.onerror = () => { db.close(); resolve(null); };
-      };
-      req.onerror = () => resolve(null);
-    } catch(e) { resolve(null); }
-  });
-}
-
-async function _bgDriveBackup() {
-  const snap = await _readSnap();
-  if (!snap || !snap.token || !snap.payload) return;
-  const filename = snap.filename || 'radha-naam-jap-backup.json';
-  try {
-    const listResp = await fetch(
-      'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("name='" + filename + "' and trashed=false") + '&spaces=drive&fields=files(id)',
-      { headers: { 'Authorization': 'Bearer ' + snap.token } }
-    );
-    if (!listResp.ok) return;
-    const listData = await listResp.json();
-    const fileId = listData.files && listData.files.length ? listData.files[0].id : null;
-    const boundary = 'rjap_' + Date.now();
-    const metadata = JSON.stringify({ name: filename, mimeType: 'application/json' });
-    const data = JSON.stringify(snap.payload, null, 2);
-    const body = '--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+metadata+'\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+data+'\r\n--'+boundary+'--';
-    const url = fileId
-      ? 'https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=multipart'
-      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-    await fetch(url, {
-      method: fileId ? 'PATCH' : 'POST',
-      headers: { 'Authorization': 'Bearer ' + snap.token, 'Content-Type': 'multipart/related; boundary=' + boundary },
-      body
-    });
-  } catch(e) { /* swallow */ }
-}
-
-self.addEventListener('periodicsync', (event) => {
-  if (event.tag === 'rjap-midnight-backup') {
-    event.waitUntil(_bgDriveBackup());
-  }
-});
-// One-shot Background Sync as fallback
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'rjap-midnight-backup') {
-    event.waitUntil(_bgDriveBackup());
-  }
 });

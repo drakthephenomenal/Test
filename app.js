@@ -288,8 +288,10 @@ const App = {
     document.getElementById('timerDisplay').classList.remove('running');
     document.getElementById('timerBtn').textContent = '▶ Resume';
     document.getElementById('timerBtn').className = 'tbtn start';
+    // Save only the delta since last save (avoids double-counting on resume)
     const _th = this.getCurTimerHistory();
-    _th[this.S.tk] = (_th[this.S.tk] || 0) + (this.timerSeconds - this.timerSavedSeconds);
+    const delta = this.timerSeconds - this.timerSavedSeconds;
+    _th[this.S.tk] = (_th[this.S.tk] || 0) + delta;
     this.timerSavedSeconds = this.timerSeconds;
     this.save(); this.updateTimerToday();
   },
@@ -309,6 +311,7 @@ const App = {
     clearTimeout(this.autoStopTimeout);
     clearInterval(this.timerInterval); this.timerInterval = null;
     this.timerRunning = false; this.timerSeconds = 0; this.timerSavedSeconds = 0;
+    this._malaTimerStart = 0; // reset per-mala timer anchor
     document.getElementById('timerDisplay').textContent = '00:00:00';
     document.getElementById('timerDisplay').classList.remove('running');
     document.getElementById('timerBtn').textContent = '▶ Start';
@@ -317,6 +320,9 @@ const App = {
   },
 
   updateTimerToday() {
+    // ── UNIFIED: Today's Jap Time = committed mala log sum + live in-progress delta ──
+    // timerHistory[today] is always kept equal to mala log sum (by syncTimerFromMalaLog).
+    // The live delta (timerSeconds - timerSavedSeconds) is the current incomplete mala.
     const radhaTimeSec = (this.S.timerHistory[this.S.tk] || 0);
     const rvTimeSec = (this.S.timerHistoryRV[this.S.tk] || 0);
     const liveSec = this.timerRunning ? (this.timerSeconds - this.timerSavedSeconds) : 0;
@@ -324,7 +330,24 @@ const App = {
     document.getElementById('timerToday').textContent = "Today's Jap Time: " + this.fmtTime(combinedSec);
   },
 
-  // ── Main UI Update ──
+  // ── UNIFIED TIME: sync timerHistory[today] = sum of mala log entries ──
+  // Called after any mala log change so all time displays stay in harmony.
+  syncTimerFromMalaLog() {
+    const isRV = this.S.japMode === 'rv';
+    const log = isRV ? (this.S.malaLogRV || []) : (this.S.malaLog || []);
+    const logSum = log.reduce((a, b) => a + b, 0);
+    const th = this.getCurTimerHistory();
+    th[this.S.tk] = logSum;
+    // Re-anchor timerSavedSeconds so live delta is measured from current position
+    this.timerSavedSeconds = this.timerSeconds;
+  },
+
+  // ── Get mala log sum for today (excludes live in-progress mala) ──
+  getMalaLogSum() {
+    const isRV = this.S.japMode === 'rv';
+    const log = isRV ? (this.S.malaLogRV || []) : (this.S.malaLog || []);
+    return log.reduce((a, b) => a + b, 0);
+  },
   ua() {
     const tod = this.gTod(), ms = this.S.ms || 108;
     const tot = this.gTot(); // COMBINED lifetime total
@@ -365,6 +388,8 @@ const App = {
     if (countInMala === 1 || this.malaWallStart === 0) {
       this.malaWallStart = Date.now();
       localStorage.setItem('rjap_malaWallStart', String(this.malaWallStart));
+      // Also anchor the timer-based mala start — this is the authoritative clock
+      if (this._malaTimerStart === undefined) this._malaTimerStart = this.timerSeconds;
     }
   },
 
@@ -376,11 +401,22 @@ const App = {
     if (this.S.cfg.sound) playSynthBell();
     // Triple long vibration synced with bell
     this.vib([200, 80, 200, 80, 300]);
-    // Record mala duration
-    const now = Date.now();
-    const malaDuration = Math.round((now - this.malaWallStart) / 1000);
-    this.malaWallStart = now;
-    localStorage.setItem('rjap_malaWallStart', String(now));
+    // ── Record mala duration using the SAME clock as the visible timer ──
+    // timerSeconds is the authoritative source — it only ticks while the app
+    // interval is actually running, matching exactly what the user sees on screen.
+    // Wall-clock (malaWallStart) is NOT used because it keeps running even when
+    // the phone screen is off or the browser throttles the interval.
+    let malaDuration;
+    if (this.timerSeconds > 0 && this._malaTimerStart !== undefined) {
+      malaDuration = Math.max(1, this.timerSeconds - this._malaTimerStart);
+    } else {
+      // Fallback: wall-clock (e.g. timer was never started, manual jap entry)
+      malaDuration = Math.max(1, Math.round((Date.now() - this.malaWallStart) / 1000));
+    }
+    // Anchor next mala's timer start to current timerSeconds
+    this._malaTimerStart = this.timerSeconds;
+    this.malaWallStart = Date.now();
+    localStorage.setItem('rjap_malaWallStart', String(this.malaWallStart));
     const isRVm = this.S.japMode === 'rv';
     if (isRVm) {
       if (!this.S.malaLogRV) this.S.malaLogRV = [];
@@ -389,6 +425,9 @@ const App = {
       if (!this.S.malaLog) this.S.malaLog = [];
       this.S.malaLog.push(malaDuration);
     }
+    // ── UNIFIED TIME: timerHistory[today] = sum of mala log entries ──
+    // This keeps all time displays (timer, stats, mala log, B&C day view) in harmony.
+    this.syncTimerFromMalaLog();
     this.save();
     // Animate mala duration on timer display
     this.flashMalaDuration(malaDuration);
@@ -661,7 +700,7 @@ const App = {
     clearTimeout(this.fbDebouncePush);
     fbPushDelta();
     // JSON snapshot to Google Drive
-    gdDriveSilentBackup();
+    
   }
 };
 
@@ -754,23 +793,50 @@ setInterval(() => {
   }
 }, 60000);
 
+// ── Get canonical app URL (strips index.html, query, hash) ──
+function _getAppUrl() {
+  let url = window.location.href;
+  // Remove index.html from the end if present
+  url = url.replace(/\/index\.html([?#].*)?$/, '/');
+  // Remove query string and hash
+  url = url.split('?')[0].split('#')[0];
+  // Ensure trailing slash
+  if (!url.endsWith('/')) url += '/';
+  return url;
+}
+
 // ── Share App ──
 function shareApp() {
-  const url = window.location.href.split('?')[0].split('#')[0];
-  const text = '🙏 Radha Naam Jap Sadhana App — Track your daily jap practice. Jai Radhe! 🌸\n\n' + url;
+  const url = _getAppUrl();
+  const shareText = '🙏 Radha Naam Jap Sadhana App — Track your jap sadhana. Jai Radhe Radhe! 🌸';
   if (navigator.share) {
-    navigator.share({ title: 'Radha Naam Jap', text: '🙏 Jai Radhe! Track your daily jap practice.', url })
+    navigator.share({ title: 'Radha Naam Jap 🙏', text: shareText, url })
       .then(() => toast('Shared! 🙏 Jai Radhe!'))
-      .catch(() => {});
-  } else {
-    navigator.clipboard.writeText(url).then(() => toast('App link copied! 🙏 Jai Radhe!'))
-      .catch(() => {
-        const ta = document.createElement('textarea');
-        ta.value = url; document.body.appendChild(ta); ta.select();
-        document.execCommand('copy'); ta.remove();
-        toast('App link copied! 🙏 Jai Radhe!');
+      .catch(err => {
+        // User cancelled or share failed — fall back to copy
+        if (err.name !== 'AbortError') _copyAppUrl(url);
       });
+  } else {
+    _copyAppUrl(url);
   }
+}
+
+function _copyAppUrl(url) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url)
+      .then(() => toast('✅ App link copied! 🙏 Jai Radhe!'))
+      .catch(() => _legacyCopy(url));
+  } else {
+    _legacyCopy(url);
+  }
+}
+
+function _legacyCopy(url) {
+  const ta = document.createElement('textarea');
+  ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  try { document.execCommand('copy'); toast('✅ App link copied! 🙏 Jai Radhe!'); } catch(e) { toast('Link: ' + url); }
+  ta.remove();
 }
 
 // ── Toast ──
@@ -910,6 +976,10 @@ function sv(id, btn) {
     const lb = localStorage.getItem(GD_AUTO_BACKUP_KEY);
     const gdLb = document.getElementById('gdLastAutoBackup');
     if (gdLb) gdLb.textContent = lb ? ('Last auto backup: ' + lb) : 'No auto backup yet — will run at midnight.';
+    // Populate the app link display
+    const appUrl = _getAppUrl();
+    const linkEl = document.getElementById('appLinkDisplay');
+    if (linkEl) linkEl.textContent = appUrl;
   }
 }
 
@@ -938,7 +1008,7 @@ function svt(tp) {
 }
 function svm() {
   App.S.ms = parseInt(document.getElementById('msIn').value) || 108;
-  App.save(); App.ua(); fbDebouncedPush(); gdDriveSilentBackup(); toast('Mala size saved! 📿');
+  App.save(); App.ua(); fbDebouncedPush();  toast('Mala size saved! 📿');
 }
 function tgs(k) {
   App.S.cfg[k] = !App.S.cfg[k];
@@ -964,13 +1034,11 @@ function addManualJap() {
   const isRV = App.S.japMode === 'rv';
   if (isRV) { App.S.historyRV[App.S.tk] = (App.S.historyRV[App.S.tk] || 0) + n; }
   else { App.S.history[App.S.tk] = (App.S.history[App.S.tk] || 0) + n; }
-  // Handle time input — add to today's timer and create mala log entries
+  // Handle time input — add mala log entries then sync timerHistory from log sum
   const minEl = document.getElementById('manualJapMin');
   const secEl = document.getElementById('manualJapSec');
   const timeSecs = (parseInt(minEl?.value) || 0) * 60 + Math.min(59, Math.max(0, parseInt(secEl?.value) || 0));
   if (timeSecs > 0) {
-    const th = App.getCurTimerHistory();
-    th[App.S.tk] = (th[App.S.tk] || 0) + timeSecs;
     // Create mala log entries with averaged time
     const ms = App.S.ms || 108;
     const malasAdded = Math.floor(n / ms);
@@ -979,6 +1047,8 @@ function addManualJap() {
       const log = isRV ? (App.S.malaLogRV || (App.S.malaLogRV = [])) : (App.S.malaLog || (App.S.malaLog = []));
       for (let i = 0; i < malasAdded; i++) log.push(avgPerMala);
     }
+    // Sync timerHistory from mala log sum — single source of truth
+    App.syncTimerFromMalaLog();
   }
   App.ensureMalaWallStart();
   const nm = Math.floor(App.gTod() / (App.S.ms || 108));
@@ -1043,6 +1113,25 @@ function deductTodayJap() {
   hist[App.S.tk] = cur - n;
   const lmcKey = isRV ? 'lmcRV' : 'lmc';
   App[lmcKey] = Math.floor(App.gTod() / (App.S.ms || 108));
+  // Proportionally remove time and mala log entries that correspond to deducted jap
+  // Ratio of jap being deducted vs total
+  const ratio = n / cur; // fraction being removed
+  const log = isRV ? (App.S.malaLogRV || []) : (App.S.malaLog || []);
+  if (log.length > 0) {
+    // Remove mala log entries from the END (most recent first, as we're deducting)
+    const malasToRemove = Math.floor(n / (App.S.ms || 108));
+    if (malasToRemove > 0 && malasToRemove <= log.length) {
+      const removed = log.splice(log.length - malasToRemove, malasToRemove);
+      const removedTime = removed.reduce((a, b) => a + b, 0);
+      const th = App.getCurTimerHistory();
+      th[App.S.tk] = Math.max(0, (th[App.S.tk] || 0) - removedTime);
+    } else if (malasToRemove === 0 && ratio > 0 && log.length > 0) {
+      // Deducting less than one mala — proportionally shrink the last entry's time
+      const timeShrink = Math.round(ratio * (App.getCurTimerHistory()[App.S.tk] || 0));
+      const th = App.getCurTimerHistory();
+      th[App.S.tk] = Math.max(0, (th[App.S.tk] || 0) - timeShrink);
+    }
+  }
   App.save(); App.ua(); fbDebouncedPush();
   document.getElementById('deductTodayIn').value = '';
   toast('Deducted ' + n + '. New total: ' + App.gTod() + ' 🙏');
@@ -1089,6 +1178,24 @@ function addJapTimeToday() {
   if (secs <= 0) { toast('Please enter at least 1 minute'); return; }
   const th = App.getCurTimerHistory();
   th[App.S.tk] = (th[App.S.tk] || 0) + secs;
+  // Keep mala log in harmony: distribute added time proportionally across existing entries
+  // or add a single adjustment entry if no malas done yet today
+  const isRV = App.S.japMode === 'rv';
+  const log = isRV ? (App.S.malaLogRV || (App.S.malaLogRV = [])) : (App.S.malaLog || (App.S.malaLog = []));
+  if (log.length > 0) {
+    // Distribute proportionally: each mala entry gets its share
+    const total = log.reduce((a, b) => a + b, 0);
+    let remaining = secs;
+    for (let i = 0; i < log.length - 1; i++) {
+      const share = Math.round(secs * log[i] / total);
+      log[i] += share;
+      remaining -= share;
+    }
+    log[log.length - 1] += remaining; // last entry absorbs rounding difference
+  } else {
+    // No malas done yet — add as a single time-adjustment entry
+    log.push(secs);
+  }
   App.save(); App.ua(); fbDebouncedPush();
   document.getElementById('jtAddTodayMin').value = '';
   document.getElementById('jtAddTodaySec').value = '';
@@ -1118,8 +1225,23 @@ function deductJapTimeToday() {
   if (secs <= 0) { toast('Please enter at least 1 minute'); return; }
   const th3 = App.getCurTimerHistory();
   const cur = th3[App.S.tk] || 0;
-  if (secs > cur) { toast('Cannot deduct more than today\'s time'); return; }
+  if (secs > cur) { toast('Cannot deduct more than today\'s time (' + Math.floor(cur/60) + 'm ' + (cur%60) + 's)'); return; }
   th3[App.S.tk] = cur - secs;
+  // Keep mala log in harmony: reduce entries proportionally
+  const isRV = App.S.japMode === 'rv';
+  const log = isRV ? (App.S.malaLogRV || []) : (App.S.malaLog || []);
+  if (log.length > 0) {
+    const total = log.reduce((a, b) => a + b, 0);
+    if (total > 0) {
+      let remaining = secs;
+      for (let i = 0; i < log.length - 1; i++) {
+        const share = Math.round(secs * log[i] / total);
+        log[i] = Math.max(1, log[i] - share); // keep each entry at least 1s
+        remaining -= share;
+      }
+      log[log.length - 1] = Math.max(1, log[log.length - 1] - remaining);
+    }
+  }
   App.save(); App.ua(); fbDebouncedPush();
   document.getElementById('jtDedTodayMin').value = '';
   document.getElementById('jtDedTodaySec').value = '';
@@ -1315,11 +1437,9 @@ function editMalaEntry(idx) {
   const parts = input.split(':');
   const newSecs = (parseInt(parts[0])||0) * 60 + (parseInt(parts[1])||0);
   if (newSecs <= 0) { toast('Invalid time'); return; }
-  const oldSecs = log[idx];
   log[idx] = newSecs;
-  // Update today's timer history with the difference
-  const th = App.getCurTimerHistory();
-  th[App.S.tk] = Math.max(0, (th[App.S.tk]||0) + (newSecs - oldSecs));
+  // Sync timerHistory from the updated mala log sum (single source of truth)
+  App.syncTimerFromMalaLog();
   App.save(); App.ua(); fbDebouncedPush(); renderMalaLog();
   toast('Mala ' + (idx+1) + ' updated ✏️');
 }
@@ -1329,10 +1449,9 @@ function deleteMalaEntry(idx) {
   const log = isRV ? App.S.malaLogRV : App.S.malaLog;
   if (!log || idx >= log.length) return;
   if (!confirm('Delete Mala ' + (idx+1) + ' entry?')) return;
-  const removed = log.splice(idx, 1)[0];
-  // Subtract removed time from today's timer
-  const th = App.getCurTimerHistory();
-  th[App.S.tk] = Math.max(0, (th[App.S.tk]||0) - removed);
+  log.splice(idx, 1);
+  // Sync timerHistory from updated mala log sum (single source of truth)
+  App.syncTimerFromMalaLog();
   App.save(); App.ua(); fbDebouncedPush(); renderMalaLog();
   toast('Mala entry deleted 🗑️');
 }
@@ -1354,7 +1473,7 @@ function cr2(tp) {
   document.getElementById('moCf').onclick = doReset;
 }
 function doReset() {
-  if (pr === 'today') { App.S.history[App.S.tk] = 0; App.lmc = 0; App.S.malaLog = []; App.malaWallStart = Date.now(); localStorage.setItem('rjap_malaWallStart', String(App.malaWallStart)); }
+  if (pr === 'today') { App.S.history[App.S.tk] = 0; App.lmc = 0; App.S.malaLog = []; App.malaWallStart = Date.now(); localStorage.setItem('rjap_malaWallStart', String(App.malaWallStart)); App._malaTimerStart = App.timerSeconds; App.syncTimerFromMalaLog(); }
   else if (pr === '28today') {
     // Freeze active wishes before zeroing today's count so progress bars drop correctly
     (App.S.sankalpas||[]).filter(s => !s.done && s.startCycles !== null).forEach(s => {
@@ -1401,7 +1520,7 @@ function doReset() {
     } catch(e) {}
     // 4. Save main state with empty h28 so main IDB key is also clean
     App.save();
-    fbDebouncedPush(); gdDriveSilentBackup();
+    fbDebouncedPush(); 
     u28(); render28StatsPanel(); renderSankalpas();
     toast('All 28 Names data reset 🙏'); return;
   }
@@ -1428,7 +1547,7 @@ function doReset() {
     ['dtIn','ltIn','msIn'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     initBrahmaStartInput();
   }
-  App.save(); App.ua(); fbDebouncedPush(); gdDriveSilentBackup(); renderCal(); cm(); toast('Reset complete 🙏');
+  App.save(); App.ua(); fbDebouncedPush();  renderCal(); cm(); toast('Reset complete 🙏');
 }
 function cm() { document.getElementById('mo').classList.remove('show'); }
 
@@ -1870,6 +1989,7 @@ function lockSignedOutScreen() {
   if (fbListener) { fbListener(); fbListener = null; }
   gdAccessToken = null;
   localStorage.removeItem('rjap_gd_token');
+  localStorage.removeItem('rjap_gd_token_expiry');
   document.body.innerHTML = '';
   document.body.style.cssText = 'margin:0;padding:0;background:#000;';
   const overlay = document.createElement('div');
@@ -1911,8 +2031,7 @@ function fbInit() {
     // Handle redirect sign-in result (for in-app browsers that used signInWithRedirect)
     fbAuth.getRedirectResult().then(result => {
       if (result && result.credential && result.credential.accessToken) {
-        gdAccessToken = result.credential.accessToken;
-        localStorage.setItem('rjap_gd_token', gdAccessToken);
+        gdSaveToken(result.credential.accessToken, 3600);
         toast('Signed in with Google! ☁️ Drive backup active 🙏');
       }
     }).catch(e => {
@@ -1984,8 +2103,7 @@ function fbSignInGoogle() {
     .then(result => {
       const credential = result.credential;
       if (credential && credential.accessToken) {
-        gdAccessToken = credential.accessToken;
-        localStorage.setItem('rjap_gd_token', gdAccessToken);
+        gdSaveToken(credential.accessToken, 3600);
       }
       toast('Signed in with Google! ☁️ Drive backup active 🙏');
     })
@@ -2061,6 +2179,7 @@ function fbSignOut() {
   if (fbListener) { fbListener(); fbListener = null; }
   gdAccessToken = null;
   localStorage.removeItem('rjap_gd_token');
+  localStorage.removeItem('rjap_gd_token_expiry');
   App._uid = null;
   fbAuth.signOut().then(() => toast('Signed out 🙏'));
 }
@@ -2209,195 +2328,326 @@ function fbDebouncedPush() {
 // GOOGLE DRIVE — Silent Monk Auto Backup
 // Uses the access token from Google Sign-In (same login)
 // ═══════════════════════════════════════════════════════
-const GDRIVE_FILENAME = 'radha-naam-jap-backup.json';
-let gdAccessToken = localStorage.getItem('rjap_gd_token') || null;
+// ═══════════════════════════════════════════════════════════════════════
+// GOOGLE DRIVE BACKUP SYSTEM — WhatsApp-style auto backup
+// • Midnight auto backup — one dated file per day (runs on app open if missed)
+// • Manual "Backup Now" button
+// • Background Periodic Sync via Service Worker (works when app closed)
+// • Manual restore only — user picks which backup to restore
+// • Firebase handles all real-time sync; Drive is for daily snapshots only
+// ═══════════════════════════════════════════════════════════════════════
 
-async function gdDriveSilentBackup() {
-  if (!gdAccessToken) return; // Not signed in with Google Drive scope
-  try {
-    const data = JSON.stringify({
-      version: 3, exportedAt: new Date().toISOString(),
-      history: App.S.history||{}, h28: App.S.h28||{},
-      timerHistory: App.S.timerHistory||{}, timer28History: App.S.timer28History||{},
-      stotrams: App.S.stotrams||{}, brahma: App.S.brahma||{}, customSt: App.S.customSt||[],
-      sankalpas: App.S.sankalpas||[], occasions: App.S.occasions||{},
-      ms: App.S.ms||108, dt: App.S.dt||0, lt: App.S.lt||0, nameJapDeduct: App.S.nameJapDeduct||0, cfg: App.S.cfg||{},
-      malaLog: App.S.malaLog||[], malaLogDate: App.S.tk,
-      japMode: App.S.japMode||'radha', historyRV: App.S.historyRV||{}, timerHistoryRV: App.S.timerHistoryRV||{},
-      dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0, nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[]
-    }, null, 2);
-    // Find existing file
-    const listResp = await fetch(
-      'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("name='" + GDRIVE_FILENAME + "' and trashed=false") + '&spaces=drive&fields=files(id)',
-      { headers: { 'Authorization': 'Bearer ' + gdAccessToken } }
-    );
-    if (!listResp.ok) { gdAccessToken = null; return; } // Token expired
-    const listData = await listResp.json();
-    const fileId = listData.files && listData.files.length ? listData.files[0].id : null;
-    const boundary = 'rjap_' + Date.now();
-    const metadata = JSON.stringify({ name: GDRIVE_FILENAME, mimeType: 'application/json' });
-    const body = '--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+metadata+'\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+data+'\r\n--'+boundary+'--';
-    const method = fileId ? 'PATCH' : 'POST';
-    const url = fileId
-      ? 'https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=multipart'
-      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-    const uploadResp = await fetch(url, {
-      method, headers: { 'Authorization': 'Bearer ' + gdAccessToken, 'Content-Type': 'multipart/related; boundary=' + boundary },
-      body
-    });
-    if (uploadResp.ok) setSyncPill('', '☁️ Drive backed up ' + new Date().toLocaleTimeString());
-    else if (uploadResp.status === 401) { gdAccessToken = null; localStorage.removeItem('rjap_gd_token'); }
-  } catch(e) { console.warn('Drive backup failed:', e.message); }
+const GDRIVE_FILENAME  = 'radha-naam-jap-backup.json';
+const GD_AUTO_BACKUP_KEY   = 'rjap_gd_lastAutoBackup';
+const GD_TOKEN_KEY         = 'rjap_gd_token';
+const GD_TOKEN_EXPIRY_KEY  = 'rjap_gd_token_expiry';
+
+let gdAccessToken = localStorage.getItem(GD_TOKEN_KEY) || null;
+
+// ── Store token with expiry (Google tokens last ~1 hour) ──
+function gdSaveToken(token, expiresInSeconds) {
+  gdAccessToken = token;
+  localStorage.setItem(GD_TOKEN_KEY, token);
+  const expiry = Date.now() + ((expiresInSeconds || 3600) - 120) * 1000; // 2min safety margin
+  localStorage.setItem(GD_TOKEN_EXPIRY_KEY, String(expiry));
 }
 
+// ── Check if stored token is still valid ──
+function gdTokenValid() {
+  if (!gdAccessToken) return false;
+  const expiry = parseInt(localStorage.getItem(GD_TOKEN_EXPIRY_KEY) || '0');
+  return expiry > Date.now();
+}
 
+// ── Silently refresh Google OAuth token via Firebase re-auth ──
+// Returns fresh token or null if user needs to sign in again
+async function gdRefreshToken() {
+  if (!fbUser || !fbAuth) return null;
+  try {
+    // Ask Firebase to silently re-authenticate and get a fresh credential
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/drive.file');
+    // getRedirectResult won't work here; use currentUser.getIdToken to verify session is alive
+    await fbUser.getIdToken(true); // Refreshes Firebase session
+    // Re-sign in silently to get a fresh Google access token
+    const result = await fbAuth.signInWithPopup(provider);
+    if (result && result.credential && result.credential.accessToken) {
+      gdSaveToken(result.credential.accessToken, 3600);
+      return result.credential.accessToken;
+    }
+  } catch(e) {
+    console.warn('gdRefreshToken failed:', e.message);
+  }
+  return null;
+}
 
+// ── Get a valid token, refreshing silently if expired ──
+// Does NOT show a popup unless the token is truly gone
+async function gdGetToken() {
+  if (gdTokenValid()) return gdAccessToken;
+  // Token expired but user is signed in — try to get fresh token
+  // We can't silently get a new Google OAuth token without a popup in browser
+  // So we just clear it and let the UI show "sign in again"
+  console.warn('GDrive token expired. User needs to re-sign in.');
+  gdAccessToken = null;
+  localStorage.removeItem(GD_TOKEN_KEY);
+  localStorage.removeItem(GD_TOKEN_EXPIRY_KEY);
+  return null;
+}
 
-// ═══════════════════════════════════════════════════════
-// AUTO MIDNIGHT GOOGLE DRIVE BACKUP (like WhatsApp)
-// Backs up at midnight every night. Uses a dated filename
-// so each day creates its own visible JSON in Drive.
-// Also works silently when app is open.
-// ═══════════════════════════════════════════════════════
-const GD_AUTO_BACKUP_KEY = 'rjap_gd_lastAutoBackup';
+// ── Build the JSON payload for backup ──
+function gdBuildPayload(backupType) {
+  return JSON.stringify({
+    version: 3, exportedAt: new Date().toISOString(), backupType: backupType || 'silent',
+    history: App.S.history||{}, h28: App.S.h28||{},
+    timerHistory: App.S.timerHistory||{}, timer28History: App.S.timer28History||{},
+    stotrams: App.S.stotrams||{}, brahma: App.S.brahma||{}, customSt: App.S.customSt||[],
+    sankalpas: App.S.sankalpas||[], occasions: App.S.occasions||{},
+    ms: App.S.ms||108, dt: App.S.dt||0, lt: App.S.lt||0,
+    nameJapDeduct: App.S.nameJapDeduct||0, cfg: App.S.cfg||{},
+    malaLog: App.S.malaLog||[], malaLogDate: App.S.tk,
+    brahmacharya_start_date: App.S.brahmacharya_start_date||'',
+    japMode: App.S.japMode||'radha',
+    historyRV: App.S.historyRV||{}, timerHistoryRV: App.S.timerHistoryRV||{},
+    dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0,
+    nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[]
+  }, null, 2);
+}
 
+// ── Core upload function — upserts a file in Drive ──
+async function gdUploadFile(token, filename, jsonData) {
+  const listResp = await fetch(
+    'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("name='" + filename + "' and trashed=false") + '&spaces=drive&fields=files(id)',
+    { headers: { 'Authorization': 'Bearer ' + token } }
+  );
+  if (!listResp.ok) {
+    if (listResp.status === 401) { gdAccessToken = null; localStorage.removeItem(GD_TOKEN_KEY); localStorage.removeItem(GD_TOKEN_EXPIRY_KEY); }
+    throw new Error('List failed: ' + listResp.status);
+  }
+  const listData = await listResp.json();
+  const fileId = listData.files && listData.files.length ? listData.files[0].id : null;
+  const boundary = 'rjap_' + Date.now();
+  const metadata = JSON.stringify({ name: filename, mimeType: 'application/json' });
+  const body = '--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+metadata+'\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+jsonData+'\r\n--'+boundary+'--';
+  const method = fileId ? 'PATCH' : 'POST';
+  const url = fileId
+    ? 'https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=multipart'
+    : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+  const uploadResp = await fetch(url, {
+    method,
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'multipart/related; boundary=' + boundary },
+    body
+  });
+  if (!uploadResp.ok) {
+    if (uploadResp.status === 401) { gdAccessToken = null; localStorage.removeItem(GD_TOKEN_KEY); localStorage.removeItem(GD_TOKEN_EXPIRY_KEY); }
+    throw new Error('Upload failed: ' + uploadResp.status);
+  }
+  return true;
+}
+
+// Silent per-save backup removed — Firebase handles real-time sync.
+// Drive backup is midnight auto + manual only. See gdMidnightBackup().
+
+// ── Midnight/daily backup — one dated file per day, like WhatsApp ──
 async function gdMidnightBackup() {
-  if (!gdAccessToken) return;
+  const token = await gdGetToken();
+  if (!token) return;
   const today = App.getTk();
   const lastBackup = localStorage.getItem(GD_AUTO_BACKUP_KEY);
-  if (lastBackup === today) return; // Already backed up today
-  const filename = 'radha-naam-jap-auto-' + today + '.json';
+  if (lastBackup === today) return; // Already done today
   try {
-    const data = JSON.stringify({
-      version: 3, exportedAt: new Date().toISOString(), backupType: 'auto-midnight',
-      history: App.S.history||{}, h28: App.S.h28||{},
-      timerHistory: App.S.timerHistory||{}, timer28History: App.S.timer28History||{},
-      stotrams: App.S.stotrams||{}, brahma: App.S.brahma||{}, customSt: App.S.customSt||[],
-      sankalpas: App.S.sankalpas||[], occasions: App.S.occasions||{},
-      ms: App.S.ms||108, dt: App.S.dt||0, lt: App.S.lt||0, nameJapDeduct: App.S.nameJapDeduct||0, cfg: App.S.cfg||{},
-      malaLog: App.S.malaLog||[], malaLogDate: App.S.tk, brahmacharya_start_date: App.S.brahmacharya_start_date||'',
-      japMode: App.S.japMode||'radha', historyRV: App.S.historyRV||{}, timerHistoryRV: App.S.timerHistoryRV||{},
-      dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0, nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[]
-    }, null, 2);
-
-    // Check if a backup for this date already exists in Drive
-    const listResp = await fetch(
-      'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("name='" + filename + "' and trashed=false") + '&spaces=drive&fields=files(id)',
-      { headers: { 'Authorization': 'Bearer ' + gdAccessToken } }
-    );
-    if (!listResp.ok) { gdAccessToken = null; localStorage.removeItem('rjap_gd_token'); return; }
-    const listData = await listResp.json();
-    const fileId = listData.files && listData.files.length ? listData.files[0].id : null;
-    const boundary = 'rjap_mid_' + Date.now();
-    const metadata = JSON.stringify({ name: filename, mimeType: 'application/json' });
-    const body = '--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+metadata+'\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+data+'\r\n--'+boundary+'--';
-    const method = fileId ? 'PATCH' : 'POST';
-    const url = fileId
-      ? 'https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=multipart'
-      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-    const uploadResp = await fetch(url, {
-      method, headers: { 'Authorization': 'Bearer ' + gdAccessToken, 'Content-Type': 'multipart/related; boundary=' + boundary },
-      body
-    });
-    if (uploadResp.ok) {
-      localStorage.setItem(GD_AUTO_BACKUP_KEY, today);
-      setSyncPill('', '☁️ Auto backup: ' + today);
-      console.log('Auto midnight backup done:', filename);
-    } else if (uploadResp.status === 401) {
-      gdAccessToken = null; localStorage.removeItem('rjap_gd_token');
+    const filename = 'radha-naam-jap-auto-' + today + '.json';
+    await gdUploadFile(token, filename, gdBuildPayload('auto-midnight'));
+    localStorage.setItem(GD_AUTO_BACKUP_KEY, today);
+    setSyncPill('', '☁️ Auto backup: ' + today);
+    const el = document.getElementById('gdLastAutoBackup');
+    if (el) el.textContent = 'Last auto backup: ' + today;
+    console.log('[GDrive] Auto midnight backup done:', filename);
+    // Notify user (if notifications are enabled)
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'SHOW_NOTIFICATION',
+        title: '☁️ Radha Naam Jap Backed Up',
+        body: 'Auto backup saved to Google Drive for ' + today + ' 🙏',
+        tag: 'gdrive-backup'
+      });
     }
-  } catch(e) { console.warn('Auto backup failed:', e.message); }
+  } catch(e) { console.warn('[GDrive] Midnight backup failed:', e.message); }
 }
 
-// ── Midnight backup scheduler — runs every minute to catch the midnight moment ──
+// ── Save latest data snapshot to SW cache for background sync ──
+function _gdCacheForSW() {
+  try {
+    const token = gdAccessToken;
+    const tokenExpiry = parseInt(localStorage.getItem(GD_TOKEN_EXPIRY_KEY) || '0');
+    const lastBackupDate = localStorage.getItem(GD_AUTO_BACKUP_KEY) || '';
+    if (!token || !navigator.serviceWorker || !navigator.serviceWorker.controller) return;
+    navigator.serviceWorker.controller.postMessage({
+      type: 'CACHE_BACKUP_DATA',
+      token: token,
+      payload: gdBuildPayload('sw-background'),
+      tokenExpiry: tokenExpiry,
+      lastBackupDate: lastBackupDate
+    });
+  } catch(e) { console.warn('_gdCacheForSW failed:', e.message); }
+}
+
+// ── Register Background Periodic Sync (Android PWA, Chrome) ──
+// This allows backup to run even when app is closed, like WhatsApp
+async function _gdRegisterPeriodicSync() {
+  if (!('serviceWorker' in navigator) || !('periodicSync' in ServiceWorkerRegistration.prototype)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    // Check permission
+    const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
+    if (status.state === 'granted') {
+      await reg.periodicSync.register('gdrive-midnight-backup', {
+        minInterval: 24 * 60 * 60 * 1000 // once per day minimum
+      });
+      console.log('[GDrive] Periodic background sync registered ✓');
+    }
+  } catch(e) {
+    console.log('[GDrive] Periodic sync not supported:', e.message);
+  }
+}
+
+// ── Listen for SW triggering backup (from background sync) ──
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', async e => {
+    if (e.data && e.data.type === 'TRIGGER_GDRIVE_BACKUP') {
+      await gdMidnightBackup();
+    }
+  });
+}
+
+// ── Midnight scheduler — runs every minute while app is open ──
+// Catches midnight AND backs up on app open if today's backup is missing
 function _scheduleMidnightBackup() {
+  // Check every minute for midnight window
   setInterval(() => {
     const now = new Date();
-    // Run between midnight and 12:05 AM to catch midnight
     if (now.getHours() === 0 && now.getMinutes() < 5) {
       gdMidnightBackup();
     }
   }, 60000);
 
-  // Also run on app open — back up previous day if missed
-  setTimeout(() => {
+  // On app open: back up immediately if today's backup hasn't happened yet
+  setTimeout(async () => {
     const lastBackup = localStorage.getItem(GD_AUTO_BACKUP_KEY);
-    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-    const yKey = yesterday.getFullYear() + '-' + String(yesterday.getMonth()+1).padStart(2,'0') + '-' + String(yesterday.getDate()).padStart(2,'0');
-    // If we never backed up yesterday and it's past midnight, back up now
     if (lastBackup !== App.getTk()) {
-      gdMidnightBackup();
+      await gdMidnightBackup();
     }
-  }, 10000);
+    // Register background sync for when app is closed
+    _gdRegisterPeriodicSync();
+  }, 8000);
 }
 _scheduleMidnightBackup();
 
-// Manual restore from Drive: list available auto-backup files and let user pick
+// ── List Drive backups for restore UI ──
 async function gdListDriveBackups() {
   const el = document.getElementById('gdRestoreList');
   if (!el) return;
-  if (!gdAccessToken) { el.innerHTML = '<div style="font-size:12px;color:var(--red)">Please sign in with Google first.</div>'; return; }
+  const token = await gdGetToken();
+  if (!token) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--red)">⚠️ Session expired. Please sign out and sign in again to refresh Drive access.</div>';
+    return;
+  }
   el.innerHTML = '<div style="font-size:12px;color:var(--td)">Loading backups from Drive…</div>';
   try {
     const resp = await fetch(
-      'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("name contains 'radha-naam-jap' and trashed=false") + '&spaces=drive&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=30',
-      { headers: { 'Authorization': 'Bearer ' + gdAccessToken } }
+      'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("name contains 'radha-naam-jap' and trashed=false") +
+      '&spaces=drive&fields=files(id,name,modifiedTime,size)&orderBy=modifiedTime desc&pageSize=50',
+      { headers: { 'Authorization': 'Bearer ' + token } }
     );
-    if (!resp.ok) { el.innerHTML = '<div style="font-size:12px;color:var(--red)">Auth error. Please sign in again.</div>'; return; }
+    if (!resp.ok) {
+      el.innerHTML = '<div style="font-size:12px;color:var(--red)">Auth error (' + resp.status + '). Please sign in again.</div>';
+      return;
+    }
     const data = await resp.json();
     if (!data.files || !data.files.length) {
-      el.innerHTML = '<div style="font-size:12px;color:var(--td);text-align:center;padding:8px">No Drive backups found.</div>';
+      el.innerHTML = '<div style="font-size:12px;color:var(--td);text-align:center;padding:12px">No Drive backups found yet.</div>';
       return;
     }
     el.innerHTML = data.files.map(f => {
       const dt = new Date(f.modifiedTime).toLocaleString('en-IN', {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
-      return '<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid rgba(255,255,255,0.06)">'
-        + '<div style="flex:1"><div style="font-size:12px;color:var(--tl)">' + escHtml(f.name) + '</div><div style="font-size:10px;color:var(--td)">' + dt + '</div></div>'
-        + '<button onclick="gdRestoreBackup(\'' + f.id + '\',\'' + escHtml(f.name) + '\')" style="padding:5px 12px;border-radius:8px;border:1px solid rgba(74,144,226,0.4);background:rgba(74,144,226,0.1);color:var(--a2);font-size:11px;cursor:pointer;white-space:nowrap">Restore</button>'
+      const isAuto = f.name.includes('auto-');
+      const isLatest = f.name === GDRIVE_FILENAME;
+      const badge = isLatest
+        ? '<span style="font-size:9px;background:rgba(74,144,226,0.2);color:var(--a2);border-radius:4px;padding:1px 5px;margin-left:5px">LATEST</span>'
+        : isAuto
+          ? '<span style="font-size:9px;background:rgba(255,215,0,0.15);color:var(--gold);border-radius:4px;padding:1px 5px;margin-left:5px">AUTO</span>'
+          : '';
+      return '<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid rgba(255,255,255,0.06)">'
+        + '<div style="flex:1;min-width:0">'
+        + '<div style="font-size:12px;color:var(--tl);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(f.name) + badge + '</div>'
+        + '<div style="font-size:10px;color:var(--td);margin-top:2px">' + dt + '</div>'
+        + '</div>'
+        + '<button onclick="gdRestoreBackup(\'' + f.id + '\',\'' + escHtml(f.name) + '\')" '
+        + 'style="flex-shrink:0;padding:5px 12px;border-radius:8px;border:1px solid rgba(74,144,226,0.4);background:rgba(74,144,226,0.1);color:var(--a2);font-size:11px;cursor:pointer">Restore</button>'
         + '</div>';
     }).join('');
-  } catch(e) { el.innerHTML = '<div style="font-size:12px;color:var(--red)">Error: ' + e.message + '</div>'; }
+  } catch(e) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--red)">Error: ' + e.message + '</div>';
+  }
 }
 
+// ── Restore a backup file from Drive ──
 async function gdRestoreBackup(fileId, filename) {
-  if (!confirm('Restore "' + filename + '"? Current data will be overwritten.')) return;
+  if (!confirm('Restore "' + filename + '"?\n\nYour current data will be overwritten. This cannot be undone.')) return;
   const st = document.getElementById('gdRestoreStatus');
-  if (st) st.textContent = 'Downloading…';
+  if (st) { st.textContent = '⏳ Downloading from Drive…'; st.style.color = 'var(--td)'; }
+  const token = await gdGetToken();
+  if (!token) {
+    if (st) { st.textContent = '❌ Session expired. Please sign in again.'; st.style.color = 'var(--red)'; }
+    return;
+  }
   try {
     const resp = await fetch('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media', {
-      headers: { 'Authorization': 'Bearer ' + gdAccessToken }
+      headers: { 'Authorization': 'Bearer ' + token }
     });
     if (!resp.ok) throw new Error('Download failed: ' + resp.status);
     const data = await resp.json();
-    // Reuse existing importAllData logic
-    const input = { files: [new File([JSON.stringify(data)], filename, {type:'application/json'})] };
-    // Apply data directly
-    if (data.history) App.S.history = {...App.S.history, ...data.history};
-    if (data.h28) App.S.h28 = {...App.S.h28, ...data.h28};
-    if (data.timerHistory) App.S.timerHistory = {...App.S.timerHistory, ...data.timerHistory};
-    if (data.timer28History) App.S.timer28History = {...App.S.timer28History, ...data.timer28History};
-    if (data.stotrams) App.S.stotrams = {...App.S.stotrams, ...data.stotrams};
-    if (data.brahma) App.S.brahma = {...App.S.brahma, ...data.brahma};
+    // Apply all data fields
+    if (data.history) App.S.history = data.history;
+    if (data.h28) App.S.h28 = data.h28;
+    if (data.timerHistory) App.S.timerHistory = data.timerHistory;
+    if (data.timer28History) App.S.timer28History = data.timer28History;
+    if (data.stotrams) App.S.stotrams = data.stotrams;
+    if (data.brahma) App.S.brahma = data.brahma;
     if (data.customSt) App.S.customSt = data.customSt;
     if (data.sankalpas) App.S.sankalpas = data.sankalpas;
-    if (data.occasions) App.S.occasions = {...App.S.occasions, ...data.occasions};
+    if (data.occasions) App.S.occasions = data.occasions;
     if (data.ms) App.S.ms = data.ms;
     if (data.dt !== undefined) App.S.dt = data.dt;
     if (data.lt !== undefined) App.S.lt = data.lt;
     if (data.nameJapDeduct !== undefined) App.S.nameJapDeduct = data.nameJapDeduct;
-    if (data.historyRV) App.S.historyRV = {...App.S.historyRV, ...data.historyRV};
-    if (data.timerHistoryRV) App.S.timerHistoryRV = {...App.S.timerHistoryRV, ...data.timerHistoryRV};
+    if (data.cfg) App.S.cfg = data.cfg;
+    if (data.historyRV) App.S.historyRV = data.historyRV;
+    if (data.timerHistoryRV) App.S.timerHistoryRV = data.timerHistoryRV;
+    if (data.dtRV !== undefined) App.S.dtRV = data.dtRV;
+    if (data.ltRV !== undefined) App.S.ltRV = data.ltRV;
+    if (data.nameJapDeductRV !== undefined) App.S.nameJapDeductRV = data.nameJapDeductRV;
+    if (data.malaLogRV) App.S.malaLogRV = data.malaLogRV;
+    if (data.malaLog) App.S.malaLog = data.malaLog;
     if (data.brahmacharya_start_date) App.S.brahmacharya_start_date = data.brahmacharya_start_date;
-    App.save();
+    if (data.japMode) App.S.japMode = data.japMode;
+    // Reset sync baselines so Firestore doesn't conflict
+    App.S.syncBaseline = JSON.parse(JSON.stringify(App.S.history||{}));
+    App.S.syncBaseline28 = JSON.parse(JSON.stringify(App.S.h28||{}));
+    App.S.syncBaselineTimer = JSON.parse(JSON.stringify(App.S.timerHistory||{}));
+    App.S.syncBaselineTimer28 = JSON.parse(JSON.stringify(App.S.timer28History||{}));
+    App.S.syncBaselineRV = JSON.parse(JSON.stringify(App.S.historyRV||{}));
+    App.S.syncBaselineTimerRV = JSON.parse(JSON.stringify(App.S.timerHistoryRV||{}));
+    await App.save();
     switchJapMode(App.S.japMode || 'radha');
     renderSt(); u28(); renderBcal(); renderCal(); uStats(); renderSankalpas(); renderMalaLog();
-    if (st) { st.textContent = '✅ Restored from ' + filename + '! 🙏'; st.style.color = 'var(--green)'; }
+    fbDebouncedPush(); // Push restored data to Firestore too
+    if (st) { st.textContent = '✅ Restored from ' + filename + '! 🙏 Jai Radhe!'; st.style.color = 'var(--green)'; }
     toast('✅ Drive backup restored! 🙏 Jai Radhe!');
   } catch(e) {
     if (st) { st.textContent = '❌ ' + e.message; st.style.color = 'var(--red)'; }
   }
 }
-
 
 // (same logic as original, using App.S instead of S)
 // ═══════════════════════════════════════════════════════
@@ -2692,7 +2942,7 @@ function adjustSankalpCycles(id, sign) {
   }
 
   el.value = "";
-  App.save(); fbDebouncedPush(); gdDriveSilentBackup(); renderSankalpas(); render28StatsPanel(); u28();
+  App.save(); fbDebouncedPush();  renderSankalpas(); render28StatsPanel(); u28();
   toast((sign==="add"?"Added ":"Deducted ")+amt+" cycle(s) 🙏");
   const totalProg2 = getSankalpProgressById(id, null);
   if (!sk.done && totalProg2 >= sk.target) {
@@ -2897,7 +3147,7 @@ function adj28Cycles(sign) {
   document.getElementById('sp28CycleVal').value = '';
   const pr = document.getElementById('sp28CyclePreview'); if (pr) pr.textContent = '';
   render28StatsPanel(); u28(); uStats(); renderSankalpas();
-  App.save(); fbDebouncedPush(); gdDriveSilentBackup();
+  App.save(); fbDebouncedPush(); 
   toast((sign>0?'Added ':'Deducted ')+n+' cycle'+(n>1?'s':'')+' 🙏');
 }
 
@@ -3524,7 +3774,8 @@ window.addEventListener('load', async () => {
   // timerSavedSeconds tracks what's already committed to timerHistory this session.
   App.timerSeconds = 0;
   App.timerSavedSeconds = 0;
-  // Restore wall-clock mala start for cross-session timing
+  App._malaTimerStart = 0; // timer-based anchor for mala duration (authoritative clock)
+  // Restore wall-clock mala start for cross-session timing (fallback only)
   const savedMalaWall = localStorage.getItem('rjap_malaWallStart');
   const todayCount = App.gTod();
   const ms = App.S.ms || 108;
@@ -3575,8 +3826,29 @@ window.addEventListener('load', async () => {
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js', {scope:'./'})
-      .then(r => console.log('SW registered:', r.scope))
+      .then(r => {
+        console.log('SW registered:', r.scope);
+        // When a new SW takes over, reload the page to get fresh files
+        r.addEventListener('updatefound', () => {
+          const newWorker = r.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'activated') {
+              console.log('[SW] New SW activated — reloading for fresh content');
+              window.location.reload();
+            }
+          });
+        });
+      })
       .catch(e => console.warn('SW registration failed:', e.message));
+
+    // Also listen for SW_UPDATED message from the service worker
+    navigator.serviceWorker.addEventListener('message', e => {
+      if (e.data && e.data.type === 'SW_UPDATED') {
+        console.log('[SW] Received SW_UPDATED, reloading…', e.data.version);
+        window.location.reload();
+      }
+    });
   });
 }
 

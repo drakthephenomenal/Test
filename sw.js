@@ -3,7 +3,7 @@
 // Update CACHE version when index.html changes
 // ═══════════════════════════════════════════════
 const CACHE = 'radha-jap-v52';  // v52: GitHub Pages + OAuth + Drive auto-backup
-const APP_URL = 'https://drakthephenomenal.github.io';
+const APP_URL = 'https://drakthephenomenal.github.io/Lalu-Chotopushu';
 
 const PRECACHE = [
   './index.html',

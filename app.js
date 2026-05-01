@@ -1808,7 +1808,7 @@ function renderLakhGati2() { renderMilestonesTab(); }
 // ═══════════════════════════════════════════════════════
 // FIREBASE — Google Sign-In Only (no email/password)
 // ═══════════════════════════════════════════════════════
-const APP_ORIGIN = 'https://drakthephenomenal.github.io';
+const APP_ORIGIN = 'https://drakthephenomenal.github.io/Lalu-Chotopushu';
 const firebaseConfig = {
   apiKey: "AIzaSyCvvXEdsJjXpTbITE2HuyYFnPZfZIkxVWA",
   authDomain: "drakthephenomenal.github.io",

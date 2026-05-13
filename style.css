@@ -780,7 +780,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
   overflow:visible;
   z-index:0;
 }
-.bead-frame .bead{transition:fill 0.35s ease, stroke 0.35s ease, filter 0.35s ease, r 0.25s ease, transform 0.25s ease; transform-box:fill-box; transform-origin:center; stroke-width:1.4;}
+.bead-frame .bead{transition:fill 0.35s ease, stroke 0.35s ease, filter 0.35s ease, r 0.25s ease, cx 0.4s ease, cy 0.4s ease, transform 0.25s ease; transform-box:fill-box; transform-origin:center; stroke-width:0.9;}
 /* Hollow defaults — outline only, no fill */
 .bead-frame .bead-blue{
   fill:transparent;
@@ -806,7 +806,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .bead-frame .bead-guru{
   fill:transparent;
   stroke:#FFB700;
-  stroke-width:1.6;
+  stroke-width:1.1;
   filter:none;
 }
 .bead-frame .bead-guru.filled{

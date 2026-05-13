@@ -1064,8 +1064,8 @@ function ensureBeadFrame() {
     svg.innerHTML = '';
     for (let i = 0; i < 108; i++) {
       const c = document.createElementNS(BEAD_SVG_NS, 'circle');
-      c.setAttribute('r', '4');
-      // First 100 = blue, last 8 = gold (guru section)
+      c.setAttribute('r', '2.2');
+      // Last 8 of each mala = gold (guru section); first 100 = blue
       c.setAttribute('class', i < 100 ? 'bead bead-blue' : 'bead bead-gold');
       svg.appendChild(c);
     }
@@ -1095,12 +1095,20 @@ function renderBeadFrame(tod, target) {
   // Fill 1 bead per tap within the current mala (matches the small 12-dot row logic)
   const ms = (App && App.S && App.S.ms) || 108;
   const inMala = tod % ms;
+  const malaIdx = Math.floor(tod / ms);
+  // When viewing a freshly-completed mala (inMala==0 && tod>0), show that mala's direction.
+  const completedView = inMala === 0 && tod > 0;
+  const effectiveMala = completedView ? malaIdx - 1 : malaIdx;
+  // Alternate direction every mala: even = clockwise, odd = anticlockwise.
+  // Reversing direction naturally shifts the gold "guru" cluster to the opposite side.
+  const isCW = (effectiveMala % 2) === 0;
   // Map progress within the mala (0..ms) to beads (0..N) so all 108 fill across one mala
-  const filled = inMala === 0 && tod > 0 ? N : Math.floor(inMala * N / ms);
+  const filled = completedView ? N : Math.floor(inMala * N / ms);
   const beads = svg.children;
   const justAdvanced = filled > _beadState.lastFilled && _beadState.lastFilled !== -1;
   for (let i = 0; i < N; i++) {
-    const d = i * step + step / 2;
+    // i = tap order within mala (0 = first tap, 107 = last/gold). Direction flips per mala.
+    const d = isCW ? (i * step + step / 2) : (perim - (i * step + step / 2));
     let x, y;
     if (d < w) { x = x0 + d;            y = y0; }
     else if (d < w + h) { x = x1;       y = y0 + (d - w); }
@@ -1109,7 +1117,7 @@ function renderBeadFrame(tod, target) {
     const c = beads[i];
     c.setAttribute('cx', x);
     c.setAttribute('cy', y);
-    c.setAttribute('r', '4');
+    c.setAttribute('r', '2.2');
     c.setAttribute('style', '');
     const baseCls = i < 100 ? 'bead bead-blue' : 'bead bead-gold';
     c.setAttribute('class', baseCls + (i < filled ? ' filled' : ''));

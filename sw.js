@@ -2,7 +2,7 @@
 // Radha Naam Jap — Service Worker
 // v64: Removed Google Drive backup system
 // ═══════════════════════════════════════════════════════
-const CACHE = 'radha-jap-v71';
+const CACHE = 'radha-jap-v72';
 
 const PRECACHE = [
   './index.html',
@@ -13,8 +13,6 @@ const PRECACHE = [
   './icon-192.png',
   './icon-512.png',
   './manifest.json',
-  './ai-assistant.js',
-  './voice-jap.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
@@ -96,7 +94,6 @@ self.addEventListener('fetch', e => {
   );
 });
 
-
 // ── Messages from the page ──
 self.addEventListener('message', e => {
   if (e.data && e.data.type === 'SHOW_NOTIFICATION') {
@@ -110,7 +107,6 @@ self.addEventListener('message', e => {
       })
     );
   }
-
 
   if (e.data && e.data.type === 'SKIP_WAITING') {
     self.skipWaiting();

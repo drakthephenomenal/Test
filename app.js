@@ -18,7 +18,8 @@ const App = {
     historyRV: {}, timerHistoryRV: {}, dtRV: 0, ltRV: 0, nameJapDeductRV: 0,
     malaLogRV: [],
     syncBaselineRV: {}, syncBaselineTimerRV: {},
-    activityLog: []
+    activityLog: [],
+    sadhanaStart: ''
   },
   lmcRV: 0,
   lmc: 0, lm28: 0,
@@ -39,7 +40,7 @@ const App = {
 
   async initDB() {
     return new Promise((res, rej) => {
-      const req = indexedDB.open('RadhaJapDB', 3);
+      const req = indexedDB.open('RadhaJapDB', 4);
       req.onupgradeneeded = e => {
         const db = e.target.result;
         if (!db.objectStoreNames.contains('state')) db.createObjectStore('state');
@@ -48,6 +49,8 @@ const App = {
         if (!db.objectStoreNames.contains('timerHistory')) db.createObjectStore('timerHistory');
         if (!db.objectStoreNames.contains('timer28History')) db.createObjectStore('timer28History');
         if (!db.objectStoreNames.contains('malaLog')) db.createObjectStore('malaLog');
+        // v4: lifetime per-day activityLog archive — no entry limit
+        if (!db.objectStoreNames.contains('activityLogArchive')) db.createObjectStore('activityLogArchive');
       };
       req.onsuccess = e => { this.db = e.target.result; res(); };
       req.onerror = () => rej(req.error);
@@ -112,7 +115,8 @@ const App = {
       dtRV: this.S.dtRV, ltRV: this.S.ltRV, nameJapDeductRV: this.S.nameJapDeductRV, malaLogRV: this.S.malaLogRV,
       syncBaselineRV: this.S.syncBaselineRV, syncBaselineTimerRV: this.S.syncBaselineTimerRV,
       brahmacharya_start_date: this.S.brahmacharya_start_date,
-      activityLog: this.S.activityLog || []
+      activityLog: this.S.activityLog || [],
+      sadhanaStart: this.S.sadhanaStart || ''
     });
     // Keep per-day stores updated for compatibility with existing offline data
     const tk = this.S.tk;
@@ -121,6 +125,11 @@ const App = {
     if (this.S.timerHistory[tk] !== undefined) await this.dbPut('timerHistory', tk, this.S.timerHistory[tk]);
     if (this.S.timer28History[tk] !== undefined) await this.dbPut('timer28History', tk, this.S.timer28History[tk]);
     if (this.S.malaLog) await this.dbPut('malaLog', 'today', { date: tk, log: this.S.malaLog });
+    // Archive today's activityLog entries into lifetime per-day store (no 500 limit)
+    if (this.S.activityLog && this.S.activityLog.length > 0) {
+      const todayEntries = this.S.activityLog.filter(e => e.ts && new Date(e.ts).toISOString().split('T')[0] === tk);
+      if (todayEntries.length > 0) await this.dbPut('activityLogArchive', tk, todayEntries);
+    }
     try { localStorage.setItem(this._lsKey(), JSON.stringify(this.S)); } catch(e) {}
     if (fbUser && !fbForcedSignout && !this._suspendCloudSync) fbDebouncedPush();
   },
@@ -189,6 +198,7 @@ const App = {
     if (!this.S.syncBaselineRV) this.S.syncBaselineRV = {};
     if (!this.S.syncBaselineTimerRV) this.S.syncBaselineTimerRV = {};
     if (!this.S.activityLog) this.S.activityLog = [];
+    if (!this.S.sadhanaStart) this.S.sadhanaStart = localStorage.getItem('rjap_sadhana_start') || '';
     if (!this.S.historyRV[this.S.tk]) this.S.historyRV[this.S.tk] = 0;
     if (!this.S.timerHistoryRV[this.S.tk]) this.S.timerHistoryRV[this.S.tk] = 0;
     // Load malaLog — only use if it's from today AND today has actual jap count
@@ -308,7 +318,14 @@ const App = {
   tapTimer() {
     this.startTimer();
     clearTimeout(this.autoStopTimeout);
-    this.autoStopTimeout = setTimeout(() => this.pauseTimer(), 6000);
+    // Snapshot timerSeconds at the moment of the last tap.
+    // When auto-pause fires 6 s later we roll back to this snapshot
+    // so the idle gap is never counted as jap time.
+    const secondsAtTap = this.timerSeconds;
+    this.autoStopTimeout = setTimeout(() => {
+      this.timerSeconds = secondsAtTap;
+      this.pauseTimer();
+    }, 6000);
   },
 
   toggleTimer() {
@@ -337,16 +354,23 @@ const App = {
     const liveSec = this.timerRunning ? (this.timerSeconds - this.timerSavedSeconds) : 0;
     const combinedSec = radhaTimeSec + rvTimeSec + liveSec;
     document.getElementById('timerToday').textContent = "Today's Jap Time: " + this.fmtTime(combinedSec);
+    // ── UNIFIED TIMER: mirror the same Jap timer on the 28 Names tab ──
+    const te28 = document.getElementById('n28TotalTimer');
+    if (te28) te28.textContent = this.fmtTime(this.timerSeconds);
   },
 
   // ── UNIFIED TIME: sync timerHistory[today] = sum of mala log entries ──
   // Called after any mala log change so all time displays stay in harmony.
   syncTimerFromMalaLog() {
-    const isRV = this.S.japMode === 'rv';
-    const log = isRV ? (this.S.malaLogRV || []) : (this.S.malaLog || []);
-    const logSum = log.reduce((a, b) => a + b, 0);
-    const th = this.getCurTimerHistory();
-    th[this.S.tk] = logSum;
+    // Always sync BOTH modes independently — mode switching must not corrupt either
+    const radhaSum = (this.S.malaLog || []).reduce((a, b) => a + b, 0);
+    const rvSum    = (this.S.malaLogRV || []).reduce((a, b) => a + b, 0);
+    if (!this.S.timerHistory)   this.S.timerHistory   = {};
+    if (!this.S.timerHistoryRV) this.S.timerHistoryRV = {};
+    if (radhaSum > 0 || (this.S.malaLog||[]).length > 0)
+      this.S.timerHistory[this.S.tk]   = radhaSum;
+    if (rvSum > 0 || (this.S.malaLogRV||[]).length > 0)
+      this.S.timerHistoryRV[this.S.tk] = rvSum;
     // Re-anchor timerSavedSeconds so live delta is measured from current position
     this.timerSavedSeconds = this.timerSeconds;
   },
@@ -434,11 +458,14 @@ const App = {
       if (!this.S.malaLog) this.S.malaLog = [];
       this.S.malaLog.push(malaDuration);
     }
-    // Log mala completion with full timestamp for AI analysis
+    // Log mala completion with full timestamp
+    // Use malaLog.length as the mala number — it's always the correct sequential count
     const malaNum = isRVm
-      ? Math.floor((this.S.historyRV[this.S.tk]||0) / (this.S.ms||108))
-      : Math.floor((this.S.history[this.S.tk]||0) / (this.S.ms||108));
-    logActivity({ t: 'mala', ts: Date.now(), mode: this.S.japMode, n: malaNum, sec: malaDuration });
+      ? (this.S.malaLogRV || []).length
+      : (this.S.malaLog || []).length;
+    // Store wall-clock start so the history detail can show accurate start time
+    const malaStartTs = Date.now() - (malaDuration * 1000);
+    logActivity({ t: 'mala', ts: Date.now(), startTs: malaStartTs, mode: this.S.japMode, n: malaNum, sec: malaDuration });
     // ── UNIFIED TIME: timerHistory[today] = sum of mala log entries ──
     // This keeps all time displays (timer, stats, mala log, B&C day view) in harmony.
     this.syncTimerFromMalaLog();
@@ -450,8 +477,8 @@ const App = {
   flashMalaDuration(sec) {
     const disp = document.getElementById('timerDisplay');
     if (!disp) return;
-    const m = Math.floor(sec / 60), s = sec % 60;
-    const durStr = (m > 0 ? m + 'm ' : '') + s + 's';
+    const _fh = Math.floor(sec/3600), _fm = Math.floor((sec%3600)/60), _fs = sec%60;
+    const durStr = _fh > 0 ? _fh+'h '+_fm+'m '+String(_fs).padStart(2,'0')+'s' : _fm > 0 ? _fm+'m '+String(_fs).padStart(2,'0')+'s' : _fs+'s';
     // Spawn floating label anchored to the timer display position
     const rect = disp.getBoundingClientRect();
     const el = document.createElement('div');
@@ -554,12 +581,12 @@ const App = {
     this._n28SavedSecs = 0;
     this._n28Paused = true;
     this._upd28PauseBtn();
-    // Show frozen values
+    // Show frozen cycle value; n28TotalTimer shows unified Jap timer
     const fmt = s => Math.floor(s/60)+':'+(s%60<10?'0':'')+(s%60);
     const ce = document.getElementById('n28CycleTimer');
     const te = document.getElementById('n28TotalTimer');
     if (ce) ce.textContent = fmt(this._n28PausedCycleSec);
-    if (te) te.textContent = fmt(this._n28PausedTotalSec);
+    if (te) te.textContent = this.fmtTime(this.timerSeconds);
   },
 
   // ── Resume the 28 Names timers ──
@@ -606,14 +633,9 @@ const App = {
       const fmt = s => Math.floor(s/60)+':'+(s%60<10?'0':'')+(s%60);
       const cycSec = this._n28CycleStart
         ? Math.floor((Date.now() - this._n28CycleStart) / 1000) : 0;
-      const sessionSec = this._n28TotalStart
-        ? Math.floor((Date.now() - this._n28TotalStart) / 1000) : 0;
-      const todaySavedSec = this.S.timer28History[this.S.tk] || 0;
-      const totSec = todaySavedSec + sessionSec - (this._n28SavedSecs || 0);
       const ce = document.getElementById('n28CycleTimer');
-      const te = document.getElementById('n28TotalTimer');
       if (ce) ce.textContent = fmt(cycSec);
-      if (te) te.textContent = fmt(totSec);
+      // n28TotalTimer is now driven by the unified Jap timer (App.timerSeconds)
     }, 1000);
     this._upd28PauseBtn();
   },
@@ -661,10 +683,8 @@ const App = {
     const ce = document.getElementById('n28CycleTimer');
     const te = document.getElementById('n28TotalTimer');
     if (ce) ce.textContent = '0:00';
-    // Show today's total accumulated 28 time
-    const fmt = s => Math.floor(s/60)+':'+(s%60<10?'0':'')+(s%60);
-    const todaySec = this.S.timer28History[this.S.tk] || 0;
-    if (te) te.textContent = fmt(todaySec);
+    // Show unified Jap timer (same as main Jap tab)
+    if (te) te.textContent = this.fmtTime(this.timerSeconds);
     const mf28 = document.getElementById('mf28');
     if (mf28) mf28.classList.remove('show');
     this._upd28PauseBtn();
@@ -684,9 +704,11 @@ const App = {
     this.save(); fbDebouncedPush();
     this.vib([10]);
     this.start28Timers();
+    // Also drive the unified Jap timer so both tabs share the same clock
+    this.tapTimer();
     // Re-arm 6s auto-pause on every tap
     this._arm28AutoPause();
-    spawnName28(e, NAMES28[posBefore].name);
+    spawnName28(e, get28Name(NAMES28[posBefore]));
     if (this.S.h28[this.S.tk] % 28 === 0) cycleDone28();
     u28();
   },
@@ -1304,12 +1326,28 @@ function uStats() {
   const radhaLifetime = Math.max(0, Object.values(App.S.history||{}).reduce((a,b)=>a+b,0) - (App.S.nameJapDeduct||0));
   const rvLifetime = Math.max(0, Object.values(App.S.historyRV||{}).reduce((a,b)=>a+b,0) - (App.S.nameJapDeductRV||0));
   const n28Lifetime = Object.values(App.S.h28||{}).reduce((a,b)=>a+b,0);
+  function fmtCount(n) {
+    if (n <= 0) return '0';
+    const cr = Math.floor(n / 10000000);
+    const l  = Math.floor((n % 10000000) / 100000);
+    const k  = Math.floor((n % 100000) / 1000);
+    const r  = n % 1000;
+    let parts = [];
+    if (cr) parts.push(cr + ' Cr');
+    if (l)  parts.push(l + ' L');
+    if (k)  parts.push(k + 'K');
+    if (r)  parts.push(r + '');
+    return parts.join(' ') || '0';
+  }
   const sRadha = document.getElementById('sRadhaTot'); if (sRadha) sRadha.textContent = radhaLifetime.toLocaleString('en-IN');
   const sRadhaM = document.getElementById('sRadhaTotM'); if (sRadhaM) sRadhaM.textContent = Math.floor(radhaLifetime/ms) + ' malas';
+  const sRadhaF = document.getElementById('sRadhaTotF'); if (sRadhaF) sRadhaF.textContent = fmtCount(radhaLifetime) + ' jap';
   const sRV = document.getElementById('sRVTot'); if (sRV) sRV.textContent = rvLifetime.toLocaleString('en-IN');
   const sRVM = document.getElementById('sRVTotM'); if (sRVM) sRVM.textContent = Math.floor(rvLifetime/ms) + ' malas';
+  const sRVF = document.getElementById('sRVTotF'); if (sRVF) sRVF.textContent = fmtCount(rvLifetime) + ' jap';
   const s28 = document.getElementById('s28Tot'); if (s28) s28.textContent = n28Lifetime.toLocaleString('en-IN');
   const s28M = document.getElementById('s28TotM'); if (s28M) s28M.textContent = Math.floor(n28Lifetime/28) + ' cycles';
+  const s28F = document.getElementById('s28TotF'); if (s28F) s28F.textContent = fmtCount(n28Lifetime) + ' names';
   // Lifetime Jap Time (all jap time + all 28 names time)
   const ltTimeSec = Object.values(App.getCombinedTimerHistory()).reduce((a,b)=>a+b,0) + Object.values(App.S.timer28History||{}).reduce((a,b)=>a+b,0);
   const ltH = Math.floor(ltTimeSec/3600), ltM = Math.floor((ltTimeSec%3600)/60), ltS = ltTimeSec%60;
@@ -1328,7 +1366,7 @@ function uStats() {
   const timeTod = (curTimerHist[App.S.tk]||0) + (App.timerRunning ? (App.timerSeconds - App.timerSavedSeconds) : 0);
   const timeWk = wk.reduce((s,k) => s + (curTimerHist[k]||0), 0) + (App.timerRunning ? (App.timerSeconds - App.timerSavedSeconds) : 0);
   const timeMo = Object.entries(curTimerHist).filter(([k]) => k.startsWith(mp)).reduce((s,[,v]) => s+v, 0) + (App.timerRunning ? (App.timerSeconds - App.timerSavedSeconds) : 0);
-  function fmtShort(s) { const h = Math.floor(s/3600), m = Math.floor((s%3600)/60); return (h>0?h+'h ':'')+m+'m'; }
+  function fmtShort(s) { const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sc = s%60; return (h>0?h+'h ':'')+(m>0||h>0?m+'m ':'')+sc+'s'; }
   document.getElementById('tTod').textContent = fmtShort(timeTod);
   document.getElementById('tWk').textContent = fmtShort(timeWk);
   document.getElementById('tMo').textContent = fmtShort(timeMo);
@@ -1368,7 +1406,13 @@ function uStats() {
   if (njdi) { const n=parseInt(njdi.value)||0; document.getElementById('nameJapDeductPreview').textContent = n>0 ? Math.max(0,rawTot-curDeduct-n).toLocaleString() : '—'; }
   if (njri) { const n=parseInt(njri.value)||0; document.getElementById('nameJapRestorePreview').textContent = n>0 ? Math.min(rawTot, Math.max(0,rawTot-curDeduct+n)).toLocaleString() : '—'; }
   // Jap time previews
-  function _fmtSec(s) { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sc=s%60; return (h>0?h+'h ':'')+m+'m '+sc+'s'; }
+  function _fmtSec(s) {
+  s = Math.round(s || 0);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sc = s % 60;
+  if (h > 0) return h + 'h ' + m + 'm ' + String(sc).padStart(2, '0') + 's';
+  if (m > 0) return m + 'm ' + String(sc).padStart(2, '0') + 's';
+  return sc + 's';
+}
   const curTimeTod = App.S.timerHistory[App.S.tk]||0;
   const jtAtm = document.getElementById('jtAddTodayMin'), jtAts = document.getElementById('jtAddTodaySec');
   if (jtAtm) { const s = (parseInt(jtAtm.value)||0)*60+(jtAts?parseInt(jtAts.value)||0:0); document.getElementById('jtAddTodayPreview').textContent = s>0?_fmtSec(curTimeTod+s):'—'; }
@@ -1414,15 +1458,16 @@ function renderMalaLog() {
   if (avgEl && log.length > 0) {
     const totalSec = log.reduce((a,b) => a+b, 0);
     const avgSec = Math.round(totalSec / log.length);
-    const am = Math.floor(avgSec / 60), as2 = avgSec % 60;
-    avgEl.textContent = 'Average per mala: ' + (am > 0 ? am + 'm ' : '') + as2 + 's';
+    const _ah = Math.floor(avgSec/3600), _am = Math.floor((avgSec%3600)/60), _as = avgSec%60;
+    const avgStr = _ah > 0 ? _ah+'h '+_am+'m '+String(_as).padStart(2,'0')+'s' : _am > 0 ? _am+'m '+String(_as).padStart(2,'0')+'s' : _as+'s';
+    avgEl.textContent = 'Average per mala: ' + avgStr;
     avgEl.style.display = 'block';
     avgEl.style.cssText = 'font-size:11px;color:var(--green);margin-bottom:6px;text-align:center;padding:5px 10px;background:rgba(46,204,113,0.08);border-radius:8px;border:1px solid rgba(46,204,113,0.18);display:block';
   }
   
   log.forEach((sec, i) => {
-    const m = Math.floor(sec / 60), s = sec % 60;
-    const durStr = m > 0 ? m + 'm ' + s + 's' : s + 's';
+    const _mh = Math.floor(sec/3600), _mm = Math.floor((sec%3600)/60), _ms2 = sec%60;
+    const durStr = _mh > 0 ? _mh+'h '+_mm+'m '+String(_ms2).padStart(2,'0')+'s' : _mm > 0 ? _mm+'m '+String(_ms2).padStart(2,'0')+'s' : _ms2+'s';
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(46,204,113,0.07);border:1px solid rgba(46,204,113,0.15);border-radius:9px;';
     row.innerHTML =
@@ -1482,82 +1527,153 @@ function cr2(tp) {
   document.getElementById('mo').classList.add('show');
   document.getElementById('moCf').onclick = doReset;
 }
+// ── Helper: suspend Firestore listener, push clean state, then re-enable ──
+async function _fbResetPush() {
+  // 1. Stop the live listener so cloud data can't fire back and overwrite our reset
+  if (typeof fbListener === 'function') { fbListener(); fbListener = null; }
+  clearTimeout(_fbDeb); _fbDeb = null;
+  // 2. Push the clean local state to Firebase immediately (overwrite cloud)
+  if (fbUser && !fbForcedSignout) {
+    try { await fbPushFull(); } catch(e) { console.warn('Reset push failed:', e.message); }
+  }
+  // 3. Re-start the listener so future changes sync normally
+  if (fbUser && !fbForcedSignout && typeof fbAutoSync === 'function') {
+    setTimeout(() => fbAutoSync(), 500);
+  }
+}
+
 function doReset() {
-  if (pr === 'today') { App.S.history[App.S.tk] = 0; App.lmc = 0; App.S.malaLog = []; App.malaWallStart = Date.now(); localStorage.setItem('rjap_malaWallStart', String(App.malaWallStart)); App._malaTimerStart = App.timerSeconds; App.syncTimerFromMalaLog(); }
-  else if (pr === '28today') {
-    // Freeze active wishes before zeroing today's count so progress bars drop correctly
+  const tk = App.S.tk;
+
+  // ── STEP 1: Stop Firestore listener immediately so it can't restore old data ──
+  if (typeof fbListener === 'function') { fbListener(); fbListener = null; }
+  clearTimeout(_fbDeb); _fbDeb = null;
+  App._suspendCloudSync = true;
+  App._resetInProgress   = true;
+
+  if (pr === 'today') {
+    // ── Reset Today: ALL modes — Radha + RV + 28 Names ──
+    App.S.history[tk]        = 0;
+    App.S.historyRV[tk]      = 0;
+    App.S.h28[tk]            = 0;
+    App.S.timerHistory[tk]   = 0;
+    App.S.timerHistoryRV[tk] = 0;
+    App.S.timer28History[tk] = 0;
+    App.S.malaLog            = [];
+    App.S.malaLogRV          = [];
+    App.S.activityLog        = (App.S.activityLog || []).filter(e => !e.ts || new Date(e.ts).toISOString().slice(0,10) !== tk);
+    App.lmc = 0; App.lmcRV = 0; App.lm28 = 0;
+    // Reset all sankalpas anchors since 28 Names count just zeroed
     (App.S.sankalpas||[]).filter(s => !s.done && s.startCycles !== null).forEach(s => {
       s._savedProgress = (s._savedProgress || 0) + Math.max(0, getTotalCycles28() - s.startCycles);
       s.startCycles = getTotalCycles28();
     });
-    App.S.h28[App.S.tk] = 0; App.S.timer28History[App.S.tk] = 0; App.lm28 = 0; App.stopAll28Timers();
-    // Rebase wishes to new (lower) total after zeroing today
+    App.stopAll28Timers();
+    App.malaWallStart = Date.now();
+    localStorage.setItem('rjap_malaWallStart', String(App.malaWallStart));
+    App._malaTimerStart = App.timerSeconds;
+    App.syncTimerFromMalaLog();
+    // Persist zeros to IDB immediately (prevent resurrection on reload)
+    App.dbPut('history',             tk, 0);
+    App.dbPut('timerHistory',        tk, 0);
+    App.dbPut('timerHistoryRV',      tk, 0);
+    App.dbPut('h28',                 tk, 0);
+    App.dbPut('timer28History',      tk, 0);
+    App.dbPut('malaLog',            'today', { date: tk, log: [] });
+    App.dbPut('activityLogArchive',  tk, []);
+    renderMalaLog();
+    u28(); render28StatsPanel(); renderSankalpas();
+  }
+  else if (pr === '28today') {
+    // Freeze active wishes before zeroing
+    (App.S.sankalpas||[]).filter(s => !s.done && s.startCycles !== null).forEach(s => {
+      s._savedProgress = (s._savedProgress || 0) + Math.max(0, getTotalCycles28() - s.startCycles);
+      s.startCycles = getTotalCycles28();
+    });
+    App.S.h28[tk] = 0; App.S.timer28History[tk] = 0; App.lm28 = 0; App.stopAll28Timers();
     (App.S.sankalpas||[]).filter(s => !s.done && s.startCycles !== null).forEach(s => {
       s.startCycles = getTotalCycles28();
     });
-    // Write 0 into IDB per-day store and localStorage so it can't come back
-    App.dbPut('h28', App.S.tk, 0);
-    App.dbPut('timer28History', App.S.tk, 0);
-    try {
-      const ls = localStorage.getItem('rjap5');
-      if (ls) {
-        const d = JSON.parse(ls);
-        if (d.h28) d.h28[App.S.tk] = 0;
-        if (d.timer28History) d.timer28History[App.S.tk] = 0;
-        localStorage.setItem('rjap5', JSON.stringify(d));
-      }
-    } catch(e) {}
-    App.save();
+    App.dbPut('h28', tk, 0);
+    App.dbPut('timer28History', tk, 0);
     u28(); render28StatsPanel(); renderSankalpas();
   }
   else if (pr === '28all') {
-    // 1. Clear in-memory
     App.S.h28 = {}; App.S.timer28History = {};
-    App.S.h28[App.S.tk] = 0; App.S.timer28History[App.S.tk] = 0;
+    App.S.h28[tk] = 0; App.S.timer28History[tk] = 0;
     App.S.sankalpas = []; App.S.syncBaseline28 = {};
     App.lm28 = 0; App.stopAll28Timers();
-    // 2. Wipe the IDB per-day stores entirely so old keys can't merge back
-    App.dbClearStore('h28').then(() => App.dbPut('h28', App.S.tk, 0));
-    App.dbClearStore('timer28History').then(() => App.dbPut('timer28History', App.S.tk, 0));
-    // 3. Also clear localStorage so it can't resurrect either
-    try {
-      const ls = localStorage.getItem('rjap5');
-      if (ls) {
-        const d = JSON.parse(ls);
-        d.h28 = {}; d.timer28History = {}; d.sankalpas = []; d.syncBaseline28 = {};
-        localStorage.setItem('rjap5', JSON.stringify(d));
-      }
-    } catch(e) {}
-    // 4. Save main state with empty h28 so main IDB key is also clean
-    App.save();
-    fbDebouncedPush(); 
+    App.dbClearStore('h28').then(() => App.dbPut('h28', tk, 0));
+    App.dbClearStore('timer28History').then(() => App.dbPut('timer28History', tk, 0));
     u28(); render28StatsPanel(); renderSankalpas();
-    toast('All 28 Names data reset 🙏'); return;
   }
   else if (pr === 'range') {
     const f = document.getElementById('rfrom').value, to = document.getElementById('rto').value;
-    Object.keys(App.S.history).forEach(k => { if (k >= f && k <= to) { App.S.history[k] = 0; if (App.S.timerHistory[k]) App.S.timerHistory[k] = 0; if (App.S.timer28History[k]) App.S.timer28History[k] = 0; } });
+    const allKeys = new Set([
+      ...Object.keys(App.S.history||{}),
+      ...Object.keys(App.S.historyRV||{}),
+      ...Object.keys(App.S.h28||{})
+    ]);
+    allKeys.forEach(k => {
+      if (k >= f && k <= to) {
+        if (App.S.history)        App.S.history[k]        = 0;
+        if (App.S.historyRV)      App.S.historyRV[k]      = 0;
+        if (App.S.h28)            App.S.h28[k]            = 0;
+        if (App.S.timerHistory)   App.S.timerHistory[k]   = 0;
+        if (App.S.timerHistoryRV) App.S.timerHistoryRV[k] = 0;
+        if (App.S.timer28History) App.S.timer28History[k] = 0;
+      }
+    });
+    // If today is in range, also clear live logs and IDB
+    if (tk >= f && tk <= to) {
+      App.S.malaLog = []; App.S.malaLogRV = [];
+      App.S.activityLog = (App.S.activityLog||[]).filter(e => !e.ts || new Date(e.ts).toISOString().slice(0,10) < f || new Date(e.ts).toISOString().slice(0,10) > to);
+      App.lmc = 0; App.lmcRV = 0; App.lm28 = 0; App.stopAll28Timers();
+      App.dbPut('history',        tk, 0);
+      App.dbPut('timerHistory',   tk, 0);
+      App.dbPut('timerHistoryRV', tk, 0);
+      App.dbPut('h28',            tk, 0);
+      App.dbPut('timer28History', tk, 0);
+      App.dbPut('malaLog',       'today', { date: tk, log: [] });
+      App.syncTimerFromMalaLog();
+      renderMalaLog();
+    }
   } else {
-    // ── Full Reset: ALL data including lifetime, RV, brahmacharya ──
+    // ── Full Reset: EVERYTHING — Radha + RV + 28 Names + all history ──
     App.S.history = {}; App.S.h28 = {}; App.S.historyRV = {};
     App.S.dt = 0; App.S.lt = 0; App.S.dtRV = 0; App.S.ltRV = 0;
     App.S.nameJapDeduct = 0; App.S.nameJapDeductRV = 0;
     App.S.stotrams = {}; App.S.brahma = {}; App.S.brahmacharya_start_date = '';
     App.S.timerHistory = {}; App.S.timer28History = {}; App.S.timerHistoryRV = {};
-    App.S.malaLog = []; App.S.malaLogRV = []; App.S.sankalpas = []; App.S.occasions = {};
-    App.S.syncBaseline = {}; App.S.syncBaseline28 = {}; App.S.syncBaselineTimer = {}; App.S.syncBaselineTimer28 = {};
+    App.S.malaLog = []; App.S.malaLogRV = [];
+    App.S.activityLog = []; // wipe full activity log
+    App.S.sankalpas = []; App.S.occasions = {};
+    App.S.syncBaseline = {}; App.S.syncBaseline28 = {};
+    App.S.syncBaselineTimer = {}; App.S.syncBaselineTimer28 = {};
     App.S.syncBaselineRV = {}; App.S.syncBaselineTimerRV = {};
     App.lmc = 0; App.lm28 = 0; App.lmcRV = 0;
     STLIST.forEach(x => { App.S.stotrams[x.id] = {}; });
-    // Clear IDB stores too
-    App.dbClearStore('history'); App.dbClearStore('h28');
+    // Clear ALL IDB stores including activityLogArchive
+    App.dbClearStore('history');      App.dbClearStore('h28');
     App.dbClearStore('timerHistory'); App.dbClearStore('timer28History');
+    App.dbClearStore('timerHistoryRV');
+    App.dbClearStore('activityLogArchive');
+    App.dbClearStore('malaLog');
     App.resetTimer(); App.stopAll28Timers();
-    // Clear saved targets from settings UI
     ['dtIn','ltIn','msIn'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     initBrahmaStartInput();
+    renderMalaLog(); u28(); render28StatsPanel(); renderSankalpas();
   }
-  App.save(); App.ua(); fbDebouncedPush();  renderCal(); cm(); toast('Reset complete 🙏');
+
+  // ── STEP 2: Save clean state locally ──
+  App._suspendCloudSync = false;
+  App.save();
+  App.ua(); renderCal(); cm();
+  toast('Resetting… pushing to cloud ☁️');
+
+  // ── STEP 3: Push clean state to Firebase (overwrites old cloud data) ──
+  // Then restart listener so future changes sync normally
+  _fbResetPush().then(() => { App._resetInProgress = false; toast('Reset complete 🙏'); });
 }
 function cm() { document.getElementById('mo').classList.remove('show'); }
 
@@ -1691,10 +1807,11 @@ function renderMilestonesTab() {
   }
   const avg7 = sum7 / 7;
 
-  // Sadhana start date
+  // Sadhana start date — read from App.S (persistent) with localStorage fallback
+  const saved = App.S.sadhanaStart || localStorage.getItem('rjap_sadhana_start') || '';
+  if (saved) { App.S.sadhanaStart = saved; localStorage.setItem('rjap_sadhana_start', saved); }
   const startInput = document.getElementById('msSadhanaStart');
-  const saved = localStorage.getItem('rjap_sadhana_start');
-  if (saved && startInput) startInput.value = saved;
+  if (startInput && saved) startInput.value = saved;
   const sinceEl = document.getElementById('msSadhanaSince');
   if (sinceEl && saved) {
     const diff = Date.now() - new Date(saved).getTime();
@@ -1705,6 +1822,8 @@ function renderMilestonesTab() {
     if (mos>0) s += mos + ' month'+(mos>1?'s':'')+' ';
     s += (rem%30) + ' days of Sadhana';
     sinceEl.textContent = s;
+  } else if (sinceEl) {
+    sinceEl.textContent = 'Set your journey start date above ☝️';
   }
 
   // Build lakh milestones (1L to 130L)
@@ -2064,7 +2183,8 @@ function fbInit() {
             historyRV: {}, timerHistoryRV: {}, dtRV: 0, ltRV: 0, nameJapDeductRV: 0,
             malaLogRV: [], activityLog: [], syncBaselineRV: {}, syncBaselineTimerRV: {}
           };
-          // Load THIS user's local data first (will be overwritten by cloud pull)
+          // ── Always load IDB first so app is usable offline ──
+          // Cloud pull in fbMigrate() will immediately overwrite with authoritative data.
           await App.load();
           App.lmc = Math.floor(App.gTod() / (App.S.ms||108));
           App.lmcRV = Math.floor((App.S.historyRV[App.S.tk]||0) / (App.S.ms||108));
@@ -2075,12 +2195,14 @@ function fbInit() {
         document.getElementById('fbLoggedOut').style.display = 'none';
         document.getElementById('fbLoggedIn').style.display = 'block';
         document.getElementById('fbUserEmail').textContent = user.email || user.displayName || 'Google User';
-        setSyncPill('syncing', 'Connecting…');
-        // Single-device: claim this session & watch for other devices
-        fbClaimSession().then(() => {
+        setSyncPill('syncing', 'Loading from cloud…');
+        // ── ALWAYS pull from Firebase first on every login/refresh ──
+        // fbMigrate() does a direct .get() (not just onSnapshot) so it is
+        // guaranteed to fetch the latest cloud data before anything is rendered.
+        fbClaimSession().then(async () => {
           fbWatchSession();
-          // Pull data from Firebase on sign-in
-          fbAutoSync();
+          // Direct cloud pull — overwrites local cache with authoritative Firebase data
+          await fbAutoSync();
           // Load global stotrams (inbuilt overrides + global stotrams for all users)
           loadGlobalStotrams();
         });
@@ -2224,6 +2346,8 @@ async function fbPushFull() {
 
 function fbApplyRemote(d) {
   if (d.deviceId && d.deviceId === fbDeviceId) return;
+  // If a reset is in progress, ignore incoming cloud data to prevent resurrection
+  if (App._resetInProgress) return;
   // Ensure UID is set before saving (prevents saving to wrong UID key)
   if (fbUser && App._uid !== fbUser.uid) App._uid = fbUser.uid;
   if ('history' in d) App.S.history = JSON.parse(JSON.stringify(d.history || {}));
@@ -2260,7 +2384,8 @@ function fbApplyRemote(d) {
   if (d.nameJapDeductRV !== undefined) App.S.nameJapDeductRV = d.nameJapDeductRV;
   if (d.brahmacharya_start_date) App.S.brahmacharya_start_date = d.brahmacharya_start_date;
   if ('activityLog' in d) {
-    // Merge remote + local, deduplicate by ts+t, keep latest 500
+    // Merge remote + local, deduplicate by ts+t, keep latest 2000 in memory
+    // Full lifetime data lives in activityLogArchive IDB store
     const remote = d.activityLog || [];
     const local = App.S.activityLog || [];
     const seen = new Set();
@@ -2270,7 +2395,7 @@ function fbApplyRemote(d) {
       seen.add(key); return true;
     });
     merged.sort((a,b) => a.ts - b.ts);
-    App.S.activityLog = merged.slice(-500);
+    App.S.activityLog = merged.slice(-2000);
   }
   // Only apply malaLogRV from Firebase if it belongs to today AND local today has RV jap
   if ('malaLogRV' in d) {
@@ -2305,21 +2430,39 @@ function fbApplyRemote(d) {
 }
 
 async function fbMigrate() {
-  if (App.S.migrationV2Done) return;
+  // Always pull fresh from Firebase on every login/refresh.
+  // migrationV2Done only guards the one-time data-format migration,
+  // but we ALWAYS fetch the latest cloud state so the device is up to date.
   try {
     const docRef = fbDb.collection('users').doc(fbUser.uid).collection('data').doc('main');
+    setSyncPill('syncing', 'Loading from cloud…');
     const snap = await docRef.get();
-    if (!snap.exists) { await fbPushFull(); }
-    else { fbApplyRemote({...snap.data(), deviceId: null}); await fbPushFull(); }
-    App.S.migrationV2Done = true;
-    App.save();
-    setSyncPill('', '✅ Sync ready');
-  } catch(e) { console.warn('Migration:', e.message); }
+    if (!snap.exists) {
+      // No cloud data yet — push local state up
+      await fbPushFull();
+    } else {
+      // Cloud data exists — ALWAYS apply it (overrides local cache)
+      fbApplyRemote({...snap.data(), deviceId: null});
+      if (!App.S.migrationV2Done) {
+        // First-ever migration: push merged state back
+        await fbPushFull();
+        App.S.migrationV2Done = true;
+        App.save();
+      }
+    }
+    setSyncPill('', '✅ Synced from cloud');
+  } catch(e) {
+    console.warn('Cloud pull failed:', e.message);
+    setSyncPill('error', 'Sync failed');
+  }
 }
 
-function fbAutoSync() {
+async function fbAutoSync() {
   if (fbListener) { fbListener(); fbListener = null; }
-  setTimeout(() => fbMigrate(), 1500);
+  // ── Always do an immediate direct pull from Firebase (no delay, no cache) ──
+  // This ensures every login/refresh gets authoritative cloud data first.
+  await fbMigrate();
+  // ── Then set up the real-time listener for subsequent changes ──
   try {
     const docRef = fbDb.collection('users').doc(fbUser.uid).collection('data').doc('main');
     fbListener = docRef.onSnapshot(snap => {
@@ -2343,35 +2486,49 @@ function fbDebouncedPush() {
 // ═══════════════════════════════════════════════════════
 
 const NAMES28 = [
-  {num:'১', name:'রাধা', meaning:'The Supreme Beloved'},
-  {num:'২', name:'রাসেশ্বরী', meaning:'Goddess of the Rasa dance'},
-  {num:'৩', name:'রম্যা', meaning:'The most beautiful & delightful'},
-  {num:'৪', name:'শ্রীকৃষ্ণমন্ত্রাধিদেবতা', meaning:'Presiding deity of Krishna-mantra'},
-  {num:'৫', name:'সর্বাদ্যা', meaning:'The primordial, first of all'},
-  {num:'৬', name:'সর্ববন্দ্যা', meaning:'Worthy of worship by all'},
-  {num:'৭', name:'বৃন্দাবনবিহারিণী', meaning:'Who plays in Vrindavan'},
-  {num:'৮', name:'বৃন্দারাধ্যা', meaning:'Worshipped by Vrinda Devi'},
-  {num:'৯', name:'রমা', meaning:'The blissful one'},
-  {num:'১০', name:'অশেষগোপীমণ্ডলপূজিতা', meaning:'Worshipped by all the gopis'},
-  {num:'১১', name:'সত্যা', meaning:'The eternal Truth'},
-  {num:'১২', name:'সত্যপরা', meaning:'Supreme among the truthful'},
-  {num:'১৩', name:'সত্যভামা', meaning:'True and lustrous one'},
-  {num:'১৪', name:'শ্রীকৃষ্ণবল্লভা', meaning:'The beloved of Shri Krishna'},
-  {num:'১৫', name:'বৃষভানুসুতা', meaning:'Daughter of King Vrishabhanu'},
-  {num:'১৬', name:'গোপী', meaning:'The divine cowherd girl'},
-  {num:'১৭', name:'মূলপ্রকৃতি', meaning:'The primordial nature'},
-  {num:'১৮', name:'ঈশ্বরী', meaning:'The supreme goddess'},
-  {num:'১৯', name:'গান্ধর্বা', meaning:'Goddess of divine music'},
-  {num:'২০', name:'রাধিকা', meaning:'She who worships Krishna'},
-  {num:'২১', name:'আরম্যা', meaning:'Noble, honoured one'},
-  {num:'২২', name:'রুক্মিণী', meaning:'Adorned with gold'},
-  {num:'২৩', name:'পরমেশ্বরী', meaning:'The supreme ruler'},
-  {num:'২৪', name:'পরাৎপরতরা', meaning:'Beyond the beyond'},
-  {num:'২৫', name:'পূর্ণা', meaning:'The complete, perfect one'},
-  {num:'২৬', name:'পূর্ণচন্দ্রনিভাননা', meaning:'Face like the full moon'},
-  {num:'২৭', name:'ভুক্তিমুক্তিপ্রদা', meaning:'Giver of enjoyment & liberation'},
-  {num:'২৮', name:'ভবব্যাধিবিনাশিনী', meaning:'Destroyer of worldly suffering'}
+  {num:'১', name:'রাধা', nameHindi:'राधा', meaning:'The Supreme Beloved'},
+  {num:'২', name:'রাসেশ্বরী', nameHindi:'रासेश्वरी', meaning:'Goddess of the Rasa dance'},
+  {num:'৩', name:'রম্যা', nameHindi:'रम्या', meaning:'The most beautiful & delightful'},
+  {num:'৪', name:'শ্রীকৃষ্ণমন্ত্রাধিদেবতা', nameHindi:'श्रीकृष्णमन्त्राधिदेवता', meaning:'Presiding deity of Krishna-mantra'},
+  {num:'৫', name:'সর্বাদ্যা', nameHindi:'सर्वाद्या', meaning:'The primordial, first of all'},
+  {num:'৬', name:'সর্ববন্দ্যা', nameHindi:'सर्वबन्द्या', meaning:'Worthy of worship by all'},
+  {num:'৭', name:'বৃন্দাবনবিহারিণী', nameHindi:'वृन्दावनविहारिणी', meaning:'Who plays in Vrindavan'},
+  {num:'৮', name:'বৃন্দারাধ্যা', nameHindi:'वृन्दाराध्या', meaning:'Worshipped by Vrinda Devi'},
+  {num:'৯', name:'রমা', nameHindi:'रमा', meaning:'The blissful one'},
+  {num:'১০', name:'অশেষগোপীমণ্ডলপূজিতা', nameHindi:'अशेषगोपीमण्डलपूजिता', meaning:'Worshipped by all the gopis'},
+  {num:'১১', name:'সত্যা', nameHindi:'सत्या', meaning:'The eternal Truth'},
+  {num:'১২', name:'সত্যপরা', nameHindi:'सत्यपरा', meaning:'Supreme among the truthful'},
+  {num:'১৩', name:'সত্যভামা', nameHindi:'सत्यभामा', meaning:'True and lustrous one'},
+  {num:'১৪', name:'শ্রীকৃষ্ণবল্লভা', nameHindi:'श्रीकृष्णवल्लभा', meaning:'The beloved of Shri Krishna'},
+  {num:'১৫', name:'বৃষভানুসুতা', nameHindi:'वृषभानुसुता', meaning:'Daughter of King Vrishabhanu'},
+  {num:'১৬', name:'গোপী', nameHindi:'गोपी', meaning:'The divine cowherd girl'},
+  {num:'১৭', name:'মূলপ্রকৃতি', nameHindi:'मूलप्रकृति', meaning:'The primordial nature'},
+  {num:'১৮', name:'ঈশ্বরী', nameHindi:'ईश्वरी', meaning:'The supreme goddess'},
+  {num:'১৯', name:'গান্ধর্বা', nameHindi:'गान्धर्वा', meaning:'Goddess of divine music'},
+  {num:'২০', name:'রাধিকা', nameHindi:'राधिका', meaning:'She who worships Krishna'},
+  {num:'২১', name:'আরম্যা', nameHindi:'आरम्या', meaning:'Noble, honoured one'},
+  {num:'২২', name:'রুক্মিণী', nameHindi:'रुक्मिणी', meaning:'Adorned with gold'},
+  {num:'২৩', name:'পরমেশ্বরী', nameHindi:'परमेश्वरी', meaning:'The supreme ruler'},
+  {num:'২৪', name:'পরাৎপরতরা', nameHindi:'परात्परतरा', meaning:'Beyond the beyond'},
+  {num:'২৫', name:'পূর্ণা', nameHindi:'पूर्णा', meaning:'The complete, perfect one'},
+  {num:'২৬', name:'পূর্ণচন্দ্রনিভাননা', nameHindi:'पूर्णचन्द्रनिभानना', meaning:'Face like the full moon'},
+  {num:'২৭', name:'ভুক্তিমুক্তিপ্রদা', nameHindi:'भुक्तिमुक्तिप्रदा', meaning:'Giver of enjoyment & liberation'},
+  {num:'২৮', name:'ভবব্যাধিবিনাশিনী', nameHindi:'भवव्याधिविनाशिनी', meaning:'Destroyer of worldly suffering'}
 ];
+
+// Hindi/Bengali script toggle for 28 Names (default: Bengali)
+let _n28ScriptHindi = false;
+function toggle28Script() {
+  _n28ScriptHindi = !_n28ScriptHindi;
+  const btn = document.getElementById('n28ScriptToggle');
+  if (btn) btn.textContent = _n28ScriptHindi ? 'বাংলা' : 'हिन्दी';
+  u28();
+}
+function get28Name(entry) {
+  return (_n28ScriptHindi && entry.nameHindi) ? entry.nameHindi : entry.name;
+}
+
+
 
 function get28Pos() { return (App.S.h28[App.S.tk]||0) % 28; }
 
@@ -2401,7 +2558,7 @@ function u28() {
       nameEl.style.animation = 'none';
       nameEl.offsetHeight;
       nameEl.style.animation = 'nameIn 0.35s cubic-bezier(0.34,1.56,0.64,1) forwards';
-      nameEl.textContent = entry.name;
+      nameEl.textContent = get28Name(entry);
     }
   }
   if (meanEl) meanEl.textContent = isCompleting ? '' : entry.meaning;
@@ -2411,10 +2568,8 @@ function u28() {
   renderSankalpas();
   // Show today's accumulated 28-Names time in Total Timer if not currently running
   if (!App._n28TimerInterval) {
-    const fmt28 = s => Math.floor(s/60)+':'+(s%60<10?'0':'')+(s%60);
-    const saved28 = App.S.timer28History[App.S.tk] || 0;
     const te = document.getElementById('n28TotalTimer');
-    if (te && saved28 > 0) te.textContent = fmt28(saved28);
+    if (te) te.textContent = App.fmtTime(App.timerSeconds);
   }
   App._upd28PauseBtn();
   refresh28StatsIfOpen();
@@ -2437,8 +2592,9 @@ function cycleDone28() {
   const cycleTimeSec = App._n28CycleStart
     ? Math.floor((Date.now() - App._n28CycleStart) / 1000) : 0;
   const cycleNum = Math.floor((App.S.h28[App.S.tk]||0) / 28);
-  logActivity({ t: '28cycle', ts: Date.now(), n: cycleNum, sec: cycleTimeSec });
-  const fmtCyc = s => Math.floor(s/60)+'m '+(s%60)+'s';
+  const cycleStartTs = App._n28CycleStart ? App._n28CycleStart : (Date.now() - cycleTimeSec * 1000);
+  logActivity({ t: '28cycle', ts: Date.now(), startTs: cycleStartTs, n: cycleNum, sec: cycleTimeSec });
+  const fmtCyc = s => { s=Math.round(s); const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sc=s%60; if(h>0)return h+'h '+m+'m '+String(sc).padStart(2,'0')+'s'; if(m>0)return m+'m '+String(sc).padStart(2,'0')+'s'; return sc+'s'; };
   App._n28CompletionAnimating = true;
   clearTimeout(App._n28CompletionTimer);
 
@@ -2484,11 +2640,9 @@ function cycleDone28() {
   App._n28PausedTotalSec = 0;
   const ce = document.getElementById('n28CycleTimer');
   if (ce) ce.textContent = '0:00';
-  // Show accumulated total time (frozen)
-  const fmt28t = s => Math.floor(s/60)+':'+(s%60<10?'0':'')+(s%60);
-  const todaySec = App.S.timer28History[App.S.tk] || 0;
+  // Show unified Jap timer (same as main Jap tab)
   const teDisp = document.getElementById('n28TotalTimer');
-  if (teDisp) teDisp.textContent = fmt28t(todaySec);
+  if (teDisp) teDisp.textContent = App.fmtTime(App.timerSeconds);
   App._upd28PauseBtn();
 
   const zone = document.getElementById('tz28');
@@ -3460,14 +3614,16 @@ function toggleBrkCollapse() {
 
 // ─────────────────────────────────────────────────────────
 // ACTIVITY LOG — records every action with Unix timestamp
-// Powers the AI assistant's data science analysis
+
 // ─────────────────────────────────────────────────────────
 function logActivity(entry) {
   if (!App.S.activityLog) App.S.activityLog = [];
   App.S.activityLog.push(entry);
-  // Keep last 500 entries (~50KB) — well within Firestore 1MB doc limit
-  if (App.S.activityLog.length > 500) {
-    App.S.activityLog = App.S.activityLog.slice(-500);
+  // Keep last 2000 entries in memory (~200KB) — still within Firestore 1MB doc limit
+  // Older entries are archived per-day in activityLogArchive IDB store (no limit).
+  // getLifetimeActivityLog() merges archive + in-memory for full history.
+  if (App.S.activityLog.length > 2000) {
+    App.S.activityLog = App.S.activityLog.slice(-2000);
   }
   // Debounced save — don't save on every single tap, batch with existing save
   // App.save() is already called by the caller (malaOk, pauseTimer etc)
@@ -4006,23 +4162,29 @@ function renderLakhGati() { renderMilestonesTab(); }
 function saveSadhanaStartDate(val) {
   if (val) {
     localStorage.setItem('rjap_sadhana_start', val);
+    App.S.sadhanaStart = val;
+    App.save(); fbDebouncedPush();
     updateSadhanaSince();
     renderLakhGati();
   }
 }
 
 function loadSadhanaStartDate() {
-  const saved = localStorage.getItem('rjap_sadhana_start');
-  const input = document.getElementById('sadhanaStartDate');
-  if (saved && input) {
-    input.value = saved;
+  // Read from App.S first (syncs across devices), fallback to localStorage
+  const saved = App.S.sadhanaStart || localStorage.getItem('rjap_sadhana_start') || '';
+  if (saved) {
+    // Keep both in sync
+    App.S.sadhanaStart = saved;
+    localStorage.setItem('rjap_sadhana_start', saved);
   }
+  const input = document.getElementById('msSadhanaStart');
+  if (saved && input) input.value = saved;
   updateSadhanaSince();
 }
 
 function updateSadhanaSince() {
-  const el = document.getElementById('sadhanaSince');
-  const saved = localStorage.getItem('rjap_sadhana_start');
+  const el = document.getElementById('sadhanaSince') || document.getElementById('msSadhanaSince');
+  const saved = App.S.sadhanaStart || localStorage.getItem('rjap_sadhana_start');
   if (!el) return;
   if (!saved) {
     el.textContent = 'Set your journey start date above ☝️';
@@ -4044,3 +4206,392 @@ function updateSadhanaSince() {
 
 
 function renderMsView() { renderMilestonesTab(); }
+
+// ═══════════════════════════════════════════════════════
+// HISTORY SECTION
+// ═══════════════════════════════════════════════════════
+
+function _histFmtDate(tk) {
+  // tk = 'YYYY-MM-DD' → '13 May 2026'
+  const [y, m, d] = tk.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return parseInt(d) + ' ' + months[parseInt(m)-1] + ' ' + y;
+}
+
+function _histFmtSec(s) {
+  if (!s || s <= 0) return '—';
+  s = Math.round(s);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sc = s % 60;
+  if (h > 0) return h + 'h ' + m + 'm ' + String(sc).padStart(2, '0') + 's';
+  if (m > 0) return m + 'm ' + String(sc).padStart(2, '0') + 's';
+  return sc + 's';
+}
+
+function _histFmtTime(ts) {
+  // ts = Date.now() timestamp → 'HH:MM:SS AM/PM'
+  if (!ts) return '—';
+  const d = new Date(ts);
+  let h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return h + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0') + ' ' + ampm;
+}
+
+function histPreset(days) {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - (days - 1));
+  document.getElementById('histFrom').value = from.toISOString().slice(0,10);
+  document.getElementById('histTo').value = to.toISOString().slice(0,10);
+}
+
+function histPresetMonth() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  document.getElementById('histFrom').value = from.toISOString().slice(0,10);
+  document.getElementById('histTo').value = now.toISOString().slice(0,10);
+}
+
+function _histGetDates(from, to) {
+  const dates = [];
+  const cur = new Date(from);
+  const end = new Date(to);
+  while (cur <= end) {
+    dates.push(cur.toISOString().slice(0,10));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
+function renderHistory() {
+  const from = document.getElementById('histFrom').value;
+  const to   = document.getElementById('histTo').value;
+  const sumLine = document.getElementById('histSummaryLine');
+  const wrap = document.getElementById('histTableWrap');
+  const tbody = document.getElementById('histTableBody');
+  const totDiv = document.getElementById('histTotals');
+  const detail = document.getElementById('histDayDetail');
+
+  if (!from || !to) { sumLine.textContent = 'Please select both From and To dates.'; return; }
+  if (from > to)    { sumLine.textContent = 'From date must be before To date.'; return; }
+
+  detail.style.display = 'none';
+  const dates = _histGetDates(from, to);
+  const ms = App.S.ms || 108;
+
+  const hist    = App.S.history        || {};
+  const histRV  = App.S.historyRV      || {};
+  const h28     = App.S.h28            || {};
+  const tHist   = App.S.timerHistory   || {};
+  const tHistRV = App.S.timerHistoryRV || {};
+  const t28Hist = App.S.timer28History || {};
+
+  let totRadha=0, totRV=0, tot28taps=0, totTimeSec=0, totTimeSec28=0;
+  window._ptRadhaSec = 0; window._ptRVSec = 0; // reset per-mode time accumulators
+  let activeDays = 0;
+  tbody.innerHTML = '';
+
+  dates.forEach(tk => {
+    const radha  = hist[tk]   || 0;
+    const rv     = histRV[tk] || 0;
+    const taps28 = h28[tk]    || 0;
+    // Use malaLog arrays as ground truth for today's time (prevents mode-switch corruption)
+    const isRowToday = (tk === App.S.tk);
+    const tSecR_row  = isRowToday ? (App.S.malaLog||[]).reduce((a,b)=>a+b,0)   : (tHist[tk]||0);
+    const tSecRV_row = isRowToday ? (App.S.malaLogRV||[]).reduce((a,b)=>a+b,0) : (tHistRV[tk]||0);
+    const tSec   = tSecR_row + tSecRV_row;
+    const t28Sec = t28Hist[tk] || 0;
+    const totalSec = tSec + t28Sec;
+
+    if (radha === 0 && rv === 0 && taps28 === 0) return; // skip empty days
+
+    activeDays++;
+    totRadha   += radha;
+    totRV      += rv;
+    tot28taps  += taps28;
+    totTimeSec += tSec;  // tSec = Radha + RV combined (already ground-truth for today)
+    totTimeSec28 += t28Sec;
+    // Track per-mode time for Period Totals display
+    window._ptRadhaSec += tSecR_row;
+    window._ptRVSec    += tSecRV_row;
+
+    const radhaM = Math.floor(radha/ms);
+    const rvM    = Math.floor(rv/ms);
+    const cyc28  = Math.floor(taps28/28);
+
+    const tr = document.createElement('tr');
+    tr.style.cssText = 'border-bottom:1px solid rgba(255,215,0,0.07);cursor:pointer;transition:background 0.15s';
+    tr.onmouseenter = () => tr.style.background = 'rgba(255,215,0,0.06)';
+    tr.onmouseleave = () => tr.style.background = '';
+    tr.onclick = () => showHistDay(tk);
+
+    const radhaStr = radha > 0 ? radhaM+'m <span style="font-size:10px;color:var(--td)">('+radha+')</span>' : '<span style="color:rgba(255,255,255,0.15)">—</span>';
+    const rvStr    = rv    > 0 ? rvM   +'m <span style="font-size:10px;color:var(--td)">('+rv+')</span>'    : '<span style="color:rgba(255,255,255,0.15)">—</span>';
+    const n28Str   = taps28> 0 ? cyc28 +'c <span style="font-size:10px;color:var(--td)">('+taps28+')</span>': '<span style="color:rgba(255,255,255,0.15)">—</span>';
+
+    tr.innerHTML = `
+      <td style="padding:8px 10px;color:var(--tl);white-space:nowrap;font-size:11px">${_histFmtDate(tk)}</td>
+      <td style="padding:8px 6px;text-align:center;color:var(--gold)">${radhaStr}</td>
+      <td style="padding:8px 6px;text-align:center;color:var(--a2)">${rvStr}</td>
+      <td style="padding:8px 6px;text-align:center;color:var(--green)">${n28Str}</td>
+      <td style="padding:8px 6px;text-align:center;color:var(--td);font-size:11px;white-space:nowrap">${_histFmtSec(totalSec)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  if (activeDays === 0) {
+    sumLine.textContent = 'No jap recorded in this date range.';
+    wrap.style.display = 'none';
+    return;
+  }
+
+  sumLine.textContent = activeDays + ' active day' + (activeDays>1?'s':'') + ' in range · tap a row for details';
+  wrap.style.display = 'block';
+
+  // Totals row
+  const totRadhaM = Math.floor(totRadha/ms);
+  const totRVM    = Math.floor(totRV/ms);
+  const totCyc28  = Math.floor(tot28taps/28);
+  const grandTotal = totTimeSec + totTimeSec28;
+  totDiv.innerHTML = `
+    <div style="color:var(--gold);font-weight:700;font-size:11px;letter-spacing:1px;margin-bottom:6px;text-transform:uppercase">📊 Period Totals</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:12px">
+      <div style="color:var(--gold)">Radha Jap: <strong>${totRadhaM} malas</strong> <span style="color:var(--td);font-size:10px">(${totRadha})</span></div>
+      <div style="color:var(--a2)">RV Jap: <strong>${totRVM} malas</strong> <span style="color:var(--td);font-size:10px">(${totRV})</span></div>
+      <div style="color:var(--green)">28 Names: <strong>${totCyc28} cycles</strong> <span style="color:var(--td);font-size:10px">(${tot28taps} taps)</span></div>
+      <div style="color:var(--tl)">Total Time: <strong>${_histFmtSec(grandTotal)}</strong></div>
+      <div style="color:var(--td);font-size:11px">Radha Time: ${_histFmtSec(window._ptRadhaSec||0)}</div>
+      <div style="color:var(--td);font-size:11px">RV Time: ${_histFmtSec(window._ptRVSec||0)}</div>
+      <div style="color:var(--td);font-size:11px">28 Names Time: ${_histFmtSec(totTimeSec28)}</div>
+    </div>
+  `;
+}
+
+function showHistDay(tk) {
+  const detail  = document.getElementById('histDayDetail');
+  const title   = document.getElementById('histDayTitle');
+  const content = document.getElementById('histDayContent');
+
+  title.textContent = _histFmtDate(tk);
+  detail.style.display = 'block';
+  detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  const ms     = App.S.ms || 108;
+  const radha  = App.S.history[tk]        || 0;
+  const rv     = App.S.historyRV[tk]      || 0;
+  const taps28 = App.S.h28[tk]            || 0;
+  const tSecR  = App.S.timerHistory[tk]   || 0;
+  const tSecRV = App.S.timerHistoryRV[tk] || 0;
+  const t28Sec = App.S.timer28History[tk] || 0;
+
+  const radhaM = Math.floor(radha/ms);
+  const rvM    = Math.floor(rv/ms);
+  const cyc28  = Math.floor(taps28/28);
+  const isToday = (tk === App.S.tk);
+
+  let html = '';
+
+  // ── Day Summary ──
+  html += `<div style="background:rgba(255,215,0,0.06);border:1px solid rgba(255,215,0,0.15);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-family:Inter,sans-serif">`;
+  html += `<div style="font-size:10px;color:var(--gold);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;font-weight:600">Day Summary</div>`;
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px">`;
+  // For today: use malaLog arrays as ground-truth time (they never have sync issues)
+  const tSecR_disp  = isToday ? (App.S.malaLog||[]).reduce((a,b)=>a+b,0)   : tSecR;
+  const tSecRV_disp = isToday ? (App.S.malaLogRV||[]).reduce((a,b)=>a+b,0) : tSecRV;
+  if (radha > 0)  html += `<div style="color:var(--gold)">Radha: <strong>${radhaM} mala</strong> (${radha}) · ${_histFmtSec(tSecR_disp)}</div>`;
+  if (rv > 0)     html += `<div style="color:var(--a2)">RV: <strong>${rvM} mala</strong> (${rv}) · ${_histFmtSec(tSecRV_disp)}</div>`;
+  if (taps28 > 0) html += `<div style="color:var(--green)">28 Names: <strong>${cyc28} cycles</strong> (${taps28}) · ${_histFmtSec(t28Sec)}</div>`;
+  const grand = tSecR_disp + tSecRV_disp + t28Sec;
+  if (grand > 0)  html += `<div style="color:var(--tl)">Total: <strong>${_histFmtSec(grand)}</strong></div>`;
+  html += `</div></div>`;
+
+  // ── Per-Mala Detail from activityLog ──
+  const log = App.S.activityLog || [];
+  const tkPrefix = tk.slice(0,10);
+
+  // Get mala entries for this day
+  const radhaEntries = log.filter(e => e.t === 'mala' && e.mode !== 'rv' && new Date(e.ts).toISOString().slice(0,10) === tkPrefix);
+  const rvEntries    = log.filter(e => e.t === 'mala' && e.mode === 'rv'  && new Date(e.ts).toISOString().slice(0,10) === tkPrefix);
+  const cycleEntries = log.filter(e => e.t === '28cycle'                  && new Date(e.ts).toISOString().slice(0,10) === tkPrefix);
+
+  const hasDetail = radhaEntries.length > 0 || rvEntries.length > 0 || cycleEntries.length > 0;
+
+  if (!hasDetail && !isToday) {
+    html += `<div style="font-size:11px;color:var(--td);text-align:center;padding:8px 0">Per-mala detail not available for this date<br><span style="font-size:10px">(activity log only keeps recent sessions)</span></div>`;
+  }
+
+  if (radhaEntries.length > 0) {
+    html += _histMalaTable('🌸 Radha Jap — Per Mala', radhaEntries, 'var(--gold)');
+  }
+  if (rvEntries.length > 0) {
+    html += _histMalaTable('🔵 RV Jap — Per Mala', rvEntries, 'var(--a2)');
+  }
+  if (cycleEntries.length > 0) {
+    html += _hist28CycleTable(cycleEntries);
+  }
+
+  // Today: also show from malaLog (more complete, has all malas even if log is short)
+  if (isToday && radhaEntries.length === 0 && (App.S.malaLog||[]).length > 0) {
+    html += _histTodayMalaLogTable('🌸 Radha Jap — Today\'s Malas', App.S.malaLog, 'var(--gold)');
+  }
+  if (isToday && rvEntries.length === 0 && (App.S.malaLogRV||[]).length > 0) {
+    html += _histTodayMalaLogTable('🔵 RV Jap — Today\'s Malas', App.S.malaLogRV, 'var(--a2)');
+  }
+
+  content.innerHTML = html;
+}
+
+function _histMalaTable(label, entries, color) {
+  let html = `<div style="margin-bottom:10px">`;
+  html += `<div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:${color};margin-bottom:6px;font-weight:600">${label}</div>`;
+  html += `<div style="overflow-x:auto;border-radius:10px;border:1px solid rgba(255,255,255,0.08)">`;
+  html += `<table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:11px">`;
+  html += `<thead><tr style="background:rgba(255,255,255,0.05);color:var(--td)">
+    <th style="padding:6px 8px;text-align:left">Mala #</th>
+    <th style="padding:6px 8px;text-align:left">End Time</th>
+    <th style="padding:6px 8px;text-align:left">Start Time</th>
+    <th style="padding:6px 8px;text-align:right">Duration</th>
+  </tr></thead><tbody>`;
+
+  entries.forEach((e, i) => {
+    const endTs   = e.ts;
+    // Use stored startTs if available (accurate wall-clock); fall back to computed
+    const startTs = e.startTs ? e.startTs : (endTs - (e.sec * 1000));
+    const even = i % 2 === 0;
+    // Always use sequential index (i+1) — e.n can repeat when modes switch
+    html += `<tr style="background:${even ? 'rgba(0,0,0,0.15)' : 'transparent'}">
+      <td style="padding:6px 8px;color:${color};font-weight:600">Mala ${i+1}</td>
+      <td style="padding:6px 8px;color:var(--tl)">${_histFmtTime(endTs)}</td>
+      <td style="padding:6px 8px;color:var(--td)">${_histFmtTime(startTs)}</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--green)">${_histFmtSec(e.sec)}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div></div>`;
+  return html;
+}
+
+function _hist28CycleTable(entries) {
+  let html = `<div style="margin-bottom:10px">`;
+  html += `<div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--green);margin-bottom:6px;font-weight:600">🌿 28 Names — Cycles</div>`;
+  html += `<div style="overflow-x:auto;border-radius:10px;border:1px solid rgba(255,255,255,0.08)">`;
+  html += `<table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:11px">`;
+  html += `<thead><tr style="background:rgba(255,255,255,0.05);color:var(--td)">
+    <th style="padding:6px 8px;text-align:left">Cycle #</th>
+    <th style="padding:6px 8px;text-align:left">End Time</th>
+    <th style="padding:6px 8px;text-align:left">Start Time</th>
+    <th style="padding:6px 8px;text-align:right">Cycle Time</th>
+  </tr></thead><tbody>`;
+
+  entries.forEach((e, i) => {
+    const endTs   = e.ts;
+    const startTs = e.startTs ? e.startTs : (endTs - (e.sec || 0) * 1000);
+    const even = i % 2 === 0;
+    html += `<tr style="background:${even ? 'rgba(0,0,0,0.15)' : 'transparent'}">
+      <td style="padding:6px 8px;color:var(--green);font-weight:600">Cycle ${i+1}</td>
+      <td style="padding:6px 8px;color:var(--tl)">${_histFmtTime(endTs)}</td>
+      <td style="padding:6px 8px;color:var(--td)">${_histFmtTime(startTs)}</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--gold)">${_histFmtSec(e.sec)}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div></div>`;
+  return html;
+}
+
+function _histTodayMalaLogTable(label, malaLog, color) {
+  // malaLog is array of durations (seconds) only — no timestamps
+  // reconstruct approximate start times from total timer
+  let html = `<div style="margin-bottom:10px">`;
+  html += `<div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:${color};margin-bottom:6px;font-weight:600">${label}</div>`;
+  html += `<div style="overflow-x:auto;border-radius:10px;border:1px solid rgba(255,255,255,0.08)">`;
+  html += `<table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:11px">`;
+  html += `<thead><tr style="background:rgba(255,255,255,0.05);color:var(--td)">
+    <th style="padding:6px 8px;text-align:left">Mala #</th>
+    <th style="padding:6px 8px;text-align:right">Duration</th>
+  </tr></thead><tbody>`;
+
+  malaLog.forEach((sec, i) => {
+    const even = i % 2 === 0;
+    html += `<tr style="background:${even ? 'rgba(0,0,0,0.15)' : 'transparent'}">
+      <td style="padding:6px 8px;color:${color};font-weight:600">Mala ${i+1}</td>
+      <td style="padding:6px 8px;text-align:right;color:var(--green)">${_histFmtSec(sec)}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div>`;
+  html += `<div style="font-size:10px;color:var(--td);margin-top:4px;padding:0 2px">* Start/end times available in future sessions (stored in activity log)</div>`;
+  html += `</div>`;
+  return html;
+}
+
+function copyHistoryText() {
+  const from = document.getElementById('histFrom').value;
+  const to   = document.getElementById('histTo').value;
+  if (!from || !to) return;
+
+  const ms     = App.S.ms || 108;
+  const dates  = _histGetDates(from, to);
+  const hist   = App.S.history || {};
+  const histRV = App.S.historyRV || {};
+  const h28    = App.S.h28 || {};
+  const tHist  = App.S.timerHistory || {};
+  const tHistRV= App.S.timerHistoryRV || {};
+  const t28Hist= App.S.timer28History || {};
+
+  let lines = ['📿 Radha Naam Jap — History Report'];
+  lines.push('Period: ' + _histFmtDate(from) + ' to ' + _histFmtDate(to));
+  lines.push('─'.repeat(42));
+
+  let totR=0, totRV=0, tot28=0, totT=0, totT28=0;
+  let days = 0;
+
+  dates.forEach(tk => {
+    const r   = hist[tk]||0, rv = histRV[tk]||0, t28 = h28[tk]||0;
+    const tR  = tHist[tk]||0, tRV = tHistRV[tk]||0, t28s = t28Hist[tk]||0;
+    if (r===0 && rv===0 && t28===0) return;
+    days++;
+    totR+=r; totRV+=rv; tot28+=t28; totT+=tR+tRV; totT28+=t28s;
+
+    const parts = [];
+    if (r>0)   parts.push('Radha: '+Math.floor(r/ms)+'m ('+r+') '+_histFmtSec(tR));
+    if (rv>0)  parts.push('RV: '+Math.floor(rv/ms)+'m ('+rv+') '+_histFmtSec(tRV));
+    if (t28>0) parts.push('28 Names: '+Math.floor(t28/28)+'c ('+t28+') '+_histFmtSec(t28s));
+    const total = tR+tRV+t28s;
+    if (total>0) parts.push('Total: '+_histFmtSec(total));
+
+    lines.push(_histFmtDate(tk) + ' — ' + parts.join(' | '));
+  });
+
+  lines.push('─'.repeat(42));
+  lines.push('TOTALS ('+days+' days):');
+  lines.push('Radha: '+Math.floor(totR/ms)+' malas ('+totR+') | RV: '+Math.floor(totRV/ms)+' malas ('+totRV+') | 28 Names: '+Math.floor(tot28/28)+' cycles ('+tot28+')');
+  lines.push('Jap Time: '+_histFmtSec(totT)+' | 28 Names Time: '+_histFmtSec(totT28)+' | Grand Total: '+_histFmtSec(totT+totT28));
+  lines.push('🙏 Radha Vallabh Sri Harivangsa 🙏');
+
+  navigator.clipboard.writeText(lines.join('\n')).then(() => toast('History copied! 📋')).catch(() => toast('Copy failed'));
+}
+
+// ─────────────────────────────────────────────────────────
+// LIFETIME ACTIVITY LOG — loads ALL archived days from IDB
+// No 500-entry limit.
+// ─────────────────────────────────────────────────────────
+async function getLifetimeActivityLog() {
+  // Load all days from the archive store
+  const archive = await App.dbGetAll('activityLogArchive');
+  // Merge all arrays, sort by timestamp ascending
+  let all = [];
+  Object.values(archive).forEach(function(entries) {
+    if (Array.isArray(entries)) all = all.concat(entries);
+  });
+  // Also include any in-memory entries not yet archived (today's live entries)
+  const inMem = App.S.activityLog || [];
+  const archiveSet = new Set(all.map(e => e.ts + '|' + e.t));
+  inMem.forEach(function(e) {
+    if (!archiveSet.has(e.ts + '|' + e.t)) all.push(e);
+  });
+  all.sort(function(a, b) { return (a.ts || 0) - (b.ts || 0); });
+  return all;
+}

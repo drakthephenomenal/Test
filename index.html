@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="app-version" content="53">
+<meta name="app-version" content="54">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,7 +17,9 @@
 <link rel="apple-touch-icon" href="./icon-192.png">
 <link rel="icon" href="./icon-192.png">
 <title>Radha Naam Jap</title>
-<link href="https://fonts.googleapis.com/css2?family=Tiro+Devanagari+Hindi&family=Hind+Siliguri:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=EB+Garamond:wght@400;600&family=Inter:wght@300;400;500;600&family=Noto+Sans+Devanagari:wght@700&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Tiro+Devanagari+Hindi&family=Hind+Siliguri:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=EB+Garamond:wght@400;600&family=Inter:wght@300;400;500;600&family=Noto+Sans+Devanagari:wght@400;700&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -29,18 +31,86 @@
   <div class="ls-rings">
     <div class="glow1"></div>
     <div class="glow2"></div>
-    <div class="ls-ring ls-ring-blue">
-      <svg viewBox="0 0 280 280" width="280" height="280">
-        <defs><path id="blue-circle" d="M 140,140 m -130,0 a 130,130 0 1,1 260,0 a 130,130 0 1,1 -260,0"/></defs>
-        <text class="fill-blue"><textPath href="#blue-circle">राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · </textPath></text>
-      </svg>
-    </div>
-    <div class="ls-ring ls-ring-yellow">
-      <svg viewBox="0 0 310 310" width="310" height="310">
-        <defs><path id="yellow-circle" d="M 155,155 m -145,0 a 145,145 0 1,1 290,0 a 145,145 0 1,1 -290,0"/></defs>
-        <text class="fill-yellow"><textPath href="#yellow-circle">राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · राधा · </textPath></text>
-      </svg>
-    </div>
+    <canvas id="ringCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5;"></canvas>
+    <script>
+    (function() {
+      var RADHA = 'राधा · ';
+      var raf, rot1 = 0, rot2 = 0, fontReady = false;
+
+      function drawTextOnRing(ctx, cx, cy, radius, rotOffset, color, fs) {
+        ctx.save();
+        ctx.font = '700 ' + fs + 'px "Noto Sans Devanagari", sans-serif';
+        ctx.fillStyle = color;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        var unitW = ctx.measureText(RADHA).width;
+        var circ  = 2 * Math.PI * radius;
+        var reps  = Math.ceil(circ / unitW) + 1;
+        var anglePerUnit = unitW / radius;
+        for (var i = 0; i < reps; i++) {
+          var midAngle = rotOffset + i * anglePerUnit;
+          if (midAngle > rotOffset + 2 * Math.PI) break;
+          ctx.save();
+          ctx.translate(cx + radius * Math.cos(midAngle), cy + radius * Math.sin(midAngle));
+          ctx.rotate(midAngle + Math.PI / 2);
+          ctx.fillText(RADHA, 0, 0);
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+
+      function frame() {
+        var canvas = document.getElementById('ringCanvas');
+        var ls = document.getElementById('ls');
+        if (!canvas || !ls || ls.classList.contains('hide')) return;
+
+        var size = canvas.parentElement.offsetWidth || 320;
+        var dpr  = window.devicePixelRatio || 1;
+        if (canvas.width !== size * dpr) {
+          canvas.width  = size * dpr;
+          canvas.height = size * dpr;
+        }
+        var ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.scale(dpr, dpr);
+
+        var cx = size / 2, cy = size / 2;
+        var r1 = size * 0.42;  // yellow outer ring
+        var r2 = size * 0.38;  // blue inner ring
+        var fs = Math.max(10, Math.round(size * 0.047));
+
+        drawTextOnRing(ctx, cx, cy, r1,  rot1, '#FFD700', fs);
+        drawTextOnRing(ctx, cx, cy, r2, -rot2, '#4A90E2', fs);
+
+        ctx.restore();
+
+        rot1 += 0.003;  // yellow spins forward
+        rot2 += 0.0024; // blue spins backward (negated above)
+        raf = requestAnimationFrame(frame);
+      }
+
+      function startAnim() {
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(frame);
+      }
+
+      function tryDraw() {
+        if (document.fonts && document.fonts.load) {
+          document.fonts.load('700 14px "Noto Sans Devanagari"', 'राधा')
+            .then(startAnim).catch(startAnim);
+        } else {
+          setTimeout(startAnim, 800);
+        }
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', tryDraw);
+      } else {
+        tryDraw();
+      }
+    })();
+    </script>
     <img class="ls-img" id="guruImg" src="./guru.jpg" alt="Shri Radha Rani" style="position:relative;z-index:10;box-shadow:0 0 40px 15px rgba(255,215,0,0.4),0 0 80px 30px rgba(255,215,0,0.2);">
     <img id="appIconImg" style="display:none" src="./icon-192.png" alt="App Icon"/>
   </div>
@@ -186,9 +256,12 @@
 <div class="view" id="v28">
   <div class="v28-header">
     <div class="v28-title">28 Names of Radha</div>
-    <button class="sk-icon-btn" id="skToggleBtn" onclick="toggleSankalp()">
-      🙏 Wishes <span class="sk-chevron" id="skChevron">▾</span>
-    </button>
+    <div style="display:flex;gap:6px;align-items:center">
+      <button id="n28ScriptToggle" onclick="toggle28Script()" style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);border-radius:16px;color:var(--gold);font-size:12px;font-weight:600;padding:5px 13px;cursor:pointer;font-family:'Hind Siliguri',serif;letter-spacing:0.3px;transition:all 0.2s;">हिन्दी</button>
+      <button class="sk-icon-btn" id="skToggleBtn" onclick="toggleSankalp()">
+        🙏 Wishes <span class="sk-chevron" id="skChevron">▾</span>
+      </button>
+    </div>
   </div>
   <div class="sk-panel" id="skCollapse">
     <div class="sk-panel-inner">
@@ -216,8 +289,8 @@
         <div class="n28timer-lbl">Today</div>
       </div>
       <div class="n28timer-box" style="align-items:flex-end">
-        <div class="n28timer-val gold" id="n28TotalTimer">0:00</div>
-        <div class="n28timer-lbl">Total Time</div>
+        <div class="n28timer-val gold" id="n28TotalTimer">00:00:00</div>
+        <div class="n28timer-lbl">Jap Timer</div>
       </div>
     </div>
 
@@ -454,15 +527,15 @@
         <div class="sb"><div class="sv2" id="sMo">0</div><div class="sl">This Month</div><div class="ss" id="sMoM">0 malas</div></div>
         <div class="sb"><div class="sv2" id="sTot">0</div><div class="sl">Total Jap</div><div class="ss" id="sTotM">0 malas</div></div>
         <!-- Separated lifetime totals -->
-        <div class="sb" style="background:rgba(255,215,0,0.05);border-color:rgba(255,215,0,0.18)"><div class="sv2" style="color:var(--gold)" id="sRadhaTot">0</div><div class="sl" style="color:var(--gold)">राधा Lifetime</div><div class="ss" id="sRadhaTotM">0 malas</div></div>
-        <div class="sb" style="background:rgba(74,144,226,0.05);border-color:rgba(74,144,226,0.18)"><div class="sv2" style="color:var(--a2)" id="sRVTot">0</div><div class="sl" style="color:var(--a2)">RV Lifetime</div><div class="ss" id="sRVTotM">0 malas</div></div>
-        <div class="sb" style="background:rgba(46,204,113,0.05);border-color:rgba(46,204,113,0.18)"><div class="sv2" style="color:var(--green)" id="s28Tot">0</div><div class="sl" style="color:var(--green)">28 Names Lifetime</div><div class="ss" id="s28TotM">0 cycles</div></div>
+        <div class="sb" style="background:rgba(255,215,0,0.05);border-color:rgba(255,215,0,0.18)"><div class="sv2" style="color:var(--gold)" id="sRadhaTot">0</div><div class="sl" style="color:var(--gold)">राधा Lifetime</div><div class="ss" id="sRadhaTotM">0 malas</div><div class="ss" id="sRadhaTotF" style="color:var(--gold);opacity:0.75;font-size:10px;margin-top:2px">0</div></div>
+        <div class="sb" style="background:rgba(74,144,226,0.05);border-color:rgba(74,144,226,0.18)"><div class="sv2" style="color:var(--a2)" id="sRVTot">0</div><div class="sl" style="color:var(--a2)">RV Lifetime</div><div class="ss" id="sRVTotM">0 malas</div><div class="ss" id="sRVTotF" style="color:var(--a2);opacity:0.75;font-size:10px;margin-top:2px">0</div></div>
+        <div class="sb" style="background:rgba(46,204,113,0.05);border-color:rgba(46,204,113,0.18)"><div class="sv2" style="color:var(--green)" id="s28Tot">0</div><div class="sl" style="color:var(--green)">28 Names Lifetime</div><div class="ss" id="s28TotM">0 cycles</div><div class="ss" id="s28TotF" style="color:var(--green);opacity:0.75;font-size:10px;margin-top:2px">0</div></div>
         <div class="sb wide" style="background:rgba(255,215,0,0.04);border-color:rgba(255,215,0,0.12)"><div class="sv2" style="color:var(--gold)" id="sLtTime">0m 0s</div><div class="sl" style="color:var(--gold)">Lifetime Jap Time</div></div>
         <div class="sb wide"><div class="sl" style="font-size:11px">Last 7 Days</div><div class="cbrs" id="cbrs"></div></div>
         <div class="sb"><div class="sv2" id="sStr">0</div><div class="sl">Day Streak</div><div class="ss">🔥 Consecutive</div></div>
         <div class="sb"><div class="sv2" id="sBest">0</div><div class="sl">Best Day</div><div class="ss">Personal best</div></div>
         <div class="sb wide" style="background:rgba(255,215,0,0.05);border-color:rgba(255,215,0,0.15)">
-          <div class="sl" style="font-size:11px;color:var(--gold);margin-bottom:10px;letter-spacing:2px">⏱ JAP TIME</div>
+          <div class="sl" style="font-size:11px;color:var(--gold);margin-bottom:10px;letter-spacing:2px">⏱ JAP TIME (RADHA + RV)</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
             <div style="text-align:center"><div style="font-family:'EB Garamond',serif;font-size:20px;color:var(--gold)" id="tTod">00:00</div><div style="font-size:9px;color:var(--td);text-transform:uppercase;letter-spacing:1px;margin-top:2px">Today</div></div>
             <div style="text-align:center"><div style="font-family:'EB Garamond',serif;font-size:20px;color:var(--gold)" id="tWk">00:00</div><div style="font-size:9px;color:var(--td);text-transform:uppercase;letter-spacing:1px;margin-top:2px">This Week</div></div>
@@ -666,6 +739,65 @@
         <div class="fr"><input type="number" class="fi" id="jtDedOtherSec" placeholder="Seconds (optional)" min="0" max="59" style="border-color:rgba(232,51,109,0.3)"><span class="fu" style="color:var(--rl)">sec</span></div>
         <div style="font-size:11px;color:var(--td);margin-bottom:8px">That day will become: <span id="jtDedOtherPreview" style="color:var(--rl)">—</span></div>
         <button class="pb" onclick="deductJapTimeOther()" style="background:linear-gradient(135deg,#922b21,#c0392b)">✂️ Deduct Time from Selected Day</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY SECTION — date range summary + day detail drill-down -->
+  <div class="cs-wrap" style="background:rgba(255,215,0,0.04);border:1px solid rgba(255,215,0,0.2);margin-top:4px">
+    <div class="cs-header" onclick="toggleCs('historyBody','historyChev')">
+      <h3 style="color:var(--gold)">📜 History</h3>
+      <span class="cs-chevron" id="historyChev" style="color:var(--gold)">▾</span>
+    </div>
+    <div class="cs-body" id="historyBody">
+      <!-- Date range picker -->
+      <div style="margin-bottom:10px">
+        <div style="font-size:10px;color:var(--td);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px">Date Range</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input type="date" class="di" id="histFrom" style="border-color:rgba(255,215,0,0.25)">
+          <input type="date" class="di" id="histTo" style="border-color:rgba(255,215,0,0.25)">
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+          <button onclick="histPreset(7)"  style="flex:1;padding:6px 4px;border-radius:9px;border:1px solid rgba(255,215,0,0.2);background:rgba(255,215,0,0.06);color:var(--gold);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">Last 7d</button>
+          <button onclick="histPreset(30)" style="flex:1;padding:6px 4px;border-radius:9px;border:1px solid rgba(255,215,0,0.2);background:rgba(255,215,0,0.06);color:var(--gold);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">Last 30d</button>
+          <button onclick="histPreset(90)" style="flex:1;padding:6px 4px;border-radius:9px;border:1px solid rgba(255,215,0,0.2);background:rgba(255,215,0,0.06);color:var(--gold);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">Last 90d</button>
+          <button onclick="histPresetMonth()" style="flex:1;padding:6px 4px;border-radius:9px;border:1px solid rgba(255,215,0,0.2);background:rgba(255,215,0,0.06);color:var(--gold);font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">This Month</button>
+        </div>
+        <button onclick="renderHistory()" style="width:100%;padding:10px;border-radius:11px;border:none;background:linear-gradient(135deg,rgba(255,215,0,0.35),rgba(255,180,0,0.2));color:var(--gold);font-size:13px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;letter-spacing:0.5px">🔍 Show History</button>
+      </div>
+
+      <!-- Results summary line -->
+      <div id="histSummaryLine" style="font-size:11px;color:var(--td);text-align:center;margin-bottom:8px;min-height:16px"></div>
+
+      <!-- History table -->
+      <div id="histTableWrap" style="display:none">
+        <div style="overflow-x:auto;border-radius:12px;border:1px solid rgba(255,215,0,0.15);margin-bottom:10px">
+          <table id="histTable" style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px">
+            <thead>
+              <tr style="background:rgba(255,215,0,0.1);color:var(--gold)">
+                <th style="padding:8px 10px;text-align:left;font-size:10px;letter-spacing:1px;white-space:nowrap">Date</th>
+                <th style="padding:8px 6px;text-align:center;font-size:10px;letter-spacing:1px">Radha</th>
+                <th style="padding:8px 6px;text-align:center;font-size:10px;letter-spacing:1px">RV</th>
+                <th style="padding:8px 6px;text-align:center;font-size:10px;letter-spacing:1px">28 Names</th>
+                <th style="padding:8px 6px;text-align:center;font-size:10px;letter-spacing:1px">Total Time</th>
+              </tr>
+            </thead>
+            <tbody id="histTableBody"></tbody>
+          </table>
+        </div>
+        <!-- Totals row -->
+        <div id="histTotals" style="background:rgba(255,215,0,0.07);border:1px solid rgba(255,215,0,0.2);border-radius:11px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-family:Inter,sans-serif"></div>
+        <!-- Copy button -->
+        <button onclick="copyHistoryText()" style="width:100%;padding:9px;border-radius:11px;border:1px solid rgba(255,215,0,0.25);background:rgba(255,215,0,0.05);color:var(--gold);font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">📋 Copy as Text</button>
+      </div>
+
+      <!-- Day detail drill-down (bottom sheet style) -->
+      <div id="histDayDetail" style="display:none;margin-top:8px;background:rgba(6,13,31,0.8);border:1px solid rgba(109,184,255,0.25);border-radius:14px;padding:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div id="histDayTitle" style="font-size:13px;font-weight:700;color:var(--a2)"></div>
+          <button onclick="document.getElementById('histDayDetail').style.display='none'" style="background:none;border:none;color:var(--td);font-size:18px;cursor:pointer;padding:0 4px">✕</button>
+        </div>
+        <div id="histDayContent"></div>
       </div>
     </div>
   </div>
@@ -916,8 +1048,6 @@
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
     <script src="./stotrams.js"></script>
     <script src="./app.js"></script>
-    <script src="./ai-assistant.js"></script>
 
-    <script src="./voice-jap.js"></script>
-</body>
+  </body>
 </html>

@@ -388,14 +388,18 @@ const App = {
     const md = Math.floor(tod / ms);
     const beadPos = (tod % ms) || ms;
     document.getElementById('jms').textContent = beadPos;
-    const inM = tod % ms, show = Math.min(ms, 12);
-    const de = document.getElementById('mdots'); de.innerHTML = '';
-    for (let i = 0; i < show; i++) {
-      const d = document.createElement('div');
-      d.className = 'mdt' + (i < Math.floor(inM * show / ms) ? ' on' : '');
-      de.appendChild(d);
+    const de = document.getElementById('mdots');
+    if (de) {
+      const inM = tod % ms, show = Math.min(ms, 12);
+      de.innerHTML = '';
+      for (let i = 0; i < show; i++) {
+        const d = document.createElement('div');
+        d.className = 'mdt' + (i < Math.floor(inM * show / ms) ? ' on' : '');
+        de.appendChild(d);
+      }
     }
-    document.getElementById('mtot').textContent = md + ' mala' + (md !== 1 ? 's' : '');
+    const mtotEl = document.getElementById('mtot');
+    if (mtotEl) mtotEl.textContent = md + ' mala' + (md !== 1 ? 's' : '');
     const dP = curDt > 0 ? Math.min(100, Math.round(tod/curDt*100)) : 0;
     const lP = curLt > 0 ? Math.min(100, Math.round(tot/curLt*100)) : 0;
     // Daily bar (blue) — mode-specific
@@ -1061,7 +1065,8 @@ function ensureBeadFrame() {
     for (let i = 0; i < 108; i++) {
       const c = document.createElementNS(BEAD_SVG_NS, 'circle');
       c.setAttribute('r', '4');
-      c.setAttribute('class', 'bead bead-blue');
+      // First 100 = blue, last 8 = gold (guru section)
+      c.setAttribute('class', i < 100 ? 'bead bead-blue' : 'bead bead-gold');
       svg.appendChild(c);
     }
   }
@@ -1087,12 +1092,11 @@ function renderBeadFrame(tod, target) {
   const N = 108;
   const perim = 2 * (w + h);
   const step = perim / N;
-  // Last 8 beads = guru section (always gold). Remaining 100 fill granularly by tod/target.
-  const fillable = N - 8;
-  const progress = target > 0 ? Math.max(0, Math.min(1, tod / target)) : 0;
-  const exact = progress * fillable;
-  const filled = Math.floor(exact);
-  const partial = exact - filled; // 0..1 for the next bead
+  // Fill 1 bead per tap within the current mala (matches the small 12-dot row logic)
+  const ms = (App && App.S && App.S.ms) || 108;
+  const inMala = tod % ms;
+  // Map progress within the mala (0..ms) to beads (0..N) so all 108 fill across one mala
+  const filled = inMala === 0 && tod > 0 ? N : Math.floor(inMala * N / ms);
   const beads = svg.children;
   const justAdvanced = filled > _beadState.lastFilled && _beadState.lastFilled !== -1;
   for (let i = 0; i < N; i++) {
@@ -1105,29 +1109,14 @@ function renderBeadFrame(tod, target) {
     const c = beads[i];
     c.setAttribute('cx', x);
     c.setAttribute('cy', y);
-    const isGuru = i >= fillable;
-    let cls = 'bead bead-blue', style = '';
-    if (isGuru) {
-      cls = 'bead bead-guru';
-    } else if (i < filled) {
-      cls = 'bead bead-gold';
-    } else if (i === filled && partial > 0 && progress < 1) {
-      // Smoothly morph this bead from blue → gold based on partial progress
-      cls = 'bead bead-partial';
-      const pctMix = (partial * 100).toFixed(1);
-      const r = (4 + partial * 1.2).toFixed(2); // gentle grow
-      style = `fill: color-mix(in oklab, #FFD700 ${pctMix}%, #4a90e2); ` +
-              `filter: drop-shadow(0 0 ${(2 + partial * 2).toFixed(2)}px rgba(255,215,0,${(0.4 + partial * 0.5).toFixed(2)}));`;
-      c.setAttribute('r', r);
-    }
-    if (cls !== 'bead bead-partial') c.setAttribute('r', '4');
-    c.setAttribute('class', cls);
-    c.setAttribute('style', style);
+    c.setAttribute('r', '4');
+    c.setAttribute('style', '');
+    const baseCls = i < 100 ? 'bead bead-blue' : 'bead bead-gold';
+    c.setAttribute('class', baseCls + (i < filled ? ' filled' : ''));
   }
-  // Pulse the freshly-filled bead so the user sees the click land
-  if (justAdvanced && filled > 0 && filled <= fillable) {
-    const idx = Math.min(filled - 1, fillable - 1);
-    const pulsed = beads[idx];
+  // Pulse the freshly-filled bead so the user sees the tap land
+  if (justAdvanced && filled > 0 && filled <= N) {
+    const pulsed = beads[filled - 1];
     if (pulsed) {
       pulsed.classList.add('bead-pulse');
       setTimeout(() => pulsed.classList.remove('bead-pulse'), 500);
@@ -1248,12 +1237,24 @@ function deductTodayJap() {
   hist[App.S.tk] = cur - n;
   const lmcKey = isRV ? 'lmcRV' : 'lmc';
   App[lmcKey] = Math.floor(App.gTod() / (App.S.ms || 108));
-  // Proportionally remove time and mala log entries that correspond to deducted jap
-  // Ratio of jap being deducted vs total
-  const ratio = n / cur; // fraction being removed
-  const log = isRV ? (App.S.malaLogRV || []) : (App.S.malaLog || []);
-  if (log.length > 0) {
-    // Remove mala log entries from the END (most recent first, as we're deducting)
+
+  // Explicit time input wins; otherwise fall back to proportional removal from mala log
+  const minEl = document.getElementById('deductTodayMin');
+  const secEl = document.getElementById('deductTodaySec');
+  const explicitTime = (parseInt(minEl?.value) || 0) * 60 + Math.min(59, Math.max(0, parseInt(secEl?.value) || 0));
+  const log = isRV ? (App.S.malaLogRV || (App.S.malaLogRV = [])) : (App.S.malaLog || (App.S.malaLog = []));
+
+  if (explicitTime > 0) {
+    // Shrink the mala log entries proportionally so total drops by explicitTime,
+    // then re-sync timerHistory[today] from the log (single source of truth).
+    const total = log.reduce((a, b) => a + b, 0);
+    if (total > 0) {
+      const factor = Math.max(0, (total - explicitTime) / total);
+      for (let i = 0; i < log.length; i++) log[i] = Math.round(log[i] * factor);
+    }
+    App.syncTimerFromMalaLog();
+  } else if (log.length > 0) {
+    const ratio = n / cur;
     const malasToRemove = Math.floor(n / (App.S.ms || 108));
     if (malasToRemove > 0 && malasToRemove <= log.length) {
       const removed = log.splice(log.length - malasToRemove, malasToRemove);
@@ -1261,15 +1262,17 @@ function deductTodayJap() {
       const th = App.getCurTimerHistory();
       th[App.S.tk] = Math.max(0, (th[App.S.tk] || 0) - removedTime);
     } else if (malasToRemove === 0 && ratio > 0 && log.length > 0) {
-      // Deducting less than one mala — proportionally shrink the last entry's time
       const timeShrink = Math.round(ratio * (App.getCurTimerHistory()[App.S.tk] || 0));
       const th = App.getCurTimerHistory();
       th[App.S.tk] = Math.max(0, (th[App.S.tk] || 0) - timeShrink);
     }
   }
+
   App.save(); App.ua(); fbDebouncedPush();
   document.getElementById('deductTodayIn').value = '';
-  toast('Deducted ' + n + '. New total: ' + App.gTod() + ' 🙏');
+  if (minEl) minEl.value = '';
+  if (secEl) secEl.value = '';
+  toast('Deducted ' + n + (explicitTime > 0 ? ' + ' + Math.floor(explicitTime/60) + 'm ' + (explicitTime%60) + 's' : '') + '. New total: ' + App.gTod() + ' 🙏');
 }
 
 function deductOtherJap() {
@@ -1282,9 +1285,21 @@ function deductOtherJap() {
   const cur = hist[date] || 0;
   if (n > cur) { toast('Cannot deduct more than that day\'s count (' + cur + ')'); return; }
   hist[date] = cur - n;
+
+  // Optional time deduction — directly subtract from per-day timerHistory
+  const minEl = document.getElementById('deductOtherMin');
+  const secEl = document.getElementById('deductOtherSec');
+  const timeSecs = (parseInt(minEl?.value) || 0) * 60 + Math.min(59, Math.max(0, parseInt(secEl?.value) || 0));
+  if (timeSecs > 0) {
+    const th = isRV ? (App.S.timerHistoryRV || (App.S.timerHistoryRV = {})) : (App.S.timerHistory || (App.S.timerHistory = {}));
+    th[date] = Math.max(0, (th[date] || 0) - timeSecs);
+  }
+
   App.save(); App.ua(); fbDebouncedPush(); renderCal();
   document.getElementById('deductOtherIn').value = '';
-  toast('Deducted ' + n + ' from ' + date + ' 🙏');
+  if (minEl) minEl.value = '';
+  if (secEl) secEl.value = '';
+  toast('Deducted ' + n + (timeSecs > 0 ? ' + ' + Math.floor(timeSecs/60) + 'm ' + (timeSecs%60) + 's' : '') + ' from ' + date + ' 🙏');
 }
 
 function addOtherDayJap() {
@@ -1295,10 +1310,22 @@ function addOtherDayJap() {
   const isRV = App.S.japMode === 'rv';
   const hist = isRV ? App.S.historyRV : App.S.history;
   hist[date] = (hist[date] || 0) + n;
+
+  // Optional estimated time — directly add to per-day timerHistory
+  const minEl = document.getElementById('addJapOtherMin');
+  const secEl = document.getElementById('addJapOtherSec');
+  const timeSecs = (parseInt(minEl?.value) || 0) * 60 + Math.min(59, Math.max(0, parseInt(secEl?.value) || 0));
+  if (timeSecs > 0) {
+    const th = isRV ? (App.S.timerHistoryRV || (App.S.timerHistoryRV = {})) : (App.S.timerHistory || (App.S.timerHistory = {}));
+    th[date] = (th[date] || 0) + timeSecs;
+  }
+
   App.save(); App.ua(); fbDebouncedPush(); renderCal();
   document.getElementById('addJapOtherIn').value = '';
+  if (minEl) minEl.value = '';
+  if (secEl) secEl.value = '';
   document.getElementById('addJapOtherPreview').textContent = '—';
-  toast('Added ' + n + ' jap to ' + date + ' 🙏');
+  toast('Added ' + n + (timeSecs > 0 ? ' + ' + Math.floor(timeSecs/60) + 'm ' + (timeSecs%60) + 's' : '') + ' jap to ' + date + ' 🙏');
 }
 
 // ── Jap Time Manual Entry ──
@@ -1451,6 +1478,10 @@ function uStats() {
   const s28 = document.getElementById('s28Tot'); if (s28) s28.textContent = n28Lifetime.toLocaleString('en-IN');
   const s28M = document.getElementById('s28TotM'); if (s28M) s28M.textContent = Math.floor(n28Lifetime/28) + ' cycles';
   const s28F = document.getElementById('s28TotF'); if (s28F) s28F.textContent = fmtCount(n28Lifetime) + ' names';
+  // Combined Lifetime Jap (Radha + RV + 28 names)
+  const ltJapAll = radhaLifetime + rvLifetime + n28Lifetime;
+  const sLtJA = document.getElementById('sLtJapAll'); if (sLtJA) sLtJA.textContent = ltJapAll.toLocaleString('en-IN');
+  const sLtJAF = document.getElementById('sLtJapAllF'); if (sLtJAF) sLtJAF.textContent = fmtCount(ltJapAll) + ' jap';
   // Lifetime Jap Time (all jap time + all 28 names time)
   const ltTimeSec = Object.values(App.getCombinedTimerHistory()).reduce((a,b)=>a+b,0) + Object.values(App.S.timer28History||{}).reduce((a,b)=>a+b,0);
   const ltH = Math.floor(ltTimeSec/3600), ltM = Math.floor((ltTimeSec%3600)/60), ltS = ltTimeSec%60;
@@ -1486,18 +1517,22 @@ function uStats() {
   const vWk  = wk.reduce((s,k)=>s+(rvTH[k]||0),0)    + (isRVMode  ? liveExtra : 0);
   const vMo  = Object.entries(rvTH).filter(([k])=>k.startsWith(mp)).reduce((s,[,v])=>s+v,0)    + (isRVMode  ? liveExtra : 0);
   const _set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = fmtShort(v); };
-  _set('tRadhaTod', rTod); _set('tRadhaWk', rWk); _set('tRadhaMo', rMo);
-  _set('tRVTod',    vTod); _set('tRVWk',    vWk); _set('tRVMo',    vMo);
+  const rLt = Object.values(radhaTH).reduce((s,v)=>s+v,0) + (!isRVMode ? liveExtra : 0);
+  const vLt = Object.values(rvTH).reduce((s,v)=>s+v,0) + (isRVMode ? liveExtra : 0);
+  _set('tRadhaTod', rTod); _set('tRadhaWk', rWk); _set('tRadhaMo', rMo); _set('tRadhaLt', rLt);
+  _set('tRVTod',    vTod); _set('tRVWk',    vWk); _set('tRVMo',    vMo); _set('tRVLt', vLt);
   // 28 Names time — separate from main jap time
   const _28running = !!(App._n28TimerInterval && App._n28TotalStart);
   const _28liveExtra = _28running ? Math.max(0, Math.floor((Date.now() - App._n28TotalStart) / 1000) - (App._n28SavedSecs || 0)) : 0;
   const t28Tod = (App.S.timer28History[App.S.tk]||0) + Math.max(0, _28liveExtra);
   const t28Wk  = wk.reduce((s,k) => s + (App.S.timer28History[k]||0), 0) + (_28running && wk.includes(App.S.tk) ? Math.max(0,_28liveExtra) : 0);
   const t28Mo  = Object.entries(App.S.timer28History).filter(([k]) => k.startsWith(mp)).reduce((s,[,v]) => s+v, 0) + ((_28running && App.S.tk.startsWith(mp)) ? Math.max(0,_28liveExtra) : 0);
-  const e28Tod = document.getElementById('t28Tod'), e28Wk = document.getElementById('t28Wk'), e28Mo = document.getElementById('t28Mo');
+  const t28Lt  = Object.values(App.S.timer28History||{}).reduce((s,v)=>s+v,0) + (_28running ? Math.max(0,_28liveExtra) : 0);
+  const e28Tod = document.getElementById('t28Tod'), e28Wk = document.getElementById('t28Wk'), e28Mo = document.getElementById('t28Mo'), e28Lt = document.getElementById('t28Lt');
   if (e28Tod) e28Tod.textContent = fmt28Short(t28Tod);
   if (e28Wk)  e28Wk.textContent  = fmt28Short(t28Wk);
   if (e28Mo)  e28Mo.textContent  = fmt28Short(t28Mo);
+  if (e28Lt)  e28Lt.textContent  = fmt28Short(t28Lt);
 
   // Live previews for jap entry
   const mji = document.getElementById('manualJapIn');

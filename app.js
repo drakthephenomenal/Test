@@ -3594,6 +3594,24 @@ function isRiskDay(date) {
   return (t >= 9 && t <= 13) || (t >= 24 && t <= 28);
 }
 
+// ── Graph range state: offset in days from today (0 = last 90d, -90 = prev 90d, etc.)
+let _bcRangeOffset = 0;
+
+function bcShiftRange(delta) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const startD = new Date(getBrahmaStart()); startD.setHours(0,0,0,0);
+  const totalDays = Math.round((today - startD) / 86400000) + 1;
+  _bcRangeOffset += delta;
+  // Clamp: can't go before start, can't go after today
+  if (_bcRangeOffset > 0) _bcRangeOffset = 0;
+  const minOffset = -(Math.max(0, totalDays - 90));
+  if (_bcRangeOffset < minOffset) _bcRangeOffset = minOffset;
+  // Update next button visibility
+  const nextBtn = document.getElementById('bcRangeNext');
+  if (nextBtn) nextBtn.style.opacity = _bcRangeOffset < 0 ? '1' : '0.3';
+  renderBcGraph();
+}
+
 function renderBcGraph() {
   const canvas = document.getElementById('bcGraph');
   if (!canvas) return;
@@ -3605,22 +3623,60 @@ function renderBcGraph() {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  // Build day-by-day data for last 120 days
   const today = new Date(); today.setHours(0,0,0,0);
   const startD = new Date(getBrahmaStart()); startD.setHours(0,0,0,0);
-  const DAYS = Math.min(120, Math.round((today - startD) / 86400000) + 1);
-  if (DAYS < 2) { ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '12px Inter'; ctx.fillText('Not enough data yet', 10, H/2); return; }
+  const totalDays = Math.round((today - startD) / 86400000) + 1;
 
-  const days = [];
+  // Compute window end/start based on offset
+  // _bcRangeOffset <= 0; 0 means last 90 days ending today
+  const windowEnd = new Date(today);
+  windowEnd.setDate(windowEnd.getDate() + _bcRangeOffset); // offset is <=0 so this goes back
+  // Actually offset shifts the window: positive delta moves forward, so:
+  // windowEnd = today + _bcRangeOffset (negative = earlier end)
+  // But we want: 0 = last 90 days (end = today), -90 = prev window (end = today-90)
+  // Recalculate: windowEnd is today when offset=0
+  const wEnd = new Date(today);
+  if (_bcRangeOffset < 0) wEnd.setDate(wEnd.getDate() + _bcRangeOffset);
+  const wStart = new Date(wEnd);
+  wStart.setDate(wStart.getDate() - 89); // 90 days window
+  // clamp wStart to brahma start
+  if (wStart < startD) wStart.setTime(startD.getTime());
+
+  const DAYS = Math.round((wEnd - wStart) / 86400000) + 1;
+
+  // Update range label
+  const lbl = document.getElementById('bcRangeLabel');
+  if (lbl) {
+    const fmt = d => d.toLocaleDateString('en-GB', {day:'numeric', month:'short'});
+    const isLatest = _bcRangeOffset === 0;
+    lbl.textContent = isLatest ? 'Last 90 days' : `${fmt(wStart)} – ${fmt(wEnd)}`;
+  }
+  const nextBtn = document.getElementById('bcRangeNext');
+  if (nextBtn) nextBtn.style.opacity = _bcRangeOffset < 0 ? '1' : '0.3';
+
+  if (DAYS < 2) {
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.font = '12px Inter';
+    ctx.fillText('Not enough data yet', 10, H/2);
+    renderPatternEngine();
+    return;
+  }
+
+  // Build streak from brahma start up to wEnd (for correct streak count in window)
+  const allStart = new Date(startD);
+  const fullDays = Math.round((wEnd - allStart) / 86400000) + 1;
   let streak = 0;
-  for (let i = DAYS - 1; i >= 0; i--) {
-    const d = new Date(today); d.setDate(d.getDate() - i);
+  const allDayData = [];
+  for (let i = 0; i < fullDays; i++) {
+    const d = new Date(allStart); d.setDate(d.getDate() + i);
     const key = d.toISOString().split('T')[0];
     const en = App.S.brahma[key];
     const broken = en && en.status === 'b';
     if (broken) { streak = 0; } else { streak++; }
-    days.push({ date: d, key, broken, streak, risk: isRiskDay(d), times: (en && en.times) || [] });
+    const inWindow = d >= wStart && d <= wEnd;
+    if (inWindow) allDayData.push({ date: new Date(d), key, broken, streak, risk: isRiskDay(d), times: (en && en.times) || [] });
   }
+  const days = allDayData;
 
   const maxStreak = Math.max(...days.map(d => d.streak), 1);
   const PAD = { l: 32, r: 10, t: 12, b: 24 };
@@ -3655,7 +3711,6 @@ function renderBcGraph() {
     const y = PAD.t + gH - (d.streak / maxStreak) * gH;
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   });
-  // Close path for fill
   const lastX = PAD.l + (days.length - 1) * xStep;
   ctx.lineTo(lastX, PAD.t + gH);
   ctx.lineTo(PAD.l, PAD.t + gH);
@@ -3682,7 +3737,7 @@ function renderBcGraph() {
   days.forEach((d, i) => {
     if (!d.broken) return;
     const x = PAD.l + i * xStep;
-    const y = PAD.t + gH - 2; // at bottom since streak=0
+    const y = PAD.t + gH - 2;
     ctx.beginPath();
     ctx.arc(x, y, 5, 0, Math.PI * 2);
     ctx.fillStyle = '#E74C3C';
@@ -3690,7 +3745,6 @@ function renderBcGraph() {
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1.5;
     ctx.stroke();
-    // Show time if available
     const times = d.times || [];
     if (times.length > 0 && times[0].time) {
       ctx.fillStyle = 'rgba(255,255,255,0.75)';
@@ -3701,7 +3755,7 @@ function renderBcGraph() {
     }
   });
 
-  // X-axis month labels
+  // X-axis month/date labels
   ctx.fillStyle = 'rgba(255,255,255,0.4)';
   ctx.font = '9px Inter';
   ctx.textAlign = 'left';
@@ -3711,7 +3765,7 @@ function renderBcGraph() {
       lastMonth = d.date.getMonth();
       const x = PAD.l + i * xStep;
       const label = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.date.getMonth()];
-      ctx.fillText(label, x, H - 5);
+      ctx.fillText(label, Math.min(x, W - PAD.r - 18), H - 5);
     }
   });
 
@@ -3726,6 +3780,223 @@ function renderBcGraph() {
   ctx.fillRect(W - 50, PAD.t + 27, 8, 8);
   ctx.fillStyle = 'rgba(255,255,255,0.4)';
   ctx.fillText('Risk', W - 40, PAD.t + 35);
+
+  // Always refresh pattern engine when graph renders
+  renderPatternEngine();
+}
+
+// ── Pattern Engine ──────────────────────────────────────────────
+
+let _bcPatternOpen = false;
+function toggleBcPattern() {
+  _bcPatternOpen = !_bcPatternOpen;
+  const body = document.getElementById('bcPatternBody');
+  const chev = document.getElementById('bcPatternChevron');
+  if (body) body.style.display = _bcPatternOpen ? 'block' : 'none';
+  if (chev) chev.textContent = _bcPatternOpen ? '▲' : '▼';
+  if (_bcPatternOpen) renderPatternEngine();
+}
+
+function renderPatternEngine() {
+  const brahma = App.S.brahma || {};
+  // Gather all break entries with rich data
+  const breaks = []; // {date, dow, hour, tithi, streakDay}
+  const allKeys = Object.keys(brahma).filter(k => brahma[k].status === 'b').sort();
+
+  // Compute streak-before-break for each relapse
+  const startD = new Date(getBrahmaStart()); startD.setHours(0,0,0,0);
+  allKeys.forEach(key => {
+    const d = new Date(key + 'T00:00:00');
+    const en = brahma[key];
+    const times = en.times || [];
+    // Compute streak length before this break
+    let sb = 0;
+    const prev = new Date(d); prev.setDate(prev.getDate() - 1);
+    while (true) {
+      const pk = prev.toISOString().split('T')[0];
+      if (prev < startD) break;
+      const pe = brahma[pk];
+      if (pe && pe.status === 'b') break;
+      sb++; prev.setDate(prev.getDate() - 1);
+      if (sb > 200) break;
+    }
+    const tithi = getLunarTithi(d);
+    if (times.length === 0) {
+      // No time data — record as hour-unknown (-1)
+      breaks.push({ date: d, dow: d.getDay(), hour: -1, tithi, streakDay: sb, count: en.count || 1 });
+    } else {
+      times.forEach(t => {
+        const hr = t.time ? parseInt(t.time.split(':')[0]) : -1;
+        breaks.push({ date: d, dow: d.getDay(), hour: hr, tithi, streakDay: sb, count: 1 });
+      });
+    }
+  });
+
+  // ── Today's live risk score ──────────────────────
+  const today = new Date(); today.setHours(0,0,0,0);
+  const nowH = new Date().getHours();
+  const todayDow = today.getDay();
+  const todayTithi = getLunarTithi(today);
+
+  // Component 1: time-of-day risk (what hour is vulnerable)
+  const hourCounts = new Array(24).fill(0);
+  let knownHourBreaks = 0;
+  breaks.forEach(b => { if (b.hour >= 0) { hourCounts[b.hour]++; knownHourBreaks++; } });
+  const maxHourCount = Math.max(...hourCounts, 1);
+  const timeScore = knownHourBreaks > 0 ? (hourCounts[nowH] / maxHourCount) * 100 : 0;
+
+  // Component 2: day-of-week risk
+  const dowCounts = new Array(7).fill(0);
+  breaks.forEach(b => dowCounts[b.dow]++);
+  const maxDow = Math.max(...dowCounts, 1);
+  const dowScore = (dowCounts[todayDow] / maxDow) * 100;
+
+  // Component 3: lunar tithi risk
+  const tithibroken = breaks.filter(b => b.tithi === todayTithi).length;
+  const tithiTotal = breaks.length;
+  const tithiScore = tithiTotal > 0 ? Math.min(100, (tithibroken / tithiTotal) * 100 * 5) : 0;
+
+  // Component 4: streak vulnerability — today's streak day
+  let todayStreak = 0;
+  const tmpD = new Date(today);
+  while (true) {
+    const k = tmpD.toISOString().split('T')[0];
+    if (tmpD < startD) break;
+    const e = brahma[k];
+    if (e && e.status === 'b') break;
+    todayStreak++; tmpD.setDate(tmpD.getDate() - 1);
+    if (todayStreak > 200) break;
+  }
+  const streakDays = breaks.map(b => b.streakDay);
+  const streakVulnWindow = 3;
+  const streakMatches = streakDays.filter(s => Math.abs(s - todayStreak) <= streakVulnWindow).length;
+  const streakScore = streakDays.length > 0 ? Math.min(100, (streakMatches / streakDays.length) * 100 * 4) : 0;
+
+  // Composite risk
+  const totalBreaks = breaks.length;
+  let composite;
+  if (totalBreaks < 3) {
+    composite = isRiskDay(today) ? 55 : 25; // fallback for sparse data
+  } else {
+    composite = Math.min(100, Math.round(
+      timeScore * 0.35 + dowScore * 0.25 + tithiScore * 0.20 + streakScore * 0.20
+    ));
+  }
+
+  // Render risk score UI
+  const riskBar = document.getElementById('bcRiskBar');
+  const riskPct = document.getElementById('bcRiskPct');
+  const riskSlots = document.getElementById('bcRiskSlots');
+  if (riskBar) {
+    const col = composite >= 70 ? '#E74C3C' : composite >= 40 ? '#F39C12' : '#2ECC71';
+    riskBar.style.width = composite + '%';
+    riskBar.style.background = col;
+  }
+  if (riskPct) {
+    const label = composite >= 70 ? '🔴 High Risk' : composite >= 40 ? '🟡 Moderate' : '🟢 Low Risk';
+    riskPct.textContent = `${composite}% — ${label}`;
+    riskPct.style.color = composite >= 70 ? '#E74C3C' : composite >= 40 ? '#F39C12' : '#2ECC71';
+  }
+
+  // Next 3 vulnerable time slots today
+  if (riskSlots) {
+    const sortedHours = hourCounts
+      .map((c, h) => ({ h, c }))
+      .filter(x => x.h > nowH && x.c > 0)
+      .sort((a, b) => b.c - a.c)
+      .slice(0, 3);
+    if (sortedHours.length > 0) {
+      riskSlots.innerHTML = '<div style="font-size:10px;opacity:.6;margin-bottom:4px">⚠️ Vulnerable slots ahead today:</div>' +
+        sortedHours.map(x => {
+          const pct = Math.round((x.c / maxHourCount) * 100);
+          return `<span class="bc-risk-slot">${x.h}:00–${x.h+1}:00 (${pct}%)</span>`;
+        }).join(' ');
+    } else if (knownHourBreaks === 0) {
+      riskSlots.innerHTML = '<div style="font-size:10px;opacity:.5">Add break times to see hourly predictions</div>';
+    } else {
+      riskSlots.innerHTML = '<div style="font-size:10px;color:#2ECC71">✓ No high-risk slots remaining today</div>';
+    }
+  }
+
+  if (!_bcPatternOpen) return; // Don't render cards if collapsed
+
+  // ── Pattern Cards ────────────────────────────────
+  const cards = document.getElementById('bcPatternCards');
+  if (!cards) return;
+  if (totalBreaks < 2) {
+    cards.innerHTML = '<div class="bc-pc-empty">Need at least 2 relapse entries with times to build patterns. Keep logging! 🙏</div>';
+    return;
+  }
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const DAYS_W = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  // Card 1: Peak hours
+  const topHours = hourCounts
+    .map((c, h) => ({ h, c }))
+    .filter(x => x.c > 0)
+    .sort((a, b) => b.c - a.c)
+    .slice(0, 3);
+  let c1 = '<div class="bc-pc"><div class="bc-pc-title">🕐 Peak Vulnerable Hours</div>';
+  if (topHours.length === 0) {
+    c1 += '<div class="bc-pc-note">No time data. Add times when logging breaks.</div>';
+  } else {
+    topHours.forEach(x => {
+      const pct = Math.round((x.c / knownHourBreaks) * 100);
+      c1 += `<div class="bc-pc-row"><span>${x.h}:00–${x.h+1}:00</span><div class="bc-pc-bar-wrap"><div class="bc-pc-bar" style="width:${pct}%;background:#E74C3C"></div></div><span class="bc-pc-val">${pct}%</span></div>`;
+    });
+    const [t1, t2] = topHours;
+    c1 += `<div class="bc-pc-insight">Most vulnerable: ${t1.h}:00–${t1.h+1}:00${t2 ? ` and ${t2.h}:00–${t2.h+1}:00` : ''}</div>`;
+  }
+  c1 += '</div>';
+
+  // Card 2: Day of week
+  const dowRank = dowCounts.map((c,i) => ({d:i,c})).sort((a,b) => b.c - a.c);
+  const topDows = dowRank.filter(x => x.c > 0).slice(0, 3);
+  let c2 = '<div class="bc-pc"><div class="bc-pc-title">📅 High-Risk Days of Week</div>';
+  topDows.forEach(x => {
+    const pct = Math.round((x.c / totalBreaks) * 100);
+    c2 += `<div class="bc-pc-row"><span>${DAYS_W[x.d]}</span><div class="bc-pc-bar-wrap"><div class="bc-pc-bar" style="width:${pct}%;background:#F39C12"></div></div><span class="bc-pc-val">${pct}%</span></div>`;
+  });
+  if (topDows.length >= 2) c2 += `<div class="bc-pc-insight">${DAYS_W[topDows[0].d]} & ${DAYS_W[topDows[1].d]} are your highest-risk days</div>`;
+  c2 += '</div>';
+
+  // Card 3: Streak vulnerability
+  const streakBuckets = {};
+  breaks.forEach(b => {
+    const bucket = Math.floor(b.streakDay / 5) * 5; // bucket by 5-day ranges
+    streakBuckets[bucket] = (streakBuckets[bucket] || 0) + 1;
+  });
+  const topStreak = Object.entries(streakBuckets).sort((a,b) => b[1] - a[1]).slice(0, 3);
+  let c3 = '<div class="bc-pc"><div class="bc-pc-title">⏱ Streak Day Vulnerability</div>';
+  topStreak.forEach(([bucket, cnt]) => {
+    const b = parseInt(bucket);
+    const pct = Math.round((cnt / totalBreaks) * 100);
+    c3 += `<div class="bc-pc-row"><span>Day ${b}–${b+4}</span><div class="bc-pc-bar-wrap"><div class="bc-pc-bar" style="width:${pct}%;background:#9B59B6"></div></div><span class="bc-pc-val">${pct}%</span></div>`;
+  });
+  if (topStreak.length > 0) {
+    const topB = parseInt(topStreak[0][0]);
+    c3 += `<div class="bc-pc-insight">Relapses cluster around day ${topB}–${topB+4} of a streak</div>`;
+  }
+  c3 += '</div>';
+
+  // Card 4: Lunar tithi pattern
+  const tithiBuckets = {};
+  breaks.forEach(b => { tithiBuckets[b.tithi] = (tithiBuckets[b.tithi] || 0) + 1; });
+  const topTithis = Object.entries(tithiBuckets).sort((a,b) => b[1]-a[1]).slice(0,3);
+  const tithiNames = { 9:'Navami', 10:'Dashami', 11:'Ekadashi', 12:'Dwadashi', 13:'Trayodashi',
+    15:'Purnima', 24:'Krishna Navami', 28:'Krishna Trayodashi', 30:'Amavasya' };
+  const tithiLabel = t => tithiNames[parseInt(t)] || `Tithi ${t}`;
+  let c4 = '<div class="bc-pc"><div class="bc-pc-title">🌙 Lunar Tithi Pattern</div>';
+  topTithis.forEach(([t, cnt]) => {
+    const pct = Math.round((cnt / totalBreaks) * 100);
+    c4 += `<div class="bc-pc-row"><span>${tithiLabel(t)}</span><div class="bc-pc-bar-wrap"><div class="bc-pc-bar" style="width:${pct}%;background:#1ABC9C"></div></div><span class="bc-pc-val">${pct}%</span></div>`;
+  });
+  const riskWindowBreaks = breaks.filter(b => isRiskDay(b.date)).length;
+  const riskPctVal = totalBreaks > 0 ? Math.round((riskWindowBreaks / totalBreaks) * 100) : 0;
+  c4 += `<div class="bc-pc-insight">${riskPctVal}% of relapses fall in Navami–Trayodashi window</div></div>`;
+
+  cards.innerHTML = c1 + c2 + c3 + c4;
 }
 
 // ── Brahmacharya ──

@@ -422,6 +422,12 @@
     <div class="ns"><div class="nv" style="color:var(--a2)" id="bmp">0%</div><div class="nl">Success Rate</div></div>
   </div>
 
+  <!-- Brahmacharya Progress Graph -->
+  <div class="bc-graph-wrap">
+    <div class="bc-graph-title">📈 Streak Progress <span class="bc-graph-legend"><span class="bc-leg-risk">▊</span> Risk window (Navami–Trayodashi)</span></div>
+    <canvas id="bcGraph" class="bc-graph-canvas"></canvas>
+  </div>
+
   <!-- Unified Calendar -->
   <div class="ch">
     <button class="cnb" onclick="chm(-1)">&#8249;</button>
@@ -483,6 +489,8 @@
         <label style="font-size:12px;color:var(--tl);flex:1">Break count:</label>
         <input type="number" id="cdmoBcCnt" value="1" min="1" style="width:70px;background:rgba(0,0,0,0.3);border:1px solid rgba(231,76,60,0.3);border-radius:9px;padding:7px 11px;color:var(--tl);font-size:15px;text-align:center;font-family:'Inter',sans-serif;">
       </div>
+      <!-- Time inputs — one per break instance -->
+      <div id="bcTimeRows" style="display:none;margin-top:6px"></div>
     </div>
   </div>
 </div>

@@ -3565,6 +3565,169 @@ function toggleStEdit(id) {
 }
 function delSt(id) { App.S.customSt=(App.S.customSt||[]).filter(x=>x.id!==id); delete App.S.stotrams[id]; App.save(); fbDebouncedPush(); renderSt(); toast('Removed'); }
 
+// ── Brahmacharya Progress Graph ──
+// Anchor: May 16, 2026 = Amavasya (new moon, tithi 30/0 of Krishna paksha)
+// Synodic month ≈ 29.530589 days
+const BC_AMAVASYA_ANCHOR = new Date('2026-05-16T00:00:00');
+const SYNODIC_MONTH = 29.530589;
+
+function getLunarTithi(date) {
+  // Returns tithi 1–30 (1=Shukla Pratipada ... 15=Purnima, 16=Krishna Pratipada ... 30=Amavasya)
+  const diffDays = (date - BC_AMAVASYA_ANCHOR) / 86400000;
+  // diffDays from amavasya anchor; amavasya = tithi 30
+  // Normalize to synodic cycle
+  let phase = ((diffDays % SYNODIC_MONTH) + SYNODIC_MONTH) % SYNODIC_MONTH;
+  // tithi 30 starts at phase 0 (amavasya), tithi 1 at phase 1 day
+  let tithi = Math.floor(phase) + 1; // 1..30
+  if (tithi > 30) tithi = 30;
+  // Map: 1..15 = Shukla (bright half), 16..30 = Krishna (dark half)
+  // In our system: Navami=9, Trayodashi=13 in each paksha
+  // Shukla Navami = tithi 9, Shukla Trayodashi = tithi 13
+  // Krishna Navami = tithi 24 (15+9), Krishna Trayodashi = tithi 28 (15+13)
+  return tithi;
+}
+
+function isRiskDay(date) {
+  const t = getLunarTithi(date);
+  // Risk window: Navami to Trayodashi in both paksha
+  // Shukla: 9-13, Krishna: 24-28 (15+9 to 15+13)
+  return (t >= 9 && t <= 13) || (t >= 24 && t <= 28);
+}
+
+function renderBcGraph() {
+  const canvas = document.getElementById('bcGraph');
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth || 320;
+  const H = canvas.offsetHeight || 160;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  // Build day-by-day data for last 120 days
+  const today = new Date(); today.setHours(0,0,0,0);
+  const startD = new Date(getBrahmaStart()); startD.setHours(0,0,0,0);
+  const DAYS = Math.min(120, Math.round((today - startD) / 86400000) + 1);
+  if (DAYS < 2) { ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '12px Inter'; ctx.fillText('Not enough data yet', 10, H/2); return; }
+
+  const days = [];
+  let streak = 0;
+  for (let i = DAYS - 1; i >= 0; i--) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const key = d.toISOString().split('T')[0];
+    const en = App.S.brahma[key];
+    const broken = en && en.status === 'b';
+    if (broken) { streak = 0; } else { streak++; }
+    days.push({ date: d, key, broken, streak, risk: isRiskDay(d), times: (en && en.times) || [] });
+  }
+
+  const maxStreak = Math.max(...days.map(d => d.streak), 1);
+  const PAD = { l: 32, r: 10, t: 12, b: 24 };
+  const gW = W - PAD.l - PAD.r;
+  const gH = H - PAD.t - PAD.b;
+  const xStep = gW / (days.length - 1 || 1);
+
+  // Draw risk bands
+  days.forEach((d, i) => {
+    if (d.risk) {
+      const x = PAD.l + i * xStep;
+      ctx.fillStyle = 'rgba(231,76,60,0.10)';
+      ctx.fillRect(Math.floor(x - xStep/2), PAD.t, Math.ceil(xStep + 1), gH);
+    }
+  });
+
+  // Draw grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  [0.25, 0.5, 0.75, 1].forEach(f => {
+    const y = PAD.t + gH - f * gH;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.font = '9px Inter';
+    ctx.fillText(Math.round(f * maxStreak), 2, y + 3);
+  });
+
+  // Draw filled streak line
+  ctx.beginPath();
+  days.forEach((d, i) => {
+    const x = PAD.l + i * xStep;
+    const y = PAD.t + gH - (d.streak / maxStreak) * gH;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  // Close path for fill
+  const lastX = PAD.l + (days.length - 1) * xStep;
+  ctx.lineTo(lastX, PAD.t + gH);
+  ctx.lineTo(PAD.l, PAD.t + gH);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + gH);
+  grad.addColorStop(0, 'rgba(46,204,113,0.55)');
+  grad.addColorStop(1, 'rgba(46,204,113,0.05)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Draw streak line stroke
+  ctx.beginPath();
+  days.forEach((d, i) => {
+    const x = PAD.l + i * xStep;
+    const y = PAD.t + gH - (d.streak / maxStreak) * gH;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = 'rgba(46,204,113,0.9)';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // Draw relapse dots with time labels
+  days.forEach((d, i) => {
+    if (!d.broken) return;
+    const x = PAD.l + i * xStep;
+    const y = PAD.t + gH - 2; // at bottom since streak=0
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#E74C3C';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Show time if available
+    const times = d.times || [];
+    if (times.length > 0 && times[0].time) {
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.font = 'bold 8px Inter';
+      ctx.textAlign = 'center';
+      ctx.fillText(times[0].time, x, y - 8);
+      if (times.length > 1) ctx.fillText('+' + (times.length-1) + 'x', x, y - 17);
+    }
+  });
+
+  // X-axis month labels
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '9px Inter';
+  ctx.textAlign = 'left';
+  let lastMonth = -1;
+  days.forEach((d, i) => {
+    if (d.date.getMonth() !== lastMonth) {
+      lastMonth = d.date.getMonth();
+      const x = PAD.l + i * xStep;
+      const label = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.date.getMonth()];
+      ctx.fillText(label, x, H - 5);
+    }
+  });
+
+  // Legend
+  ctx.textAlign = 'left';
+  ctx.font = '9px Inter';
+  ctx.fillStyle = 'rgba(46,204,113,0.8)';
+  ctx.fillText('● Streak', W - 90, PAD.t + 10);
+  ctx.fillStyle = '#E74C3C';
+  ctx.fillText('● Relapse', W - 90, PAD.t + 22);
+  ctx.fillStyle = 'rgba(231,76,60,0.4)';
+  ctx.fillRect(W - 50, PAD.t + 27, 8, 8);
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.fillText('Risk', W - 40, PAD.t + 35);
+}
+
 // ── Brahmacharya ──
 function getBrahmaStart(){ return App.S.brahmacharya_start_date || '2026-03-16'; }
 function confirmBrahmaStartChange(val){
@@ -3664,6 +3827,7 @@ function renderCal(){
     g.appendChild(c);
   }
   uBStats();
+  renderBcGraph();
 }
 function chm(d){cald.setMonth(cald.getMonth()+d);renderCal();}
 // ── Calendar day bottom sheet ──
@@ -3722,17 +3886,37 @@ function showDay(key, cnt, timeSec, time28Sec) {
     bcSec.style.display = '';
     const bcEn = App.S.brahma[key], isBroken = bcEn && bcEn.status === 'b';
     if (isBroken) {
-      bcStatus.innerHTML = '❌ <span style="color:var(--red)">Broken</span>' + (bcEn.count > 1 ? ' (' + bcEn.count + 'x)' : '');
+      // Build time display from saved times array
+      const savedTimes = bcEn.times || [];
+      let timesHtml = '';
+      if (savedTimes.length > 0) {
+        timesHtml = '<div class="bc-times-display">';
+        savedTimes.forEach((t, i) => {
+          const tStr = t.time ? ('<span class="bc-time-badge">🕐 ' + t.time + '</span>') : '<span class="bc-time-badge bc-time-unknown">🕐 —</span>';
+          const nStr = t.note ? ('<span class="bc-note-badge">' + escHtml(t.note) + '</span>') : '';
+          timesHtml += '<div class="bc-time-item">' + (savedTimes.length > 1 ? '<span class="bc-instance-num">#' + (i+1) + '</span>' : '') + tStr + nStr + '</div>';
+        });
+        timesHtml += '</div>';
+      }
+      bcStatus.innerHTML = '❌ <span style="color:var(--red)">Broken</span>' + (bcEn.count > 1 ? ' (' + bcEn.count + 'x)' : '') + timesHtml;
       bcMaintBtn.style.display = '';
       bcBrkBtn.style.display = 'none';
       bcCntRow.style.display = 'none';
+      const bcTimeRows = document.getElementById('bcTimeRows');
+      if (bcTimeRows) bcTimeRows.style.display = 'none';
     } else {
       bcStatus.innerHTML = '✅ <span style="color:var(--green)">Maintained</span>';
       bcMaintBtn.style.display = 'none';
       bcBrkBtn.style.display = '';
       bcCntRow.style.display = 'flex';
+      const bcTimeRows = document.getElementById('bcTimeRows');
+      if (bcTimeRows) bcTimeRows.style.display = 'block';
+      renderBcTimeRows();
     }
+    const cntInputEl = document.getElementById('cdmoBcCnt');
+    if (cntInputEl) cntInputEl.oninput = function() { renderBcTimeRows(); };
     document.getElementById('cdmoBcCnt').value = (bcEn && bcEn.count) || 1;
+    if (!isBroken) renderBcTimeRows();
   } else {
     bcSec.style.display = 'none';
   }
@@ -3780,8 +3964,18 @@ function sheetMarkBc(action) {
   if (!key) return;
   if (action === 'b') {
     const cnt = parseInt(document.getElementById('cdmoBcCnt').value) || 1;
-    App.S.brahma[key] = { status: 'b', count: cnt };
-    logActivity({ t: 'brahma', ts: Date.now(), status: 'b', date: key, count: cnt });
+    // Collect times from dynamic time inputs
+    const times = [];
+    for (let i = 0; i < cnt; i++) {
+      const tEl = document.getElementById('bcTime_' + i);
+      const nEl = document.getElementById('bcNote_' + i);
+      times.push({
+        time: tEl ? tEl.value : '',
+        note: nEl ? nEl.value.trim() : ''
+      });
+    }
+    App.S.brahma[key] = { status: 'b', count: cnt, times: times };
+    logActivity({ t: 'brahma', ts: Date.now(), status: 'b', date: key, count: cnt, times: times });
     toast('Marked as broken 🙏');
   } else {
     delete App.S.brahma[key];
@@ -3794,6 +3988,37 @@ function sheetMarkBc(action) {
   const timeSec2 = (App.S.timerHistory[key]||0) + (App.S.timerHistoryRV[key]||0);
   const time28Sec2 = App.S.timer28History[key]||0;
   showDay(key, cnt2, timeSec2, time28Sec2);
+}
+
+// ── Render dynamic time input rows in brahmacharya broken section ──
+function renderBcTimeRows() {
+  const key = _sheetKey;
+  const cntEl = document.getElementById('cdmoBcCnt');
+  const cnt = parseInt(cntEl ? cntEl.value : 1) || 1;
+  const container = document.getElementById('bcTimeRows');
+  if (!container) return;
+  // Preserve existing values
+  const existing = [];
+  const old = container.querySelectorAll('.bc-time-row');
+  old.forEach((row, i) => {
+    existing[i] = {
+      time: (row.querySelector('input[type="time"]') || {}).value || '',
+      note: (row.querySelector('input[type="text"]') || {}).value || ''
+    };
+  });
+  // Pre-fill from saved data if available
+  const saved = key && App.S.brahma[key] && App.S.brahma[key].times ? App.S.brahma[key].times : [];
+  container.innerHTML = '';
+  for (let i = 0; i < cnt; i++) {
+    const prefill = existing[i] || saved[i] || {};
+    const div = document.createElement('div');
+    div.className = 'bc-time-row';
+    div.innerHTML =
+      '<span class="bc-time-label">Instance ' + (i+1) + ':</span>' +
+      '<input type="time" id="bcTime_' + i + '" class="bc-time-input" value="' + (prefill.time||'') + '" placeholder="HH:MM">' +
+      '<input type="text" id="bcNote_' + i + '" class="bc-note-input" value="' + escHtml(prefill.note||'') + '" placeholder="Note (optional)">';
+    container.appendChild(div);
+  }
 }
 function addOccasion(){
   const date=(document.getElementById('occDate')||{value:''}).value.trim();

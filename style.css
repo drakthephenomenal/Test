@@ -127,7 +127,8 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .tz{flex:1;display:flex;align-items:center;justify-content:center;cursor:pointer;
   position:relative;overflow:hidden;border-radius:18px;
   background:radial-gradient(ellipse at center,rgba(34,85,204,0.22) 0%,rgba(6,13,31,0.6) 100%);
-  border:1px solid rgba(74,144,226,0.2);user-select:none;-webkit-user-select:none;}
+  border:1px solid rgba(74,144,226,0.2);user-select:none;-webkit-user-select:none;
+  touch-action:manipulation;-webkit-touch-callout:none;}
 .tz::before{content:'';position:absolute;inset:0;
   background:radial-gradient(circle at var(--tx,50%) var(--ty,50%),rgba(109,184,255,0.22) 0%,transparent 55%);
   opacity:0;transition:opacity 0.25s;}
@@ -350,7 +351,8 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .n28tz{flex:1;background:radial-gradient(ellipse at center,rgba(34,85,204,0.22) 0%,rgba(6,13,31,0.6) 100%);
   border:1px solid rgba(74,144,226,0.2);border-radius:22px;
   display:flex;align-items:center;justify-content:center;flex-direction:column;
-  cursor:pointer;user-select:none;-webkit-user-select:none;position:relative;overflow:hidden;min-height:320px;}
+  cursor:pointer;user-select:none;-webkit-user-select:none;position:relative;overflow:hidden;min-height:320px;
+  touch-action:manipulation;-webkit-touch-callout:none;}
 .n28tz::before{content:'';position:absolute;inset:0;
   background:radial-gradient(circle at var(--tx,50%) var(--ty,50%),rgba(109,184,255,0.18) 0%,transparent 60%);
   opacity:0;transition:opacity 0.25s;}
@@ -766,7 +768,7 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 /* === Rectangular mala bead frame around Daily + Lifetime target boxes === */
 .bead-frame-wrap{
   position:relative;
-  padding:14px 16px;
+  padding:6px 8px;
   margin:2px 4px 4px;
   flex-shrink:0;
 }
@@ -820,3 +822,10 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
   100%{transform:scale(1);}
 }
 .bead-frame .bead-pulse{animation:beadPulse 0.5s ease-out;}
+/* Sumeru bead — Priya & Pritam. Fixed at top-center. Never counted, never moves. */
+.bead-frame .bead-sumeru{
+  fill:#1a0a2e;
+  stroke:#FFD700;
+  stroke-width:1.6;
+  filter:drop-shadow(0 0 3px rgba(255,105,180,0.6)) drop-shadow(0 0 6px rgba(255,215,0,0.4));
+}

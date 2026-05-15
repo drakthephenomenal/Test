@@ -217,8 +217,13 @@ const App = {
   },
 
   getTk() {
-    const d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    // ── TIME SYNC FIX: Use server-corrected time if available, else local UTC ──
+    // Using UTC prevents cross-device timezone mismatch (e.g. one device in IST,
+    // another in UTC) from producing different date keys for the same day.
+    // _serverTimeOffsetMs is set by fbSyncServerTime() on every Firebase connection.
+    const now = Date.now() + (window._serverTimeOffsetMs || 0);
+    const d = new Date(now);
+    return d.getUTCFullYear() + '-' + String(d.getUTCMonth()+1).padStart(2,'0') + '-' + String(d.getUTCDate()).padStart(2,'0');
   },
 
   gTod() {
@@ -1002,7 +1007,7 @@ function sv(id, btn) {
   document.querySelectorAll('.nb').forEach(b => b.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   if (btn) btn.classList.add('active');
-  if (id === 'vs') uStats();
+  if (id === 'vs') { uStats(); _historyAutoLoaded = false; }
   if (id === 'vb') { initBrahmaStartInput(); renderCal(); }
   if (id === 'vst') renderSt();
   if (id === 'v28') { u28(); render28Dots(get28Pos()); }
@@ -1060,7 +1065,7 @@ function ensureBeadFrame() {
   const wrap = document.getElementById('beadFrameWrap');
   const svg  = document.getElementById('beadFrame');
   if (!wrap || !svg) return null;
-  if (svg.childElementCount !== 108) {
+  if (svg.childElementCount !== 109) {
     svg.innerHTML = '';
     for (let i = 0; i < 108; i++) {
       const c = document.createElementNS(BEAD_SVG_NS, 'circle');
@@ -1069,10 +1074,28 @@ function ensureBeadFrame() {
       c.setAttribute('class', i < 100 ? 'bead bead-blue' : 'bead bead-gold');
       svg.appendChild(c);
     }
+    // Sumeru bead — index 108. Fixed at top-center. Never counted, never moved.
+    const sumeru = document.createElementNS(BEAD_SVG_NS, 'circle');
+    sumeru.setAttribute('id', 'beadSumeru');
+    sumeru.setAttribute('r', '4.5');
+    sumeru.setAttribute('class', 'bead bead-sumeru');
+    svg.appendChild(sumeru);
   }
   return { wrap, svg };
 }
 let _beadState = { tod: 0, target: 0, lastFilled: -1 };
+
+// ── Convert a perimeter distance (0..perim) to x,y on the rectangle ──
+function _perimToXY(d, x0, y0, x1, y1) {
+  const w = x1 - x0, h = y1 - y0;
+  const perim = 2 * (w + h);
+  d = ((d % perim) + perim) % perim; // normalise
+  if (d < w)           return { x: x0 + d,           y: y0 };
+  else if (d < w + h)  return { x: x1,                y: y0 + (d - w) };
+  else if (d < 2*w+h)  return { x: x1 - (d - w - h), y: y1 };
+  else                 return { x: x0,                y: y1 - (d - 2*w - h) };
+}
+
 function renderBeadFrame(tod, target) {
   const refs = ensureBeadFrame();
   if (!refs) return;
@@ -1086,43 +1109,71 @@ function renderBeadFrame(tod, target) {
   const W = rect.width, H = rect.height;
   if (!W || !H) return;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  const inset = 7;
+  const inset = 4;
   const x0 = inset, y0 = inset, x1 = W - inset, y1 = H - inset;
   const w = x1 - x0, h = y1 - y0;
   const N = 108;
+  const GOLD = 8; // last 8 beads of each mala are gold
   const perim = 2 * (w + h);
-  const step = perim / N;
-  // Fill 1 bead per tap within the current mala (matches the small 12-dot row logic)
+  // 109 total slots (108 mala beads + 1 Sumeru) — equal spacing for all
+  const step = perim / 109;
+
   const ms = (App && App.S && App.S.ms) || 108;
   const inMala = tod % ms;
   const malaIdx = Math.floor(tod / ms);
-  // When viewing a freshly-completed mala (inMala==0 && tod>0), show that mala's direction.
   const completedView = inMala === 0 && tod > 0;
   const effectiveMala = completedView ? malaIdx - 1 : malaIdx;
-  // Alternate direction every mala: even = clockwise, odd = anticlockwise.
-  // Reversing direction naturally shifts the gold "guru" cluster to the opposite side.
+  // Mala 1,3,5… (odd, effectiveMala=0,2,4 zero-based) → CW: start RIGHT of Sumeru, gold ends LEFT
+  // Mala 2,4,6… (even, effectiveMala=1,3,5 zero-based) → CCW: start LEFT of Sumeru, gold ends RIGHT
   const isCW = (effectiveMala % 2) === 0;
-  // Map progress within the mala (0..ms) to beads (0..N) so all 108 fill across one mala
   const filled = completedView ? N : Math.floor(inMala * N / ms);
   const beads = svg.children;
   const justAdvanced = filled > _beadState.lastFilled && _beadState.lastFilled !== -1;
+
+  // ── Sumeru: always fixed at top-center ──
+  const sumeruCX = W / 2;
+  const sumeruCY = y0;
+  const sumeruEl = document.getElementById('beadSumeru');
+  if (sumeruEl) {
+    sumeruEl.setAttribute('cx', sumeruCX);
+    sumeruEl.setAttribute('cy', sumeruCY);
+  }
+
+  // 109 equal slots around the perimeter. Sumeru occupies the top-center slot.
+  // sumeruD = distance from top-left corner along top edge to Sumeru.
+  const sumeruD = sumeruCX - x0;
+
+  // CW mala (odd):
+  //   Bead 0 is 1 slot to the RIGHT of Sumeru (clockwise from Sumeru).
+  //   Each next bead advances clockwise (+step in perimeter distance).
+  //   Bead 107 (last gold) lands 1 slot to the LEFT of Sumeru. Gold block = LEFT side. ✓
+  //
+  // CCW mala (even):
+  //   Bead 0 is 1 slot to the LEFT of Sumeru (anticlockwise from Sumeru).
+  //   Each next bead advances anticlockwise (-step in perimeter distance).
+  //   Bead 107 (last gold) lands 1 slot to the RIGHT of Sumeru. Gold block = RIGHT side. ✓
+
   for (let i = 0; i < N; i++) {
-    // i = tap order within mala (0 = first tap, 107 = last/gold). Direction flips per mala.
-    const d = isCW ? (i * step + step / 2) : (perim - (i * step + step / 2));
-    let x, y;
-    if (d < w) { x = x0 + d;            y = y0; }
-    else if (d < w + h) { x = x1;       y = y0 + (d - w); }
-    else if (d < 2 * w + h) { x = x1 - (d - w - h); y = y1; }
-    else { x = x0;                       y = y1 - (d - 2 * w - h); }
+    let d;
+    if (isCW) {
+      // Start 1 slot RIGHT of Sumeru, advance clockwise (increasing perimeter distance)
+      d = sumeruD + step + i * step;
+    } else {
+      // Start 1 slot LEFT of Sumeru, advance anticlockwise (decreasing perimeter distance)
+      d = sumeruD - step - i * step;
+    }
+    const { x, y } = _perimToXY(d, x0, y0, x1, y1);
     const c = beads[i];
     c.setAttribute('cx', x);
     c.setAttribute('cy', y);
     c.setAttribute('r', '2.2');
     c.setAttribute('style', '');
-    const baseCls = i < 100 ? 'bead bead-blue' : 'bead bead-gold';
+    const isGold = i >= (N - GOLD);
+    const baseCls = isGold ? 'bead bead-gold' : 'bead bead-blue';
     c.setAttribute('class', baseCls + (i < filled ? ' filled' : ''));
   }
-  // Pulse the freshly-filled bead so the user sees the tap land
+
+  // Pulse the freshly-filled bead
   if (justAdvanced && filled > 0 && filled <= N) {
     const pulsed = beads[filled - 1];
     if (pulsed) {
@@ -1163,6 +1214,13 @@ function toggleCs(bodyId, chevId) {
 function addManualJap() {
   const n = parseInt(document.getElementById('manualJapIn').value) || 0;
   if (n <= 0) { toast('Please enter a number > 0'); return; }
+  // ── DAILY-TARGET FIX: ensure tk matches current day before writing ──
+  // Previously a stale App.S.tk could cause the new jap to be written to a
+  // different date key than the one gTod() reads back from, leaving the
+  // Daily progress bar showing 0 until a later refresh corrected it.
+  App.S.tk = App.getTk();
+  if (!App.S.history) App.S.history = {};
+  if (!App.S.historyRV) App.S.historyRV = {};
   const isRV = App.S.japMode === 'rv';
   if (isRV) { App.S.historyRV[App.S.tk] = (App.S.historyRV[App.S.tk] || 0) + n; }
   else { App.S.history[App.S.tk] = (App.S.history[App.S.tk] || 0) + n; }
@@ -1170,23 +1228,51 @@ function addManualJap() {
   const minEl = document.getElementById('manualJapMin');
   const secEl = document.getElementById('manualJapSec');
   const timeSecs = (parseInt(minEl?.value) || 0) * 60 + Math.min(59, Math.max(0, parseInt(secEl?.value) || 0));
+  // Hoisted so the celebration block below can safely reference it even when
+  // no time was entered (previously a block-scoped const threw a ReferenceError).
+  let avgPerMala = 0;
   if (timeSecs > 0) {
-    // Create mala log entries with averaged time
-    const ms = App.S.ms || 108;
-    const malasAdded = Math.floor(n / ms);
-    if (malasAdded > 0) {
-      const avgPerMala = Math.round(timeSecs / malasAdded);
-      const log = isRV ? (App.S.malaLogRV || (App.S.malaLogRV = [])) : (App.S.malaLog || (App.S.malaLog = []));
-      for (let i = 0; i < malasAdded; i++) log.push(avgPerMala);
+    // Push averaged mala entries into malaLog so Today's Mala Log shows them.
+    // Also log to activityLog so history per-mala table shows them correctly.
+    const ms2 = App.S.ms || 108;
+    const malasAdded = Math.max(1, Math.floor(n / ms2));
+    avgPerMala = Math.round(timeSecs / malasAdded);
+    const log = isRV ? (App.S.malaLogRV || (App.S.malaLogRV = [])) : (App.S.malaLog || (App.S.malaLog = []));
+    const now = Date.now();
+    for (let i = 0; i < malasAdded; i++) {
+      log.push(avgPerMala);
+      logActivity({ t: 'mala', mode: isRV ? 'rv' : 'radha', sec: avgPerMala,
+                    ts: now + i * 1000, startTs: now + i * 1000 - avgPerMala * 1000,
+                    manual: true });
     }
-    // Sync timerHistory from mala log sum — single source of truth
+    // Sync timerHistory from updated mala log sum
     App.syncTimerFromMalaLog();
   }
   App.ensureMalaWallStart();
   const nm = Math.floor(App.gTod() / (App.S.ms || 108));
   const lmcKey = isRV ? 'lmcRV' : 'lmc';
-  if (nm > App[lmcKey]) { App[lmcKey] = nm; App.malaOk(); }
+  if (nm > (App[lmcKey] || 0)) {
+    App[lmcKey] = nm;
+    // Celebrate the new mala milestone WITHOUT calling malaOk() —
+    // malaOk() pushes a wall-clock duration into malaLog which creates a
+    // ghost entry. We only want the visual/audio celebration here.
+    const _mf = document.getElementById('mf');
+    if (_mf) { _mf.classList.add('show'); setTimeout(() => _mf.classList.remove('show'), 2800); }
+    if (App.S.cfg && App.S.cfg.sound) playSynthBell();
+    App.vib([200, 80, 200, 80, 300]);
+    App.flashMalaDuration(avgPerMala);
+  }
   App.save(); App.ua(); fbDebouncedPush();
+  // ── DAILY-TARGET FIX: force every dependent view to re-read from state now,
+  // not just the home progress bar. This eliminates the lag where the Daily
+  // bar/Stats stayed at the old value until a later sync triggered a redraw. ──
+  try { uStats(); } catch(e) {}
+  try { if (typeof renderCal === 'function') renderCal(); } catch(e) {}
+  try { if (typeof renderBcal === 'function') renderBcal(); } catch(e) {}
+  renderMalaLog();
+  if (typeof renderHistory === 'function') { try { renderHistory(); } catch(e) {} }
+  // Defensive second pass on next tick to win any race with concurrent renders.
+  setTimeout(() => { try { App.ua(); uStats(); } catch(e) {} }, 0);
   document.getElementById('manualJapIn').value = '';
   if (minEl) minEl.value = '';
   if (secEl) secEl.value = '';
@@ -1304,6 +1390,8 @@ function deductOtherJap() {
   }
 
   App.save(); App.ua(); fbDebouncedPush(); renderCal();
+  // ── HISTORY FIX: re-render history table so the change appears immediately ──
+  if (typeof renderHistory === 'function') { try { renderHistory(); } catch(e) {} }
   document.getElementById('deductOtherIn').value = '';
   if (minEl) minEl.value = '';
   if (secEl) secEl.value = '';
@@ -1329,6 +1417,8 @@ function addOtherDayJap() {
   }
 
   App.save(); App.ua(); fbDebouncedPush(); renderCal();
+  // ── HISTORY FIX: re-render history table so the new entry appears immediately ──
+  if (typeof renderHistory === 'function') { try { renderHistory(); } catch(e) {} }
   document.getElementById('addJapOtherIn').value = '';
   if (minEl) minEl.value = '';
   if (secEl) secEl.value = '';
@@ -1382,6 +1472,8 @@ function addJapTimeOther() {
   const th2 = App.getCurTimerHistory();
   th2[date] = (th2[date] || 0) + secs;
   App.save(); App.ua(); fbDebouncedPush();
+  // ── HISTORY FIX: re-render history table so the new time appears immediately ──
+  if (typeof renderHistory === 'function') { try { renderHistory(); } catch(e) {} }
   document.getElementById('jtAddOtherMin').value = '';
   document.getElementById('jtAddOtherSec').value = '';
   document.getElementById('jtAddOtherDate').value = '';
@@ -1430,6 +1522,8 @@ function deductJapTimeOther() {
   if (secs > cur) { toast('Cannot deduct more than that day\'s time (' + Math.floor(cur/60) + 'm)'); return; }
   th4[date] = cur - secs;
   App.save(); App.ua(); fbDebouncedPush();
+  // ── HISTORY FIX: re-render history table so the change appears immediately ──
+  if (typeof renderHistory === 'function') { try { renderHistory(); } catch(e) {} }
   document.getElementById('jtDedOtherMin').value = '';
   document.getElementById('jtDedOtherSec').value = '';
   document.getElementById('jtDedOtherDate').value = '';
@@ -2306,6 +2400,39 @@ function fbWatchSession() {
 }
 
 
+// ── SERVER TIME SYNC ──
+// Measures offset between local clock and Firebase server clock.
+// Stored in window._serverTimeOffsetMs so getTk() uses corrected time.
+// This prevents date-key mismatches when device clock is wrong or across timezones.
+window._serverTimeOffsetMs = 0;
+async function fbSyncServerTime() {
+  if (!fbDb) return;
+  try {
+    const localBefore = Date.now();
+    // Write a server timestamp and immediately read it back to measure offset
+    const tempRef = fbDb.collection('_timesync').doc('probe');
+    await tempRef.set({ t: firebase.firestore.FieldValue.serverTimestamp() });
+    const snap = await tempRef.get();
+    const localAfter = Date.now();
+    if (snap.exists && snap.data().t) {
+      const serverMs = snap.data().t.toMillis();
+      const localMid = Math.round((localBefore + localAfter) / 2);
+      window._serverTimeOffsetMs = serverMs - localMid;
+      const driftSec = Math.round(window._serverTimeOffsetMs / 1000);
+      if (Math.abs(driftSec) > 60) {
+        console.warn('[TimeSync] Device clock drifts from server by ' + driftSec + 's. Correcting getTk().');
+        toast('⚠️ Device clock corrected by ' + driftSec + 's for accurate sync');
+      } else {
+        console.log('[TimeSync] Server offset: ' + window._serverTimeOffsetMs + 'ms (within tolerance)');
+      }
+      // Clean up probe document
+      tempRef.delete().catch(() => {});
+    }
+  } catch(e) {
+    console.warn('[TimeSync] Could not sync server time:', e.message);
+  }
+}
+
 function fbInit() {
   if (fbApp) return true;
   if (typeof firebase === 'undefined') {
@@ -2365,6 +2492,9 @@ function fbInit() {
         // guaranteed to fetch the latest cloud data before anything is rendered.
         fbClaimSession().then(async () => {
           fbWatchSession();
+          // ── Sync device clock with Firebase server time ──
+          // Corrects getTk() if local clock is wrong or in different timezone
+          await fbSyncServerTime();
           // Direct cloud pull — overwrites local cache with authoritative Firebase data
           await fbAutoSync();
           // Load global stotrams (inbuilt overrides + global stotrams for all users)
@@ -4461,10 +4591,11 @@ function renderHistory() {
     const radha  = hist[tk]   || 0;
     const rv     = histRV[tk] || 0;
     const taps28 = h28[tk]    || 0;
-    // Use malaLog arrays as ground truth for today's time (prevents mode-switch corruption)
-    const isRowToday = (tk === App.S.tk);
-    const tSecR_row  = isRowToday ? (App.S.malaLog||[]).reduce((a,b)=>a+b,0)   : (tHist[tk]||0);
-    const tSecRV_row = isRowToday ? (App.S.malaLogRV||[]).reduce((a,b)=>a+b,0) : (tHistRV[tk]||0);
+    // ── TIME FIX: Always read from timerHistory (single source of truth).
+    // timerHistory is kept in sync with malaLog by syncTimerFromMalaLog(),
+    // so using malaLog directly caused mismatch when manual jap+time was added.
+    const tSecR_row  = tHist[tk]   || 0;
+    const tSecRV_row = tHistRV[tk] || 0;
     const tSec   = tSecR_row + tSecRV_row;
     const t28Sec = t28Hist[tk] || 0;
     const totalSec = tSec + t28Sec;
@@ -4561,9 +4692,10 @@ function showHistDay(tk) {
   html += `<div style="background:rgba(255,215,0,0.06);border:1px solid rgba(255,215,0,0.15);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;font-family:Inter,sans-serif">`;
   html += `<div style="font-size:10px;color:var(--gold);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;font-weight:600">Day Summary</div>`;
   html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px">`;
-  // For today: use malaLog arrays as ground-truth time (they never have sync issues)
-  const tSecR_disp  = isToday ? (App.S.malaLog||[]).reduce((a,b)=>a+b,0)   : tSecR;
-  const tSecRV_disp = isToday ? (App.S.malaLogRV||[]).reduce((a,b)=>a+b,0) : tSecRV;
+  // ── TIME FIX: Always use timerHistory (syncTimerFromMalaLog keeps it authoritative).
+  // Previous isToday override caused mismatch when manual jap+time was added to today.
+  const tSecR_disp  = tSecR;
+  const tSecRV_disp = tSecRV;
   if (radha > 0)  html += `<div style="color:var(--gold)">Radha: <strong>${radhaM} mala</strong> (${radha}) · ${_histFmtSec(tSecR_disp)}</div>`;
   if (rv > 0)     html += `<div style="color:var(--a2)">RV: <strong>${rvM} mala</strong> (${rv}) · ${_histFmtSec(tSecRV_disp)}</div>`;
   if (taps28 > 0) html += `<div style="color:var(--green)">28 Names: <strong>${cyc28} cycles</strong> (${taps28}) · ${_histFmtSec(t28Sec)}</div>`;

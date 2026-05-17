@@ -93,6 +93,7 @@ function _updateMantraDisplay() {
 }
 
 function switchJapMode(mode) {
+  if (!SAMPRADAY_MODES[mode]) mode = 'radha';
   App.S.japMode = mode;
   const dd = document.getElementById('naamSelDd');
   const btn = document.getElementById('naamSelBtn');
@@ -5493,52 +5494,44 @@ window.addEventListener('load', async () => {
   if (dtIn) dtIn.addEventListener('input', function() { document.getElementById('dtMala').textContent = Math.ceil((parseInt(this.value)||0)/(App.S.ms||108)); });
   if (ltIn) ltIn.addEventListener('input', function() { document.getElementById('ltMala').textContent = Math.ceil((parseInt(this.value)||0)/(App.S.ms||108)).toLocaleString(); });
 
-  App.ua();
-  initJapModeUI();
-  fbInit();
-  initSunTimes();
-  buildPwaManifest();
-  // Migrate any legacy two-date Ekadashi occasions to single fasting date
-  _cleanLegacyEkadashiOccasions();
-  // Persist the cleaned occasions immediately
-  App.save(); fbDebouncedPush();
-
-  // Hide loading — guaranteed cleanup
-  setTimeout(() => {
-    const ls = document.getElementById('ls');
-    if (ls) {
-      ls.classList.add('hide');
-      setTimeout(() => { if(ls.parentNode) ls.parentNode.removeChild(ls); }, 900);
-    }
-  }, 2800);
+  try {
+    App.ua();
+    initJapModeUI();
+    fbInit();
+    initSunTimes();
+    buildPwaManifest();
+    // Migrate any legacy two-date Ekadashi occasions to single fasting date
+    _cleanLegacyEkadashiOccasions();
+    // Persist the cleaned occasions immediately
+    App.save(); fbDebouncedPush();
+  } catch (err) {
+    console.error('[BOOT] init failed:', err);
+  } finally {
+    // Hide loading — guaranteed cleanup (runs even if init throws)
+    setTimeout(() => {
+      const ls = document.getElementById('ls');
+      if (ls) {
+        ls.classList.add('hide');
+        setTimeout(() => { if(ls.parentNode) ls.parentNode.removeChild(ls); }, 900);
+      }
+    }, 800);
+  }
 });
 
 // Service Worker
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js', {scope:'./'})
-      .then(r => {
-        console.log('SW registered:', r.scope);
-        // When a new SW takes over, reload the page to get fresh files
-        r.addEventListener('updatefound', () => {
-          const newWorker = r.installing;
-          if (!newWorker) return;
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'activated') {
-              console.log('[SW] New SW activated — reloading for fresh content');
-              window.location.reload();
-            }
-          });
-        });
-      })
+      .then(r => { console.log('SW registered:', r.scope); })
       .catch(e => console.warn('SW registration failed:', e.message));
 
-    // Also listen for SW_UPDATED message from the service worker
-    navigator.serviceWorker.addEventListener('message', e => {
-      if (e.data && e.data.type === 'SW_UPDATED') {
-        console.log('[SW] Received SW_UPDATED, reloading…', e.data.version);
-        window.location.reload();
-      }
+    // Reload ONCE when a new SW takes control — prevents reload loops
+    let _swReloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (_swReloaded) return;
+      _swReloaded = true;
+      console.log('[SW] Controller changed — reloading once for fresh content');
+      window.location.reload();
     });
   });
 }

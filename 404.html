@@ -127,7 +127,7 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M12 6v2M12 16v2M6 12H4M20 12h-2"/></svg>
     Jap
   </button>
-  <button class="nb" id="nav28Btn" onclick="sv('v28',this)">
+  <button class="nb" onclick="sv('v28',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
     28 Names
   </button>
@@ -175,18 +175,6 @@
           </div>
           <div class="naam-sel-opt" id="naamOptRV" onclick="switchJapMode('rv')">
             <span class="ns-check"></span> राधावल्लभ श्री हरिवंश
-          </div>
-          <div class="naam-sel-opt" id="naamOptMaha" onclick="switchJapMode('mahamantra')">
-            <span class="ns-check"></span> हरे कृष्ण महामंत्र
-          </div>
-          <div class="naam-sel-opt" id="naamOptRam" onclick="switchJapMode('ram')">
-            <span class="ns-check"></span> राम
-          </div>
-          <div class="naam-sel-opt" id="naamOptRamVijay" onclick="switchJapMode('ramvijay')">
-            <span class="ns-check"></span> श्री राम जय राम जय जय राम
-          </div>
-          <div class="naam-sel-opt" id="naamOptShiv" onclick="switchJapMode('shiv')">
-            <span class="ns-check"></span> स्वयम्भू सदा शिव
           </div>
         </div>
       </div>
@@ -254,45 +242,10 @@
   <div class="tzr">
     <div class="tz" id="tz" style="border-radius:18px;" ontouchstart="App.ht(event)" onmousedown="App.ht(event)">
       <div class="mf" id="mf">
-        <div class="mf-line1" id="mfLine1">Radha Ballabh</div>
-        <div class="mf-line2" id="mfLine2">Sri Harivansh</div>
+        <div class="mf-line1">Radha Ballabh</div>
+        <div class="mf-line2">Sri Harivansh</div>
       </div>
     </div>
-
-    <!-- MAHAMANTRA / RAM VIJAY TAP DISPLAY (shown in those modes) -->
-    <div id="mantraDisplayWrap" style="display:none;margin-top:12px;padding:0 4px;">
-      <div id="mantraDisplayBox" onclick="App.htMantra()" style="
-        background:linear-gradient(135deg,rgba(255,152,0,0.08),rgba(232,51,109,0.06));
-        border:2px solid rgba(255,152,0,0.3);
-        border-radius:18px;
-        padding:22px 16px;
-        text-align:center;
-        cursor:pointer;
-        user-select:none;
-        -webkit-user-select:none;
-        position:relative;
-        min-height:120px;
-        display:flex;
-        flex-direction:column;
-        align-items:center;
-        justify-content:center;
-        gap:8px;
-      ">
-        <div id="mantraText" style="font-family:'Tiro Devanagari Hindi','Hind Siliguri',serif;font-size:clamp(16px,4.5vw,22px);line-height:1.7;color:#FFD700;font-weight:600;letter-spacing:1px;"></div>
-        <div id="mantraBengali" style="font-family:'Hind Siliguri',serif;font-size:clamp(13px,3.5vw,17px);line-height:1.6;color:rgba(255,215,0,0.65);margin-top:4px;display:none;"></div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:8px;letter-spacing:1px;">TAP AFTER COMPLETING FULL MANTRA</div>
-        <div class="mf" id="mfMantra" style="border-radius:14px;">
-          <div class="mf-line1" id="mfMantraLine1"></div>
-          <div class="mf-line2" id="mfMantraLine2" style="font-size:16px;"></div>
-        </div>
-      </div>
-      <!-- Mantra script toggle -->
-      <div style="display:flex;gap:8px;margin-top:8px;justify-content:center;">
-        <button onclick="toggleMantraScript('hi')" id="msBtnHi" style="padding:5px 14px;border-radius:14px;border:1px solid rgba(255,152,0,0.4);background:rgba(255,152,0,0.15);color:#FFA040;font-size:11px;cursor:pointer;font-family:Inter,sans-serif;font-weight:600;">हिंदी</button>
-        <button onclick="toggleMantraScript('bn')" id="msBtnBn" style="padding:5px 14px;border-radius:14px;border:1px solid rgba(109,184,255,0.3);background:transparent;color:rgba(109,184,255,0.7);font-size:11px;cursor:pointer;font-family:'Hind Siliguri',serif;font-weight:600;">বাংলা</button>
-      </div>
-    </div>
-  </div>
   </div>
 
 </div>
@@ -622,9 +575,7 @@
         <div class="sb"><div class="sv2" id="sWk">0</div><div class="sl">This Week</div><div class="ss" id="sWkM">0 malas</div></div>
         <!-- Row 2 -->
         <div class="sb"><div class="sv2" id="sMo">0</div><div class="sl">This Month</div><div class="ss" id="sMoM">0 malas</div></div>
-        <div class="sb"><div class="sv2" id="sTot">0</div><div class="sl" id="sTotLabel">Total Jap</div><div class="ss" id="sTotM">0 malas</div></div>
-        <!-- Row 3-5: RV-specific breakdown (hidden for other sampradays) -->
-        <div id="rvStatsSection" style="">
+        <div class="sb"><div class="sv2" id="sTot">0</div><div class="sl">Total Jap (Radha + RV)</div><div class="ss" id="sTotM">0 malas</div></div>
         <!-- Row 3: Radha count + Radha time -->
         <div class="sb" style="background:rgba(255,215,0,0.05);border-color:rgba(255,215,0,0.18)"><div class="sv2" style="color:var(--gold)" id="sRadhaTot">0</div><div class="sl" style="color:var(--gold)">राधा Lifetime</div><div class="ss" id="sRadhaTotM">0 malas</div><div class="ss" id="sRadhaTotF" style="color:var(--gold);opacity:0.75;font-size:10px;margin-top:2px">0</div></div>
         <div class="sb" style="background:rgba(255,215,0,0.04);border-color:rgba(255,215,0,0.15)">
@@ -658,26 +609,8 @@
             <div><span style="font-family:'EB Garamond',serif;font-size:15px;color:var(--green)" id="t28Lt">0m</span> <span style="font-size:8px;color:var(--td);letter-spacing:1px">LIFETIME</span></div>
           </div>
         </div>
-        </div><!-- /rvStatsSection -->
-        <!-- Non-RV sampraday stats (shown when not in RV mode) -->
-        <div id="spStatsSection" style="display:none">
-          <div class="sb wide" style="background:rgba(255,152,0,0.05);border-color:rgba(255,152,0,0.25)">
-            <div class="sv2" style="color:#FFA040" id="spLifetime">0</div>
-            <div class="sl" style="color:#FFA040" id="spLifetimeLabel">Lifetime Jap</div>
-            <div class="ss" id="spLifetimeM">0 malas</div>
-          </div>
-          <div class="sb wide" style="background:rgba(255,152,0,0.04);border-color:rgba(255,152,0,0.15)">
-            <div class="sl" style="font-size:9px;color:#FFA040;letter-spacing:1.5px;margin-bottom:6px">⏱ JAP TIME</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;text-align:center">
-              <div><span style="font-family:'EB Garamond',serif;font-size:15px;color:#FFA040" id="spTimeTod">0m</span><div style="font-size:8px;color:var(--td)">TODAY</div></div>
-              <div><span style="font-family:'EB Garamond',serif;font-size:15px;color:#FFA040" id="spTimeWk">0m</span><div style="font-size:8px;color:var(--td)">WEEK</div></div>
-              <div><span style="font-family:'EB Garamond',serif;font-size:15px;color:#FFA040" id="spTimeMo">0m</span><div style="font-size:8px;color:var(--td)">MONTH</div></div>
-              <div><span style="font-family:'EB Garamond',serif;font-size:15px;color:#FFA040" id="spTimeLt">0m</span><div style="font-size:8px;color:var(--td)">LIFETIME</div></div>
-            </div>
-          </div>
-        </div><!-- /spStatsSection -->
-        <!-- Row 5b: Combined Lifetime Jap -->
-        <div id="rvLtJapRow"><div class="sb wide" style="background:rgba(255,215,0,0.04);border-color:rgba(255,215,0,0.12)"><div class="sv2" style="color:var(--gold)" id="sLtJapAll">0</div><div class="sl" style="color:var(--gold)">Lifetime Jap (Radha + RV + 28 Names)</div><div class="ss" id="sLtJapAllF" style="color:var(--gold);opacity:0.75;font-size:10px;margin-top:2px">0</div></div></div>
+        <!-- Row 5b: Combined Lifetime Jap (Radha + RV + 28 names) -->
+        <div class="sb wide" style="background:rgba(255,215,0,0.04);border-color:rgba(255,215,0,0.12)"><div class="sv2" style="color:var(--gold)" id="sLtJapAll">0</div><div class="sl" style="color:var(--gold)">Lifetime Jap (Radha + RV + 28 Names)</div><div class="ss" id="sLtJapAllF" style="color:var(--gold);opacity:0.75;font-size:10px;margin-top:2px">0</div></div>
         <!-- Row 6: Lifetime jap time -->
         <div class="sb wide" style="background:rgba(255,215,0,0.04);border-color:rgba(255,215,0,0.12)"><div class="sv2" style="color:var(--gold)" id="sLtTime">0m 0s</div><div class="sl" style="color:var(--gold)">Lifetime Jap Time (Radha + RV + 28 Names)</div></div>
         <!-- Row 7: Last 7 days -->
@@ -948,36 +881,6 @@
 <div class="view" id="vset">
   <div class="vt">Settings</div>
 
-  <!-- SAMPRADAY / TRADITION SELECTOR -->
-  <div class="sc" style="background:linear-gradient(135deg,rgba(255,152,0,0.06),rgba(232,51,109,0.04));border-color:rgba(255,152,0,0.35);" id="sampradayCard">
-    <h3 style="color:#FFA040;">🪷 Sampraday / Tradition</h3>
-    <p style="font-size:11px;color:var(--td);margin-bottom:14px;">Choose your tradition. Each sampraday has its own jap history and statistics.</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" id="sampradayBtns">
-      <button id="spBtn_rv" onclick="setSampraday('rv')" class="sp-btn active-sp">
-        <div style="font-size:16px;margin-bottom:3px;">🌸</div>
-        <div style="font-size:10px;font-weight:700;">Radha Vallabh</div>
-        <div style="font-size:9px;opacity:0.7;">Sri Harivansh</div>
-      </button>
-      <button id="spBtn_gaudiya" onclick="setSampraday('gaudiya')" class="sp-btn">
-        <div style="font-size:16px;margin-bottom:3px;">🔔</div>
-        <div style="font-size:10px;font-weight:700;">Gaudiya / ISKCON</div>
-        <div style="font-size:9px;opacity:0.7;">Hare Krishna</div>
-      </button>
-      <button id="spBtn_ramanandi" onclick="setSampraday('ramanandi')" class="sp-btn">
-        <div style="font-size:16px;margin-bottom:3px;">🏹</div>
-        <div style="font-size:10px;font-weight:700;">Ramanandi</div>
-        <div style="font-size:9px;opacity:0.7;">Shri Ram</div>
-      </button>
-      <button id="spBtn_shaiva" onclick="setSampraday('shaiva')" class="sp-btn">
-        <div style="font-size:16px;margin-bottom:3px;">🔱</div>
-        <div style="font-size:10px;font-weight:700;">Shaiva</div>
-        <div style="font-size:9px;opacity:0.7;">Swayambhu Sada Shiv</div>
-      </button>
-    </div>
-    <div id="sampradayStatus" style="font-size:11px;color:rgba(255,152,0,0.8);text-align:center;margin-top:10px;font-weight:600;"></div>
-  </div>
-
-
   <!-- SINGLE SIGN-IN WITH GOOGLE -->
   <div class="sc" id="fbCard">
     <h3>☁️ Cloud Sync &amp; Backup</h3>
@@ -1121,20 +1024,6 @@
     <div style="font-size:10px;color:rgba(189,147,249,0.55);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;font-weight:600;">Saved Ekadashis</div>
     <div id="ekadashiList"></div>
   </div>
-
-  <!-- ANNUAL EKADASHI CALENDAR -->
-  <div class="sc" style="background:rgba(74,144,226,0.04);border-color:rgba(74,144,226,0.18)">
-    <h3 style="color:#6DB8FF;">🗓️ Annual Ekadashi Calendar</h3>
-    <p style="font-size:12px;color:var(--td);margin-bottom:10px;">All Ekadashis for 2025, 2026 &amp; 2027 — computed astronomically. Tap a year to expand.</p>
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-      <button onclick="toggleAnnualEk(2025)" style="padding:7px 16px;border-radius:20px;border:1px solid rgba(74,144,226,0.35);background:rgba(74,144,226,0.13);color:#6DB8FF;font-size:12px;cursor:pointer;font-family:Inter,sans-serif;font-weight:600;">2025</button>
-      <button onclick="toggleAnnualEk(2026)" style="padding:7px 16px;border-radius:20px;border:1px solid rgba(74,144,226,0.35);background:rgba(74,144,226,0.13);color:#6DB8FF;font-size:12px;cursor:pointer;font-family:Inter,sans-serif;font-weight:600;">2026</button>
-      <button onclick="toggleAnnualEk(2027)" style="padding:7px 16px;border-radius:20px;border:1px solid rgba(74,144,226,0.35);background:rgba(74,144,226,0.13);color:#6DB8FF;font-size:12px;cursor:pointer;font-family:Inter,sans-serif;font-weight:600;">2027</button>
-    </div>
-    <div id="annualEkList" style="display:none;"></div>
-    <div id="annualEkStatus" style="font-size:11px;color:rgba(255,255,255,0.4);text-align:center;padding:4px 0;"></div>
-  </div>
-
 
   <!-- PREFERENCES -->
   <div class="sc">

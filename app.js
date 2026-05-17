@@ -19,10 +19,21 @@ const App = {
     malaLogRV: [],
     syncBaselineRV: {}, syncBaselineTimerRV: {},
     activityLog: [],
-    sadhanaStart: ''
+    sadhanaStart: '',
+    customEkadashi: [],
+    ekParampara: 'smarta',
+    // ── Multi-Sampraday histories ──
+    sampraday: 'rv',           // 'rv' | 'gaudiya' | 'ramanandi' | 'shaiva'
+    historyGaudiya: {}, timerHistoryGaudiya: {}, dtGaudiya: 0, ltGaudiya: 0,
+    malaLogGaudiya: [], mantraScript: 'hi',
+    historyRamanandi: {}, timerHistoryRamanandi: {}, dtRamanandi: 0, ltRamanandi: 0,
+    malaLogRamanandi: [], japModeRamanandi: 'ram', // 'ram' | 'ramvijay'
+    historyShaiva: {}, timerHistoryShaiva: {}, dtShaiva: 0, ltShaiva: 0,
+    malaLogShaiva: [],
   },
   lmcRV: 0,
   lmc: 0, lm28: 0,
+  lmcGaudiya: 0, lmcRamanandi: 0, lmcShaiva: 0,
   timerRunning: false, timerSeconds: 0, timerInterval: null,
   timerSavedSeconds: 0, autoStopTimeout: null,
   malaWallStart: 0,  // Date.now() at start of current mala (persisted in localStorage)
@@ -116,7 +127,9 @@ const App = {
       syncBaselineRV: this.S.syncBaselineRV, syncBaselineTimerRV: this.S.syncBaselineTimerRV,
       brahmacharya_start_date: this.S.brahmacharya_start_date,
       activityLog: this.S.activityLog || [],
-      sadhanaStart: this.S.sadhanaStart || ''
+      sadhanaStart: this.S.sadhanaStart || '',
+      customEkadashi: this.S.customEkadashi || [],
+      ekParampara: this.S.ekParampara || 'smarta'
     });
     // Keep per-day stores updated for compatibility with existing offline data
     const tk = this.S.tk;
@@ -127,7 +140,7 @@ const App = {
     if (this.S.malaLog) await this.dbPut('malaLog', 'today', { date: tk, log: this.S.malaLog });
     // Archive today's activityLog entries into lifetime per-day store (no 500 limit)
     if (this.S.activityLog && this.S.activityLog.length > 0) {
-      const todayEntries = this.S.activityLog.filter(e => e.ts && new Date(e.ts).toISOString().split('T')[0] === tk);
+      const todayEntries = this.S.activityLog.filter(e => e.ts && _ldk(new Date(e.ts)) === tk);
       if (todayEntries.length > 0) await this.dbPut('activityLogArchive', tk, todayEntries);
     }
     try { localStorage.setItem(this._lsKey(), JSON.stringify(this.S)); } catch(e) {}
@@ -199,6 +212,7 @@ const App = {
     if (!this.S.syncBaselineTimerRV) this.S.syncBaselineTimerRV = {};
     if (!this.S.activityLog) this.S.activityLog = [];
     if (!this.S.sadhanaStart) this.S.sadhanaStart = localStorage.getItem('rjap_sadhana_start') || '';
+    if (!this.S.customEkadashi) this.S.customEkadashi = [];
     if (!this.S.historyRV[this.S.tk]) this.S.historyRV[this.S.tk] = 0;
     if (!this.S.timerHistoryRV[this.S.tk]) this.S.timerHistoryRV[this.S.tk] = 0;
     // Load malaLog — only use if it's from today AND today has actual jap count
@@ -217,55 +231,101 @@ const App = {
   },
 
   getTk() {
-    // ── TIME SYNC FIX: Use server-corrected time if available, else local UTC ──
-    // Using UTC prevents cross-device timezone mismatch (e.g. one device in IST,
-    // another in UTC) from producing different date keys for the same day.
-    // _serverTimeOffsetMs is set by fbSyncServerTime() on every Firebase connection.
-    const now = Date.now() + (window._serverTimeOffsetMs || 0);
-    const d = new Date(now);
-    return d.getUTCFullYear() + '-' + String(d.getUTCMonth()+1).padStart(2,'0') + '-' + String(d.getUTCDate()).padStart(2,'0');
+    // Date changes at 12:00 AM local time (GPS/device timezone).
+    // Use local date methods so the key matches the user's clock midnight.
+    const d = new Date(Date.now() + (window._serverTimeOffsetMs || 0));
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   },
 
   gTod() {
-    if (this.S.japMode === 'rv') return this.S.historyRV[this.S.tk] || 0;
+    const m = this.S.japMode;
+    if (m === 'rv')         return this.S.historyRV[this.S.tk] || 0;
+    if (m === 'mahamantra') return this.S.historyGaudiya[this.S.tk] || 0;
+    if (m === 'ram' || m === 'ramvijay') return this.S.historyRamanandi[this.S.tk] || 0;
+    if (m === 'shiv')       return this.S.historyShaiva[this.S.tk] || 0;
+    return this.S.history[this.S.tk] || 0; // 'radha'
+  },
+  // Combined today: within active sampraday only
+  gTodCombined() {
+    const sp = this.S.sampraday || 'rv';
+    if (sp === 'rv') return (this.S.history[this.S.tk] || 0) + (this.S.historyRV[this.S.tk] || 0);
+    if (sp === 'gaudiya') return this.S.historyGaudiya[this.S.tk] || 0;
+    if (sp === 'ramanandi') return this.S.historyRamanandi[this.S.tk] || 0;
+    if (sp === 'shaiva') return this.S.historyShaiva[this.S.tk] || 0;
     return this.S.history[this.S.tk] || 0;
   },
-  // Combined today: radha + RV
-  gTodCombined() {
-    return (this.S.history[this.S.tk] || 0) + (this.S.historyRV[this.S.tk] || 0);
-  },
   gTot() {
-    // COMBINED lifetime total from BOTH jap types
-    const radhaTotal = Math.max(0, Object.values(this.S.history).reduce((a,b) => a+b, 0) - (this.S.nameJapDeduct || 0));
-    const rvTotal = Math.max(0, Object.values(this.S.historyRV).reduce((a,b) => a+b, 0) - (this.S.nameJapDeductRV || 0));
-    return radhaTotal + rvTotal;
+    // ACTIVE SAMPRADAY lifetime total only
+    const sp = this.S.sampraday || 'rv';
+    if (sp === 'rv') {
+      const radhaTotal = Math.max(0, Object.values(this.S.history).reduce((a,b) => a+b, 0) - (this.S.nameJapDeduct || 0));
+      const rvTotal = Math.max(0, Object.values(this.S.historyRV).reduce((a,b) => a+b, 0) - (this.S.nameJapDeductRV || 0));
+      return radhaTotal + rvTotal;
+    }
+    if (sp === 'gaudiya') return Math.max(0, Object.values(this.S.historyGaudiya||{}).reduce((a,b)=>a+b,0));
+    if (sp === 'ramanandi') return Math.max(0, Object.values(this.S.historyRamanandi||{}).reduce((a,b)=>a+b,0));
+    if (sp === 'shaiva') return Math.max(0, Object.values(this.S.historyShaiva||{}).reduce((a,b)=>a+b,0));
+    return 0;
   },
   // Mode-specific total (for daily bar only)
   gTotMode() {
     if (this.S.japMode === 'rv') return Math.max(0, Object.values(this.S.historyRV).reduce((a,b) => a+b, 0) - (this.S.nameJapDeductRV || 0));
     return Math.max(0, Object.values(this.S.history).reduce((a,b) => a+b, 0) - (this.S.nameJapDeduct || 0));
   },
-  getCurHistory() { return this.S.japMode === 'rv' ? this.S.historyRV : this.S.history; },
-  getCurTimerHistory() { return this.S.japMode === 'rv' ? this.S.timerHistoryRV : this.S.timerHistory; },
-  // Combined history: merge radha + RV counts per day
+  getCurHistory() {
+    const m = this.S.japMode;
+    if (m === 'rv') return this.S.historyRV;
+    if (m === 'mahamantra') return this.S.historyGaudiya || (this.S.historyGaudiya = {});
+    if (m === 'ram' || m === 'ramvijay') return this.S.historyRamanandi || (this.S.historyRamanandi = {});
+    if (m === 'shiv') return this.S.historyShaiva || (this.S.historyShaiva = {});
+    return this.S.history;
+  },
+  getCurTimerHistory() {
+    const m = this.S.japMode;
+    if (m === 'rv') return this.S.timerHistoryRV;
+    if (m === 'mahamantra') return this.S.timerHistoryGaudiya || (this.S.timerHistoryGaudiya = {});
+    if (m === 'ram' || m === 'ramvijay') return this.S.timerHistoryRamanandi || (this.S.timerHistoryRamanandi = {});
+    if (m === 'shiv') return this.S.timerHistoryShaiva || (this.S.timerHistoryShaiva = {});
+    return this.S.timerHistory;
+  },
+  // Combined history: active sampraday only
   getCombinedHistory() {
-    const combined = {};
-    const h1 = this.S.history || {};
-    const h2 = this.S.historyRV || {};
-    const allKeys = new Set([...Object.keys(h1), ...Object.keys(h2)]);
-    allKeys.forEach(k => { combined[k] = (h1[k]||0) + (h2[k]||0); });
-    return combined;
+    const sp = this.S.sampraday || 'rv';
+    if (sp === 'rv') {
+      const combined = {};
+      const h1 = this.S.history || {}; const h2 = this.S.historyRV || {};
+      const allKeys = new Set([...Object.keys(h1), ...Object.keys(h2)]);
+      allKeys.forEach(k => { combined[k] = (h1[k]||0) + (h2[k]||0); });
+      return combined;
+    }
+    if (sp === 'gaudiya') return this.S.historyGaudiya || {};
+    if (sp === 'ramanandi') return this.S.historyRamanandi || {};
+    if (sp === 'shaiva') return this.S.historyShaiva || {};
+    return {};
   },
-  // Combined timer history: merge radha + RV timer per day
+  // Combined timer history: active sampraday only
   getCombinedTimerHistory() {
-    const combined = {};
-    const t1 = this.S.timerHistory || {};
-    const t2 = this.S.timerHistoryRV || {};
-    const allKeys = new Set([...Object.keys(t1), ...Object.keys(t2)]);
-    allKeys.forEach(k => { combined[k] = (t1[k]||0) + (t2[k]||0); });
-    return combined;
+    const sp = this.S.sampraday || 'rv';
+    if (sp === 'rv') {
+      const combined = {};
+      const t1 = this.S.timerHistory || {}; const t2 = this.S.timerHistoryRV || {};
+      const allKeys = new Set([...Object.keys(t1), ...Object.keys(t2)]);
+      allKeys.forEach(k => { combined[k] = (t1[k]||0) + (t2[k]||0); });
+      return combined;
+    }
+    if (sp === 'gaudiya') return this.S.timerHistoryGaudiya || {};
+    if (sp === 'ramanandi') return this.S.timerHistoryRamanandi || {};
+    if (sp === 'shaiva') return this.S.timerHistoryShaiva || {};
+    return {};
   },
-  getCurDt() { return this.S.japMode === 'rv' ? this.S.dtRV : this.S.dt; },
+  getCurDt() {
+    const m = this.S.japMode;
+    if (m === 'rv') return this.S.dtRV || 0;
+    if (m === 'mahamantra') return this.S.dtGaudiya || 0;
+    if (m === 'ram' || m === 'ramvijay') return this.S.dtRamanandi || 0;
+    if (m === 'shiv') return this.S.dtShaiva || 0;
+    return this.S.dt || 0;
+  },
   getCurLt() { return this.S.lt; },
 
   // ── Haptic Heartbeat ──
@@ -382,9 +442,22 @@ const App = {
 
   // ── Get mala log sum for today (excludes live in-progress mala) ──
   getMalaLogSum() {
-    const isRV = this.S.japMode === 'rv';
-    const log = isRV ? (this.S.malaLogRV || []) : (this.S.malaLog || []);
+    const m = this.S.japMode;
+    let log;
+    if (m === 'rv') log = this.S.malaLogRV || [];
+    else if (m === 'mahamantra') log = this.S.malaLogGaudiya || [];
+    else if (m === 'ram' || m === 'ramvijay') log = this.S.malaLogRamanandi || [];
+    else if (m === 'shiv') log = this.S.malaLogShaiva || [];
+    else log = this.S.malaLog || [];
     return log.reduce((a, b) => a + b, 0);
+  },
+  getMalaLog() {
+    const m = this.S.japMode;
+    if (m === 'rv') return this.S.malaLogRV || (this.S.malaLogRV = []);
+    if (m === 'mahamantra') return this.S.malaLogGaudiya || (this.S.malaLogGaudiya = []);
+    if (m === 'ram' || m === 'ramvijay') return this.S.malaLogRamanandi || (this.S.malaLogRamanandi = []);
+    if (m === 'shiv') return this.S.malaLogShaiva || (this.S.malaLogShaiva = []);
+    return this.S.malaLog || (this.S.malaLog = []);
   },
   ua() {
     const tod = this.gTod(), ms = this.S.ms || 108;
@@ -438,8 +511,13 @@ const App = {
 
   // ── Mala Complete — Bell sound + TRIPLE vibration + log duration + animate timer ──
   malaOk() {
-    const f = document.getElementById('mf');
-    f.classList.add('show'); setTimeout(() => f.classList.remove('show'), 2800);
+    // Pick the right flash element
+    const mode = this.S.japMode;
+    const isMantra = mode === 'mahamantra' || mode === 'ramvijay';
+    const f = isMantra ? document.getElementById('mfMantra') : document.getElementById('mf');
+    if (f) { f.classList.add('show'); setTimeout(() => f.classList.remove('show'), 2800); }
+    // Update celebration text per mode
+    _updateMalaCelebration(mode);
     // Bell sound
     if (this.S.cfg.sound) playSynthBell();
     // Triple long vibration synced with bell
@@ -460,19 +538,16 @@ const App = {
     this._malaTimerStart = this.timerSeconds;
     this.malaWallStart = Date.now();
     localStorage.setItem('rjap_malaWallStart', String(this.malaWallStart));
-    const isRVm = this.S.japMode === 'rv';
-    if (isRVm) {
-      if (!this.S.malaLogRV) this.S.malaLogRV = [];
-      this.S.malaLogRV.push(malaDuration);
-    } else {
-      if (!this.S.malaLog) this.S.malaLog = [];
-      this.S.malaLog.push(malaDuration);
-    }
+    const _modeM = this.S.japMode;
+    let _curLog;
+    if (_modeM==='rv') { if(!this.S.malaLogRV) this.S.malaLogRV=[]; _curLog=this.S.malaLogRV; }
+    else if (_modeM==='mahamantra') { if(!this.S.malaLogGaudiya) this.S.malaLogGaudiya=[]; _curLog=this.S.malaLogGaudiya; }
+    else if (_modeM==='ram'||_modeM==='ramvijay') { if(!this.S.malaLogRamanandi) this.S.malaLogRamanandi=[]; _curLog=this.S.malaLogRamanandi; }
+    else if (_modeM==='shiv') { if(!this.S.malaLogShaiva) this.S.malaLogShaiva=[]; _curLog=this.S.malaLogShaiva; }
+    else { if(!this.S.malaLog) this.S.malaLog=[]; _curLog=this.S.malaLog; }
+    _curLog.push(malaDuration);
     // Log mala completion with full timestamp
-    // Use malaLog.length as the mala number — it's always the correct sequential count
-    const malaNum = isRVm
-      ? (this.S.malaLogRV || []).length
-      : (this.S.malaLog || []).length;
+    const malaNum = _curLog.length;
     // Store wall-clock start so the history detail can show accurate start time
     const malaStartTs = Date.now() - (malaDuration * 1000);
     logActivity({ t: 'mala', ts: Date.now(), startTs: malaStartTs, mode: this.S.japMode, n: malaNum, sec: malaDuration });
@@ -505,34 +580,56 @@ const App = {
   ht(e) {
     e.preventDefault();
     const ms = this.S.ms || 108;
-    const isRV = this.S.japMode === 'rv';
-    if (isRV) {
-      this.S.historyRV[this.S.tk] = (this.S.historyRV[this.S.tk] || 0) + 1;
-    } else {
-      this.S.history[this.S.tk] = (this.S.history[this.S.tk] || 0) + 1;
-    }
+    const mode = this.S.japMode;
+    // Mahamantra and Ram Vijay are full-mantra tap — handled by htMantra()
+    if (mode === 'mahamantra' || mode === 'ramvijay') { this.htMantra(e); return; }
+    // Increment correct history
+    const hist = this.getCurHistory();
+    hist[this.S.tk] = (hist[this.S.tk] || 0) + 1;
     this.ensureMalaWallStart();
     this.save(); fbDebouncedPush();
-    // Haptic heartbeat — 10ms bead feeling
     this.vib([10]);
     this.tapTimer();
-    if (isRV) {
-      spawnRV(e, document.getElementById('tz'));
-    } else {
-      spawn(e, document.getElementById('tz'));
+    const tz = document.getElementById('tz');
+    if (mode === 'rv')   spawnRV(e, tz);
+    else if (mode === 'ram')  spawnRam(e, tz);
+    else if (mode === 'shiv') spawnShiv(e, tz);
+    else spawn(e, tz);
+    const nm = Math.floor(this.gTod() / ms);
+    const lmcKey = _getLmcKey(mode);
+    if (nm > this[lmcKey]) { this[lmcKey] = nm; this.malaOk(); App.silentMonkBackup(); }
+    this.ua();
+  },
+
+  // ── Mantra tap (Mahamantra / Ram Vijay — whole mantra per tap) ──
+  htMantra(e) {
+    const ms = this.S.ms || 108;
+    const mode = this.S.japMode;
+    const hist = this.getCurHistory();
+    hist[this.S.tk] = (hist[this.S.tk] || 0) + 1;
+    this.ensureMalaWallStart();
+    this.save(); fbDebouncedPush();
+    this.vib([15]);
+    this.tapTimer();
+    // Flash mantra color change
+    const mt = document.getElementById('mantraText');
+    if (mt) {
+      const colors = ['#FFD700','#FF6B9D','#6DB8FF','#98FB98','#FFB347'];
+      mt.style.color = colors[Math.floor(Math.random()*colors.length)];
+      mt.style.transform = 'scale(1.04)';
+      setTimeout(() => { mt.style.color = '#FFD700'; mt.style.transform = ''; }, 400);
     }
     const nm = Math.floor(this.gTod() / ms);
-    const lmcKey = isRV ? 'lmcRV' : 'lmc';
+    const lmcKey = _getLmcKey(mode);
     if (nm > this[lmcKey]) { this[lmcKey] = nm; this.malaOk(); App.silentMonkBackup(); }
     this.ua();
   },
 
   undo1() {
-    const isRV = this.S.japMode === 'rv';
-    const hist = isRV ? this.S.historyRV : this.S.history;
+    const hist = this.getCurHistory();
     if ((hist[this.S.tk] || 0) > 0) {
       hist[this.S.tk]--;
-      const lmcKey = isRV ? 'lmcRV' : 'lmc';
+      const lmcKey = _getLmcKey(this.S.japMode);
       this[lmcKey] = Math.floor(this.gTod() / (this.S.ms || 108));
       this.save(); fbDebouncedPush(); this.ua(); this.vib([10]);
     }
@@ -899,7 +996,6 @@ function toast(msg) {
 
 // ── RV Target Save ──
 function svtRV(type) {
-  const ms = App.S.ms || 108;
   if (type === 'd') {
     const v = parseInt(document.getElementById('dtRVIn').value) || 0;
     App.S.dtRV = v;
@@ -907,15 +1003,38 @@ function svtRV(type) {
   App.save(); fbDebouncedPush(); App.ua(); toast('RV Daily Target saved! 🎯');
 }
 
+// ── Target input sync: jap ↔ mala (used by both Radha and RV settings inputs) ──
+function syncTargetJapToMala(prefix) {
+  const ms = App.S.ms || 108;
+  const japEl = document.getElementById(prefix + 'In');
+  const malaEl = document.getElementById(prefix + 'MalaIn');
+  const dispEl = document.getElementById(prefix + 'Mala');
+  const jap = parseInt((japEl && japEl.value) || 0) || 0;
+  if (malaEl) malaEl.value = jap > 0 ? Math.round(jap / ms) : '';
+  if (dispEl) dispEl.textContent = Math.ceil(jap / ms);
+}
+function syncTargetMalaToJap(prefix) {
+  const ms = App.S.ms || 108;
+  const japEl = document.getElementById(prefix + 'In');
+  const malaEl = document.getElementById(prefix + 'MalaIn');
+  const dispEl = document.getElementById(prefix + 'Mala');
+  const malas = parseInt((malaEl && malaEl.value) || 0) || 0;
+  if (japEl) japEl.value = malas > 0 ? malas * ms : '';
+  if (dispEl) dispEl.textContent = malas;
+}
+
 // ── Init RV mode UI on page load ──
 function initJapModeUI() {
-  if (App.S.japMode === 'rv') switchJapMode('rv');
+  const mode = App.S.japMode || 'radha';
+  switchJapMode(mode);
   // Populate RV target inputs
   const dtRVIn = document.getElementById('dtRVIn');
   if (dtRVIn && App.S.dtRV) dtRVIn.value = App.S.dtRV;
   const ms = App.S.ms || 108;
   const dtRVM = document.getElementById('dtRVMala');
   if (dtRVM) dtRVM.textContent = Math.floor((App.S.dtRV||0)/ms);
+  // Init sampraday selector buttons
+  updateSampradayUI();
 }
 
 // ── Naam Selector Toggle ──
@@ -940,37 +1059,139 @@ function closeNaamSelOutside(e) {
     document.removeEventListener('click', closeNaamSelOutside);
   }
 }
+// Sampraday config data
+const SAMPRADAY_MODES = {
+  radha:      { sp:'rv',        titleHi:'राधा',            titleBn:'রাধা',           toast:'राधा 🌸' },
+  rv:         { sp:'rv',        titleHi:'राधावल्लभ\nश्री हरिवंश', titleBn:'রাধাবল্লভ\nশ্রী হরিবংশ', toast:'राधावल्लभ श्री हरिवंश 🙏' },
+  mahamantra: { sp:'gaudiya',   titleHi:'महामंत्र',         titleBn:'মহামন্ত্র',       toast:'हरे कृष्ण 🔔' },
+  ram:        { sp:'ramanandi', titleHi:'राम',             titleBn:'রাম',            toast:'राम 🏹' },
+  ramvijay:   { sp:'ramanandi', titleHi:'राम विजय',        titleBn:'রাম বিজয়',       toast:'श्री राम जय राम 🏹' },
+  shiv:       { sp:'shaiva',    titleHi:'सदा शिव',         titleBn:'সদা শিব',         toast:'हर हर महादेव 🔱' },
+};
+const MANTRA_DATA = {
+  mahamantra: {
+    hi: 'हरे कृष्ण हरे कृष्ण\nकृष्ण कृष्ण हरे हरे\nहरे राम हरे राम\nराम राम हरे हरे',
+    bn: 'হরে কৃষ্ণ হরে কৃষ্ণ\nকৃষ্ণ কৃষ্ণ হরে হরে\nহরে রাম হরে রাম\nরাম রাম হরে হরে',
+    celebHi: 'জয় শ্রী কৃষ্ণ চৈতন্য',
+    celebLine1Hi: 'জয় শ্রীকৃষ্ণ চৈতন্য প্রভু নিত্যানন্দ',
+    celebLine2Hi: 'শ্রী অদ্বৈত গদাধর শ্রীবাসাদি শ্রী গৌরভক্তবৃন্দ',
+    celebLine1Bn: 'জয় শ্রীকৃষ্ণ চৈতন্য প্রভু নিত্যানন্দ',
+    celebLine2Bn: 'শ্রী অদ্বৈত গদাধর শ্রীবাসাদি শ্রী গৌরভক্তবৃন্দ',
+  },
+  ramvijay: {
+    hi: 'श्री राम जय राम जय जय राम\nश्री राम जय राम जय जय राम',
+    bn: 'শ্রী রাম জয় রাম জয় জয় রাম\nশ্রী রাম জয় রাম জয় জয় রাম',
+  },
+};
+const CELEB_DATA = {
+  rv:         { line1:'Radha Ballabh', line2:'Sri Harivansh', line1Hi:'राधावल्लभ', line2Hi:'श्री हरिवंश', line1Bn:'রাধাবল্লভ', line2Bn:'শ্রী হরিবংশ' },
+  radha:      { line1:'Radha Ballabh', line2:'Sri Harivansh', line1Hi:'राधावल्लभ', line2Hi:'श्री हरिवंश', line1Bn:'রাধাবল্লভ', line2Bn:'শ্রী হরিবংশ' },
+  mahamantra: { line1Hi:'জয় শ্রীকৃষ্ণ চৈতন্য', line2Hi:'শ্রী অদ্বৈত গদাধর শ্রীবাসাদি শ্রী গৌরভক্তবৃন্দ', line1Bn:'জয় শ্রীকৃষ্ণ চৈতন্য', line2Bn:'শ্রী গৌরভক্তবৃন্দ' },
+  ram:        { line1Hi:'जय श्री राम', line2Hi:'', line1Bn:'জয় শ্রী রাম', line2Bn:'' },
+  ramvijay:   { line1Hi:'जय श्री राम', line2Hi:'', line1Bn:'জয় শ্রী রাম', line2Bn:'' },
+  shiv:       { line1Hi:'हर हर महादेव', line2Hi:'', line1Bn:'হর হর মহাদেব', line2Bn:'' },
+};
+
+function _getLmcKey(mode) {
+  if (mode === 'rv') return 'lmcRV';
+  if (mode === 'mahamantra') return 'lmcGaudiya';
+  if (mode === 'ram' || mode === 'ramvijay') return 'lmcRamanandi';
+  if (mode === 'shiv') return 'lmcShaiva';
+  return 'lmc';
+}
+
+function _updateMalaCelebration(mode) {
+  const script = (App.S.mantraScript || 'hi');
+  const cd = CELEB_DATA[mode] || CELEB_DATA['rv'];
+  const l1 = cd['line1'+script.charAt(0).toUpperCase()+script.slice(1)] || cd.line1Hi || cd.line1 || '';
+  const l2 = cd['line2'+script.charAt(0).toUpperCase()+script.slice(1)] || cd.line2Hi || cd.line2 || '';
+  // Normal mf
+  const el1 = document.getElementById('mfLine1'); if (el1) el1.textContent = l1;
+  const el2 = document.getElementById('mfLine2'); if (el2) el2.textContent = l2;
+  // Mantra mf
+  const ml1 = document.getElementById('mfMantraLine1'); if (ml1) ml1.textContent = l1;
+  const ml2 = document.getElementById('mfMantraLine2'); if (ml2) ml2.textContent = l2;
+}
+
+function toggleMantraScript(sc) {
+  App.S.mantraScript = sc;
+  App.save();
+  document.getElementById('msBtnHi').style.background = sc==='hi' ? 'rgba(255,152,0,0.2)' : 'transparent';
+  document.getElementById('msBtnBn').style.background = sc==='bn' ? 'rgba(109,184,255,0.2)' : 'transparent';
+  _updateMantraDisplay();
+}
+
+function _updateMantraDisplay() {
+  const mode = App.S.japMode;
+  const sc = App.S.mantraScript || 'hi';
+  const isMantraMode = mode === 'mahamantra' || mode === 'ramvijay';
+  const wrap = document.getElementById('mantraDisplayWrap');
+  const tz = document.getElementById('tz');
+  if (wrap) wrap.style.display = isMantraMode ? 'block' : 'none';
+  if (tz) tz.style.display = isMantraMode ? 'none' : '';
+  if (!isMantraMode) return;
+  const md = MANTRA_DATA[mode];
+  if (!md) return;
+  const mt = document.getElementById('mantraText');
+  const mb = document.getElementById('mantraBengali');
+  if (mt) { mt.textContent = md.hi; mt.style.whiteSpace = 'pre-line'; }
+  if (mb) {
+    if (sc === 'bn') { mb.textContent = md.bn; mb.style.display = ''; mt.style.display = 'none'; }
+    else { mb.style.display = 'none'; mt.style.display = ''; }
+  }
+}
+
 function switchJapMode(mode) {
   App.S.japMode = mode;
   const dd = document.getElementById('naamSelDd');
   const btn = document.getElementById('naamSelBtn');
-  dd.classList.remove('show');
-  btn.classList.remove('open');
+  if (dd) dd.classList.remove('show');
+  if (btn) btn.classList.remove('open');
   document.removeEventListener('click', closeNaamSelOutside);
-  // Update UI
-  const optR = document.getElementById('naamOptRadha');
-  const optRV = document.getElementById('naamOptRV');
+
+  // Update checkmarks
+  ['Radha','RV','Maha','Ram','RamVijay','Shiv'].forEach(id => {
+    const opt = document.getElementById('naamOpt'+id);
+    if (opt) { opt.classList.remove('active'); opt.querySelector('.ns-check').textContent = ''; }
+  });
+  const modeToOptId = { radha:'Radha', rv:'RV', mahamantra:'Maha', ram:'Ram', ramvijay:'RamVijay', shiv:'Shiv' };
+  const activeOpt = document.getElementById('naamOpt' + (modeToOptId[mode] || 'Radha'));
+  if (activeOpt) { activeOpt.classList.add('active'); activeOpt.querySelector('.ns-check').textContent = '✓'; }
+
+  // Update title display
   const titleEl = document.getElementById('rnTitle');
-  if (mode === 'rv') {
-    optR.classList.remove('active'); optR.querySelector('.ns-check').textContent = '';
-    optRV.classList.add('active'); optRV.querySelector('.ns-check').textContent = '✓';
-    titleEl.innerHTML = '<span style="font-size:clamp(18px,5vw,28px);line-height:1.1">राधावल्लभ</span><br><span style="font-size:clamp(16px,4.5vw,24px);line-height:1.1">श्री हरिवंश</span>';
-    titleEl.style.textAlign = 'center';
-  } else {
-    optRV.classList.remove('active'); optRV.querySelector('.ns-check').textContent = '';
-    optR.classList.add('active'); optR.querySelector('.ns-check').textContent = '✓';
-    titleEl.textContent = 'राधा';
-    titleEl.style.textAlign = '';
+  if (titleEl) {
+    const sc = App.S.mantraScript || 'hi';
+    const sd = SAMPRADAY_MODES[mode] || SAMPRADAY_MODES['radha'];
+    const titleKey = sc === 'bn' ? 'titleBn' : 'titleHi';
+    const titleText = sd[titleKey] || sd.titleHi;
+    if (titleText.includes('\n')) {
+      const parts = titleText.split('\n');
+      titleEl.innerHTML = '<span style="font-size:clamp(18px,5vw,28px);line-height:1.1">'+parts[0]+'</span><br><span style="font-size:clamp(16px,4.5vw,24px);line-height:1.1">'+parts[1]+'</span>';
+      titleEl.style.textAlign = 'center';
+    } else {
+      titleEl.textContent = titleText;
+      titleEl.style.textAlign = '';
+    }
   }
-  // Reset mala counter for the mode
+
+  // Show/hide mantra display vs tap zone
+  _updateMantraDisplay();
+  // Update celebration text
+  _updateMalaCelebration(mode);
+  // Update script toggle buttons
+  const sc = App.S.mantraScript || 'hi';
+  const hb = document.getElementById('msBtnHi'); if(hb) hb.style.background = sc==='hi'?'rgba(255,152,0,0.2)':'transparent';
+  const bb = document.getElementById('msBtnBn'); if(bb) bb.style.background = sc==='bn'?'rgba(109,184,255,0.2)':'transparent';
+
+  // Reset lmc counter
   const ms = App.S.ms || 108;
-  if (mode === 'rv') {
-    App.lmcRV = Math.floor((App.S.historyRV[App.S.tk]||0) / ms);
-  } else {
-    App.lmc = Math.floor((App.S.history[App.S.tk]||0) / ms);
-  }
+  const lmcKey = _getLmcKey(mode);
+  App[lmcKey] = Math.floor((App.getCurHistory()[App.S.tk] || 0) / ms);
+
   App.save(); App.ua(); uStats(); renderMalaLog();
-  toast(mode === 'rv' ? 'राधावल्लभ श्री हरिवंश 🙏' : 'राधा 🙏');
+  const sd = SAMPRADAY_MODES[mode] || SAMPRADAY_MODES['radha'];
+  toast(sd.toast);
 }
 
 
@@ -1008,16 +1229,31 @@ function sv(id, btn) {
   document.getElementById(id).classList.add('active');
   if (btn) btn.classList.add('active');
   if (id === 'vs') { uStats(); _historyAutoLoaded = false; }
-  if (id === 'vb') { initBrahmaStartInput(); renderCal(); }
+  if (id === 'vb') { initBrahmaStartInput(); renderCal(); renderEkadashiList(); requestAnimationFrame(function(){ setTimeout(renderBcGraph, 50); }); }
   if (id === 'vst') renderSt();
   if (id === 'v28') { u28(); render28Dots(get28Pos()); }
   else { App.flush28TimeToHistory(); }
   if (id === 'vms') { renderMilestonesTab(); }
   if (id === 'vset') {
+    const ms = App.S.ms || 108;
     if (App.S.dt) document.getElementById('dtIn').value = App.S.dt;
     if (App.S.lt) document.getElementById('ltIn').value = App.S.lt;
-    document.getElementById('msIn').value = App.S.ms || 108;
+    document.getElementById('msIn').value = ms;
+    // Populate mala equivalents for Radha targets
+    const dtMalaInEl = document.getElementById('dtMalaIn');
+    if (dtMalaInEl) dtMalaInEl.value = App.S.dt > 0 ? Math.round(App.S.dt / ms) : '';
+    const ltMalaInEl = document.getElementById('ltMalaIn');
+    if (ltMalaInEl) ltMalaInEl.value = App.S.lt > 0 ? Math.round(App.S.lt / ms) : '';
+    // Populate RV daily target (fix: was missing, target not showing)
+    const dtRVEl = document.getElementById('dtRVIn');
+    if (dtRVEl) dtRVEl.value = App.S.dtRV > 0 ? App.S.dtRV : '';
+    const dtRVMalaInEl = document.getElementById('dtRVMalaIn');
+    if (dtRVMalaInEl) dtRVMalaInEl.value = App.S.dtRV > 0 ? Math.round(App.S.dtRV / ms) : '';
+    const dtRVMalaDisp = document.getElementById('dtRVMala');
+    if (dtRVMalaDisp) dtRVMalaDisp.textContent = Math.floor((App.S.dtRV || 0) / ms);
     initReminderUI();
+    renderEkadashiList();
+    renderEkParampara();
     // Populate the app link display
     const appUrl = _getAppUrl();
     const linkEl = document.getElementById('appLinkDisplay');
@@ -1193,7 +1429,7 @@ function autoLoadHistory() {
   const body = document.getElementById('historyBody');
   if (!body || !body.classList.contains('open')) return;
   _historyAutoLoaded = true;
-  const today = new Date().toISOString().split('T')[0];
+  const today = _ldk(new Date());
   const f = document.getElementById('histFrom'), t = document.getElementById('histTo');
   if (f && !f.value) f.value = today;
   if (t && !t.value) t.value = today;
@@ -1221,9 +1457,9 @@ function addManualJap() {
   App.S.tk = App.getTk();
   if (!App.S.history) App.S.history = {};
   if (!App.S.historyRV) App.S.historyRV = {};
-  const isRV = App.S.japMode === 'rv';
-  if (isRV) { App.S.historyRV[App.S.tk] = (App.S.historyRV[App.S.tk] || 0) + n; }
-  else { App.S.history[App.S.tk] = (App.S.history[App.S.tk] || 0) + n; }
+  const _ch = App.getCurHistory();
+  _ch[App.S.tk] = (_ch[App.S.tk] || 0) + n;
+  const isRV = App.S.japMode === 'rv'; // kept for compat below
   // Handle time input — add mala log entries then sync timerHistory from log sum
   const minEl = document.getElementById('manualJapMin');
   const secEl = document.getElementById('manualJapSec');
@@ -1237,7 +1473,7 @@ function addManualJap() {
     const ms2 = App.S.ms || 108;
     const malasAdded = Math.max(1, Math.floor(n / ms2));
     avgPerMala = Math.round(timeSecs / malasAdded);
-    const log = isRV ? (App.S.malaLogRV || (App.S.malaLogRV = [])) : (App.S.malaLog || (App.S.malaLog = []));
+    const log = App.getMalaLog();
     const now = Date.now();
     for (let i = 0; i < malasAdded; i++) {
       log.push(avgPerMala);
@@ -1285,9 +1521,8 @@ function addPrevJap() {
   const n = parseInt(document.getElementById('prevJapIn').value) || 0;
   if (n <= 0) { toast('Please enter a number > 0'); return; }
   const prevKey = 'prev_' + Date.now();
-  const isRV = App.S.japMode === 'rv';
-  if (isRV) { App.S.historyRV[prevKey] = n; }
-  else { App.S.history[prevKey] = n; }
+  const _ph = App.getCurHistory();
+  _ph[prevKey] = n;
   App.save(); App.ua(); fbDebouncedPush();
   document.getElementById('prevJapIn').value = '';
   toast('Added ' + n.toLocaleString() + ' jap to lifetime! 🙏 Jai Radhe!');
@@ -1324,19 +1559,18 @@ function removeNameJapDeduct() {
 function deductTodayJap() {
   const n = parseInt(document.getElementById('deductTodayIn').value) || 0;
   if (n <= 0) { toast('Please enter a number > 0'); return; }
-  const isRV = App.S.japMode === 'rv';
-  const hist = isRV ? App.S.historyRV : App.S.history;
-  const cur = hist[App.S.tk] || 0;
+  const _dh = App.getCurHistory();
+  const cur = _dh[App.S.tk] || 0;
   if (n > cur) { toast('Cannot deduct more than today\'s count (' + cur + ')'); return; }
-  hist[App.S.tk] = cur - n;
-  const lmcKey = isRV ? 'lmcRV' : 'lmc';
+  _dh[App.S.tk] = cur - n;
+  const lmcKey = _getLmcKey(App.S.japMode);
   App[lmcKey] = Math.floor(App.gTod() / (App.S.ms || 108));
 
   // Explicit time input wins; otherwise fall back to proportional removal from mala log
   const minEl = document.getElementById('deductTodayMin');
   const secEl = document.getElementById('deductTodaySec');
   const explicitTime = (parseInt(minEl?.value) || 0) * 60 + Math.min(59, Math.max(0, parseInt(secEl?.value) || 0));
-  const log = isRV ? (App.S.malaLogRV || (App.S.malaLogRV = [])) : (App.S.malaLog || (App.S.malaLog = []));
+  const log = App.getMalaLog();
 
   if (explicitTime > 0) {
     // Shrink the mala log entries proportionally so total drops by explicitTime,
@@ -1374,19 +1608,18 @@ function deductOtherJap() {
   const n = parseInt(document.getElementById('deductOtherIn').value) || 0;
   if (!date) { toast('Please select a date'); return; }
   if (n <= 0) { toast('Please enter a number > 0'); return; }
-  const isRV = App.S.japMode === 'rv';
-  const hist = isRV ? App.S.historyRV : App.S.history;
+  const hist = App.getCurHistory();
+  const th_d = App.getCurTimerHistory();
   const cur = hist[date] || 0;
   if (n > cur) { toast('Cannot deduct more than that day\'s count (' + cur + ')'); return; }
   hist[date] = cur - n;
 
-  // Optional time deduction — directly subtract from per-day timerHistory
+  // Optional time deduction
   const minEl = document.getElementById('deductOtherMin');
   const secEl = document.getElementById('deductOtherSec');
   const timeSecs = (parseInt(minEl?.value) || 0) * 60 + Math.min(59, Math.max(0, parseInt(secEl?.value) || 0));
   if (timeSecs > 0) {
-    const th = isRV ? (App.S.timerHistoryRV || (App.S.timerHistoryRV = {})) : (App.S.timerHistory || (App.S.timerHistory = {}));
-    th[date] = Math.max(0, (th[date] || 0) - timeSecs);
+    th_d[date] = Math.max(0, (th_d[date] || 0) - timeSecs);
   }
 
   App.save(); App.ua(); fbDebouncedPush(); renderCal();
@@ -1403,17 +1636,16 @@ function addOtherDayJap() {
   const n = parseInt(document.getElementById('addJapOtherIn').value) || 0;
   if (!date) { toast('Please select a date'); return; }
   if (n <= 0) { toast('Please enter a number > 0'); return; }
-  const isRV = App.S.japMode === 'rv';
-  const hist = isRV ? App.S.historyRV : App.S.history;
+  const hist = App.getCurHistory();
   hist[date] = (hist[date] || 0) + n;
 
-  // Optional estimated time — directly add to per-day timerHistory
+  // Optional estimated time
   const minEl = document.getElementById('addJapOtherMin');
   const secEl = document.getElementById('addJapOtherSec');
   const timeSecs = (parseInt(minEl?.value) || 0) * 60 + Math.min(59, Math.max(0, parseInt(secEl?.value) || 0));
   if (timeSecs > 0) {
-    const th = isRV ? (App.S.timerHistoryRV || (App.S.timerHistoryRV = {})) : (App.S.timerHistory || (App.S.timerHistory = {}));
-    th[date] = (th[date] || 0) + timeSecs;
+    const th_a = App.getCurTimerHistory();
+    th_a[date] = (th_a[date] || 0) + timeSecs;
   }
 
   App.save(); App.ua(); fbDebouncedPush(); renderCal();
@@ -1441,7 +1673,7 @@ function addJapTimeToday() {
   // Keep mala log in harmony: distribute added time proportionally across existing entries
   // or add a single adjustment entry if no malas done yet today
   const isRV = App.S.japMode === 'rv';
-  const log = isRV ? (App.S.malaLogRV || (App.S.malaLogRV = [])) : (App.S.malaLog || (App.S.malaLog = []));
+  const log = App.getMalaLog();
   if (log.length > 0) {
     // Distribute proportionally: each mala entry gets its share
     const total = log.reduce((a, b) => a + b, 0);
@@ -1491,7 +1723,7 @@ function deductJapTimeToday() {
   th3[App.S.tk] = cur - secs;
   // Keep mala log in harmony: reduce entries proportionally
   const isRV = App.S.japMode === 'rv';
-  const log = isRV ? (App.S.malaLogRV || []) : (App.S.malaLog || []);
+  const log = App.getMalaLog();
   if (log.length > 0) {
     const total = log.reduce((a, b) => a + b, 0);
     if (total > 0) {
@@ -1539,13 +1771,13 @@ function uStats() {
   const curHist = App.getCombinedHistory(); // COMBINED radha + RV
   const curTimerHist = App.getCombinedTimerHistory(); // COMBINED timer
   const wk = [];
-  for (let i = 6; i >= 0; i--) { const d = new Date(now); d.setDate(d.getDate()-i); wk.push(d.toISOString().split('T')[0]); }
+  for (let i = 6; i >= 0; i--) { const d = new Date(now); d.setDate(d.getDate()-i); wk.push(_ldk(d)); }
   const ws = wk.reduce((s,k) => s + (curHist[k]||0), 0);
-  const mp = now.toISOString().slice(0,7);
+  const mp = _ldk(now).slice(0,7);
   let ms2 = 0, best = 0, streak = 0;
   Object.entries(curHist).forEach(([k,v]) => { if (k.startsWith(mp)) ms2 += v; if (!k.startsWith('prev_') && v > best) best = v; });
   const d2 = new Date();
-  while (streak < 999) { const k = d2.toISOString().split('T')[0]; if ((curHist[k]||0) > 0) { streak++; d2.setDate(d2.getDate()-1); } else break; }
+  while (streak < 999) { const k = _ldk(d2); if ((curHist[k]||0) > 0) { streak++; d2.setDate(d2.getDate()-1); } else break; }
   document.getElementById('sTod').textContent = tod;
   document.getElementById('sTodM').textContent = Math.floor(tod/ms) + ' malas';
   document.getElementById('sWk').textContent = ws;
@@ -1646,9 +1878,44 @@ function uStats() {
   const dod = document.getElementById('deductOtherDate');
   if (mji) { const n = parseInt(mji.value)||0; document.getElementById('manualMalaPreview').textContent = n>0?Math.floor(n/ms):'0'; document.getElementById('manualTodayPreview').textContent = n>0?(tod+n):'—'; }
   if (pji) { const n = parseInt(pji.value)||0; document.getElementById('prevMalaPreview').textContent = n>0?Math.floor(n/ms):'0'; document.getElementById('prevLifetimePreview').textContent = n>0?(tot+n).toLocaleString():'—'; }
-  if (aoi && aod) { const n = parseInt(aoi.value)||0; const d = aod.value; const curH = App.S.japMode==='rv' ? App.S.historyRV : App.S.history; const cur = d ? (curH[d]||0) : 0; document.getElementById('addJapOtherPreview').textContent = n>0 && d ? (cur+n) : '—'; }
+  if (aoi && aod) { const n = parseInt(aoi.value)||0; const d = aod.value; const curH = App.getCurHistory(); const cur = d ? (curH[d]||0) : 0; document.getElementById('addJapOtherPreview').textContent = n>0 && d ? (cur+n) : '—'; }
   if (dti2) { const n = parseInt(dti2.value)||0; document.getElementById('deductTodayPreview').textContent = n>0 ? Math.max(0, tod-n) : '—'; }
-  if (doi && dod) { const n = parseInt(doi.value)||0; const d = dod.value; const curH2 = App.S.japMode==='rv' ? App.S.historyRV : App.S.history; const cur = d ? (curH2[d]||0) : 0; document.getElementById('deductOtherPreview').textContent = n>0 && d ? Math.max(0,cur-n) : '—'; }
+  if (doi && dod) { const n = parseInt(doi.value)||0; const d = dod.value; const curH2 = App.getCurHistory(); const cur = d ? (curH2[d]||0) : 0; document.getElementById('deductOtherPreview').textContent = n>0 && d ? Math.max(0,cur-n) : '—'; }
+  // ── Sampraday-specific stats section show/hide ──────────────────
+  const _sp = App.S.sampraday || 'rv';
+  const _isRVSp = _sp === 'rv';
+  const rvSec = document.getElementById('rvStatsSection');
+  const spSec = document.getElementById('spStatsSection');
+  const rvLtRow = document.getElementById('rvLtJapRow');
+  if (rvSec) rvSec.style.display = _isRVSp ? '' : 'none';
+  if (spSec) spSec.style.display = _isRVSp ? 'none' : 'block';
+  if (rvLtRow) rvLtRow.style.display = _isRVSp ? '' : 'none';
+  // Update "Total Jap" label
+  const totLabel = document.getElementById('sTotLabel');
+  if (totLabel) {
+    const spLabels = {rv:'Total Jap (Radha + RV)', gaudiya:'Total Jap (Mahamantra)', ramanandi:'Total Jap (Raam)', shaiva:'Total Jap (Shiv)'};
+    totLabel.textContent = spLabels[_sp] || 'Total Jap';
+  }
+  if (!_isRVSp) {
+    // Fill non-RV sampraday stats
+    const _spHist = App.getCombinedHistory();
+    const _spTimer = App.getCombinedTimerHistory();
+    const _spLifetime = App.gTot();
+    const _spLtEl = document.getElementById('spLifetime'); if(_spLtEl) _spLtEl.textContent = _spLifetime.toLocaleString('en-IN');
+    const _spLtMEl = document.getElementById('spLifetimeM'); if(_spLtMEl) _spLtMEl.textContent = Math.floor(_spLifetime/ms)+' malas';
+    const _spLabel = document.getElementById('spLifetimeLabel');
+    if (_spLabel) { const ll={gaudiya:'Mahamantra Lifetime',ramanandi:'Raam Jap Lifetime',shaiva:'Shiv Jap Lifetime'}; _spLabel.textContent = ll[_sp]||'Lifetime Jap'; }
+    const liveXtra = App.timerRunning ? Math.max(0, App.timerSeconds - App.timerSavedSeconds) : 0;
+    const _spTod = (_spTimer[App.S.tk]||0)+liveXtra;
+    const _spWk  = wk.reduce((s,k)=>s+(_spTimer[k]||0),0)+liveXtra;
+    const _spMo  = Object.entries(_spTimer).filter(([k])=>k.startsWith(mp)).reduce((s,[,v])=>s+v,0)+liveXtra;
+    const _spLt  = Object.values(_spTimer).reduce((s,v)=>s+v,0)+liveXtra;
+    function _spFmt(s){ const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sc=s%60; return (h>0?h+'h ':'')+(m+'m ')+sc+'s'; }
+    const _set2 = (id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=_spFmt(v); };
+    _set2('spTimeTod',_spTod); _set2('spTimeWk',_spWk); _set2('spTimeMo',_spMo); _set2('spTimeLt',_spLt);
+  }
+  _updateStatsSampradayLabels();
+
   // Name Jap Deduct live previews
   const curDeduct = App.S.nameJapDeduct || 0;
   const rawTot = Object.values(App.S.history).reduce((a,b)=>a+b,0);
@@ -1699,7 +1966,7 @@ function renderMalaLog() {
   if (typeEl) typeEl.textContent = isRV ? '(\u0930\u093e\u0927\u093e\u0935\u0932\u094d\u0932\u092d)' : '(\u0930\u093e\u0927\u093e)';
   
   // FIX: Strict filtering — get the correct log for current mode only
-  const rawLog = isRV ? (App.S.malaLogRV || []) : (App.S.malaLog || []);
+  const rawLog = App.getMalaLog();
   // Filter out entries with 0 or invalid values
   const log = rawLog.filter(sec => typeof sec === 'number' && sec > 0 && isFinite(sec));
   
@@ -1741,7 +2008,7 @@ function renderMalaLog() {
 
 function editMalaEntry(idx) {
   const isRV = App.S.japMode === 'rv';
-  const log = isRV ? App.S.malaLogRV : App.S.malaLog;
+  const log = App.getMalaLog();
   if (!log || idx >= log.length) return;
   const cur = log[idx];
   const curM = Math.floor(cur / 60), curS = cur % 60;
@@ -1759,7 +2026,7 @@ function editMalaEntry(idx) {
 
 function deleteMalaEntry(idx) {
   const isRV = App.S.japMode === 'rv';
-  const log = isRV ? App.S.malaLogRV : App.S.malaLog;
+  const log = App.getMalaLog();
   if (!log || idx >= log.length) return;
   if (!confirm('Delete Mala ' + (idx+1) + ' entry?')) return;
   log.splice(idx, 1);
@@ -1819,7 +2086,7 @@ function doReset() {
     App.S.timer28History[tk] = 0;
     App.S.malaLog            = [];
     App.S.malaLogRV          = [];
-    App.S.activityLog        = (App.S.activityLog || []).filter(e => !e.ts || new Date(e.ts).toISOString().slice(0,10) !== tk);
+    App.S.activityLog        = (App.S.activityLog || []).filter(e => !e.ts || _ldk(new Date(e.ts)) !== tk);
     App.lmc = 0; App.lmcRV = 0; App.lm28 = 0;
     // Reset all sankalpas anchors since 28 Names count just zeroed
     (App.S.sankalpas||[]).filter(s => !s.done && s.startCycles !== null).forEach(s => {
@@ -1885,7 +2152,7 @@ function doReset() {
     // If today is in range, also clear live logs and IDB
     if (tk >= f && tk <= to) {
       App.S.malaLog = []; App.S.malaLogRV = [];
-      App.S.activityLog = (App.S.activityLog||[]).filter(e => !e.ts || new Date(e.ts).toISOString().slice(0,10) < f || new Date(e.ts).toISOString().slice(0,10) > to);
+      App.S.activityLog = (App.S.activityLog||[]).filter(e => !e.ts || _ldk(new Date(e.ts)) < f || _ldk(new Date(e.ts)) > to);
       App.lmc = 0; App.lmcRV = 0; App.lm28 = 0; App.stopAll28Timers();
       App.dbPut('history',        tk, 0);
       App.dbPut('timerHistory',   tk, 0);
@@ -1947,7 +2214,8 @@ function exportAllData() {
     malaLog: App.S.malaLog||[], malaLogDate: App.S.tk,
     brahmacharya_start_date: App.S.brahmacharya_start_date||'',
     japMode: App.S.japMode||'radha', historyRV: App.S.historyRV||{}, timerHistoryRV: App.S.timerHistoryRV||{},
-    dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0, nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[]
+    dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0, nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[],
+    customEkadashi: App.S.customEkadashi||[], ekParampara: App.S.ekParampara||'smarta'
   };
   const blob = new Blob([JSON.stringify(backup,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -1994,7 +2262,8 @@ function importAllData(input) {
       App.save();
       switchJapMode(App.S.japMode || 'radha');
       renderSt(); u28(); renderBcal(); renderCal(); uStats(); renderSankalpas(); renderMalaLog();
-      App.lmc = Math.floor((App.S.history[App.S.tk]||0) / (App.S.ms||108));
+      App.lmc = Math.floor(App.gTod() / (App.S.ms||108));
+      App[_getLmcKey(App.S.japMode)] = App.lmc;
       App.lm28 = Math.floor((App.S.h28[App.S.tk]||0) / (App.S.ms||108));
       if (st) { st.textContent = '✅ Data restored successfully! 🙏 Jai Radhe!'; st.style.color = 'var(--green)'; }
       toast('All data restored! 🙏 Jai Radhe!');
@@ -2048,20 +2317,22 @@ function renderVelocityTracker() { /* removed */ }
 function renderMilestonesTab() {
   const el = document.getElementById('msContent');
   if (!el) return;
-  const hist = App.S.history || {};
-  const histRV = App.S.historyRV || {};
-  const rawTot = Object.values(hist).reduce((a,b)=>a+b,0) + Object.values(histRV).reduce((a,b)=>a+b,0);
-  const deduct = App.S.nameJapDeduct || 0;
+  // Use active sampraday combined history for milestones
+  const _spHist = App.getCombinedHistory();
+  const hist = App.S.sampraday === 'rv' ? (App.S.history || {}) : _spHist;
+  const histRV = App.S.sampraday === 'rv' ? (App.S.historyRV || {}) : {};
+  const rawTot = App.gTot();
+  const deduct = App.S.sampraday === 'rv' ? (App.S.nameJapDeduct || 0) : 0;
   const total = Math.max(0, rawTot - deduct);
   const lang = window._msLang || 'hi';
 
-  // Calculate 7-day average
+  // Calculate 7-day average from active sampraday
   const today = new Date();
   let sum7 = 0;
   for (let i = 0; i < 7; i++) {
     const d = new Date(today); d.setDate(d.getDate() - i);
-    const k = d.toISOString().slice(0,10);
-    sum7 += (hist[k]||0) + (histRV[k]||0);
+    const k = _ldk(d);
+    sum7 += (_spHist[k]||0);
   }
   const avg7 = sum7 / 7;
 
@@ -2105,7 +2376,7 @@ function renderMilestonesTab() {
     if (avg7 <= 0) return null;
     const daysNeeded = Math.ceil(remaining / avg7);
     const d = new Date(); d.setDate(d.getDate() + daysNeeded);
-    return d.toLocaleDateString('en-IN', {day:'numeric',month:'short',year:'numeric'});
+    return String(d.getDate()).padStart(2,'0')+':'+String(d.getMonth()+1).padStart(2,'0')+':'+d.getFullYear();
   }
 
   let out = '';
@@ -2289,7 +2560,7 @@ function openMsDetail(type, count, pct, achieved) {
     if (v > peakVal) { peakVal = v; peakDay = k; }
   });
   if (peakVal > 0) {
-    peakDay = new Date(peakDay).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) + ' ('+peakVal.toLocaleString('en-IN')+' jap)';
+    const _pd=new Date(peakDay); peakDay = String(_pd.getDate()).padStart(2,'0')+':'+String(_pd.getMonth()+1).padStart(2,'0')+':'+_pd.getFullYear() + ' ('+peakVal.toLocaleString('en-IN')+' jap)';
   }
 
   const displayDesc = (lang==='bn' && descBn) ? descBn : desc;
@@ -2478,7 +2749,7 @@ function fbInit() {
           // Cloud pull in fbMigrate() will immediately overwrite with authoritative data.
           await App.load();
           App.lmc = Math.floor(App.gTod() / (App.S.ms||108));
-          App.lmcRV = Math.floor((App.S.historyRV[App.S.tk]||0) / (App.S.ms||108));
+          App[_getLmcKey(App.S.japMode)] = App.lmc;
           App.lm28 = Math.floor((App.S.h28[App.S.tk]||0) / (App.S.ms||108));
           switchJapMode(App.S.japMode || 'radha');
           App.ua(); renderSt(); u28(); renderBcal(); renderCal(); uStats(); renderSankalpas(); renderMalaLog();
@@ -2599,6 +2870,48 @@ function fbSignOut() {
 }
 
 // ── Firestore Full-State Sync ──
+// ── Remove legacy duplicate Ekadashi occasions ──
+// Old code wrote BOTH startDate and endDate into occasions{}.
+// New code writes only ONE date (the actual fasting date per parampara).
+// This migrates existing data: for each saved Ekadashi, keep only the fasting date
+// and delete the other one if it was set by the old code.
+function _cleanLegacyEkadashiOccasions() {
+  const eks = App.S.customEkadashi || [];
+  const occ = App.S.occasions || {};
+  const parampara = App.S.ekParampara || 'smarta';
+  eks.forEach(ek => {
+    const sd = _ekDate(ek);
+    const ed = (typeof ek === 'object' && ek.endDate) ? ek.endDate : sd;
+    if (!sd || sd === ed) return;
+    // Determine correct fasting date per current parampara
+    let fastingDate = sd;
+    if (parampara === 'vaishnava' && ek.startTime) {
+      const [h, m] = ek.startTime.split(':').map(Number);
+      if (h * 60 + m >= 264) fastingDate = ed;
+    }
+    const wrongDate = fastingDate === sd ? ed : sd;
+    // Only delete the wrongDate entry if it looks like it was written by Ekadashi code
+    if (wrongDate && occ[wrongDate]) {
+      const label = occ[wrongDate];
+      const ekName = (typeof ek === 'object' && ek.name) ? ek.name : '';
+      if (label.includes('Ekadashi') || label.includes('Mahadvadashi') || (ekName && label.includes(ekName))) {
+        delete occ[wrongDate];
+      }
+    }
+    // Rewrite the correct fasting date with the proper label (updates legacy format too)
+    const name = (typeof ek === 'object' && ek.name) ? ek.name : 'Ekadashi';
+    const paksha = (typeof ek === 'object' && ek.paksha) ? ek.paksha : 'shukla';
+    const label = name + (paksha === 'shukla' ? ' ☀️ Shukla' : ' 🌙 Krishna');
+    const sf = (typeof ek === 'object' && ek.startTime) ? _fmtTime12(ek.startTime) : '';
+    const ef = (typeof ek === 'object' && ek.endTime) ? _fmtTime12(ek.endTime) : '';
+    const timeNote = sf ? (parampara === 'vaishnava' && fastingDate === ed
+      ? ' (Mahadvadashi · Arunodaya Viddha)' : ' ' + sf + (ef ? '–' + ef : ''))
+      : (parampara === 'vaishnava' && fastingDate === ed ? ' (Mahadvadashi)' : '');
+    occ[fastingDate] = label + timeNote;
+  });
+  App.S.occasions = occ;
+}
+
 async function fbPushDelta() {
   return fbPushFull();
 }
@@ -2618,6 +2931,8 @@ async function fbPushFull() {
     dtRV: App.S.dtRV||0, ltRV: App.S.ltRV||0, nameJapDeductRV: App.S.nameJapDeductRV||0, malaLogRV: App.S.malaLogRV||[],
     brahmacharya_start_date: App.S.brahmacharya_start_date||'',
     activityLog: App.S.activityLog || [],
+    customEkadashi: App.S.customEkadashi || [], ekParampara: App.S.ekParampara||'smarta',
+    sadhanaStart: App.S.sadhanaStart || '',
     lastSync: firebase.firestore.FieldValue.serverTimestamp(),
     deviceId: fbDeviceId
   };
@@ -2702,6 +3017,21 @@ function fbApplyRemote(d) {
       App.S.malaLogRV = [];
     }
   }
+  // ── Ekadashi data — critical for multi-device sync ──
+  if ('customEkadashi' in d) App.S.customEkadashi = JSON.parse(JSON.stringify(d.customEkadashi || []));
+  if ('ekParampara' in d) App.S.ekParampara = d.ekParampara || 'smarta';
+  if (d.sadhanaStart) {
+    App.S.sadhanaStart = d.sadhanaStart;
+    localStorage.setItem('rjap_sadhana_start', d.sadhanaStart);
+    const inp = document.getElementById('msSadhanaStart');
+    if (inp) inp.value = d.sadhanaStart;
+  }
+
+  // ── Clean up legacy two-date Ekadashi occasions ──
+  // Old saves wrote both startDate AND endDate to occasions. Remove the endDate entry
+  // when the same Ekadashi name already appears on startDate.
+  _cleanLegacyEkadashiOccasions();
+
   if (!App.S.historyRV) App.S.historyRV = {};
   if (!App.S.timerHistoryRV) App.S.timerHistoryRV = {};
   if (!App.S.historyRV[App.S.tk]) App.S.historyRV[App.S.tk] = 0;
@@ -2720,6 +3050,8 @@ function fbApplyRemote(d) {
   App.lm28 = Math.floor((App.S.h28[App.S.tk]||0) / (App.S.ms||108));
   switchJapMode(App.S.japMode || 'radha');
   renderSt(); u28(); renderBcal(); renderCal(); uStats(); renderSankalpas(); renderMalaLog();
+  if (typeof renderEkadashiList === 'function') renderEkadashiList();
+  if (typeof renderEkParampara === 'function') renderEkParampara();
   setSyncPill('', '🔄 Synced from cloud');
 }
 
@@ -3565,6 +3897,220 @@ function toggleStEdit(id) {
 }
 function delSt(id) { App.S.customSt=(App.S.customSt||[]).filter(x=>x.id!==id); delete App.S.stotrams[id]; App.save(); fbDebouncedPush(); renderSt(); toast('Removed'); }
 
+// ═══════════════════════════════════════════════════════════════
+// PANCHANG ENGINE — GPS-based astronomical tithi, no API key
+// Moon elongation from sun (VSOP87 simplified) → tithi 1-30
+// Each 12° of elongation = 1 tithi
+// ═══════════════════════════════════════════════════════════════
+
+function _moonElongation(date) {
+  const JD = date.getTime() / 86400000 + 2440587.5;
+  const T  = (JD - 2451545.0) / 36525.0;
+  const r  = Math.PI / 180;
+  const L0 = (280.46646 + 36000.76983 * T) % 360;
+  const M  = (357.52911 + 35999.05029 * T - 0.0001537 * T * T) % 360;
+  const Mr = M * r;
+  const C  = (1.914602 - 0.004817*T - 0.000014*T*T)*Math.sin(Mr)
+           + (0.019993 - 0.000101*T)*Math.sin(2*Mr)
+           +  0.000289*Math.sin(3*Mr);
+  const sunLon = L0 + C;
+  const Lm = (218.3164477 + 481267.88123421*T - 0.0015786*T*T) % 360;
+  const Mm = (134.9633964 + 477198.8675055 *T + 0.0087414*T*T) % 360;
+  const F  = ( 93.2720950 + 483202.0175233 *T - 0.0036539*T*T) % 360;
+  const D  = (297.8501921 + 445267.1114034 *T - 0.0018819*T*T) % 360;
+  const Mmr=Mm*r, Fr=F*r, Dr=D*r;
+  const moonLon = Lm
+    + 6.289*Math.sin(Mmr)   - 1.274*Math.sin(2*Dr-Mmr)
+    + 0.658*Math.sin(2*Dr)  - 0.214*Math.sin(2*Mmr)
+    + 0.059*Math.sin(2*Dr-2*Mmr+Mmr) - 0.057*Math.sin(2*Dr-Mr-Mmr)
+    + 0.053*Math.sin(2*Dr+Mmr) + 0.046*Math.sin(2*Dr-Mr)
+    + 0.041*Math.sin(Mmr-Mr)   - 0.034*Math.sin(Dr)
+    + 0.030*Math.sin(2*Mmr-Mr) - 0.024*Math.sin(2*(Dr-Mmr))
+    + 0.018*Math.sin(2*Dr-2*Fr-Mmr);
+  return ((moonLon - sunLon) % 360 + 360) % 360;
+}
+
+// tithi 1-30 at a given moment
+function _tithiAtMoment(date) {
+  return Math.floor(_moonElongation(date) / 12) + 1;
+}
+
+// Binary-search exact moment elongation crosses a degree boundary within [lo,hi]
+function _findElongCrossing(targetDeg, lo, hi) {
+  let loT = lo.getTime(), hiT = hi.getTime();
+  for (let i = 0; i < 48; i++) {
+    const mid = (loT + hiT) / 2;
+    const e = _moonElongation(new Date(mid));
+    const diff = ((e - targetDeg + 360) % 360);
+    if (diff < 180) hiT = mid; else loT = mid;
+    if (hiT - loT < 15000) break; // 15-second precision
+  }
+  return new Date((loT + hiT) / 2);
+}
+
+function _didCross(prev, cur, deg) {
+  if (prev > 330 && cur < 30) return deg > 330 ? prev <= deg : deg < 30 ? cur >= deg : false;
+  return prev < deg && cur >= deg;
+}
+
+// Find Ekadashi tithi start/end in a window. Returns {paksha, ekStart, ekEnd} or null.
+function _findEkInWindow(wStart, wEnd, paksha) {
+  const startDeg = paksha === 'shukla' ? 120 : 300;
+  const endDeg   = paksha === 'shukla' ? 132 : 312;
+  const DAY = 86400000;
+  let prev = _moonElongation(wStart), ekStart = null, ekEnd = null;
+  const cur = new Date(wStart);
+  while (cur <= wEnd) {
+    cur.setTime(cur.getTime() + DAY);
+    const e = _moonElongation(cur);
+    if (!ekStart && _didCross(prev, e, startDeg))
+      ekStart = _findElongCrossing(startDeg, new Date(cur.getTime()-DAY), new Date(cur));
+    if (ekStart && !ekEnd && _didCross(prev, e, endDeg))
+      ekEnd   = _findElongCrossing(endDeg,   new Date(cur.getTime()-DAY), new Date(cur));
+    if (ekStart && ekEnd) break;
+    prev = e;
+  }
+  if (!ekStart) return null;
+  if (!ekEnd) ekEnd = new Date(ekStart.getTime() + 90000000); // ~25h fallback
+  return { paksha, ekStart, ekEnd };
+}
+
+function _d2hhmm(d) {
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+function _d2ymd(d) {
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+// Resolve the single fasting date per parampara from an Ek result
+function _resolveEkFasting(ek, lat, lng, name) {
+  const { paksha, ekStart, ekEnd } = ek;
+  const startDate = _d2ymd(ekStart), endDate = _d2ymd(ekEnd);
+  const startTime = _d2hhmm(ekStart), endTime = _d2hhmm(ekEnd);
+  const srData = calcSunTimes(lat, lng, ekStart);
+  const sunriseH = srData ? srData.sunriseH : 6.0;
+  const arunodayaH = sunriseH - 96/60;
+  const ekStartH = ekStart.getHours() + ekStart.getMinutes()/60;
+  const parampara = App.S.ekParampara || 'smarta';
+  let fastingDate = startDate, isViddha = false;
+  if (parampara === 'vaishnava') {
+    if (ekStartH > arunodayaH) { fastingDate = endDate; isViddha = true; }
+  } else {
+    // Smarta: fast on day where Ekadashi is present at sunrise
+    if (ekStartH > sunriseH) fastingDate = endDate;
+  }
+  const pakshaLabel = paksha === 'shukla' ? ' ☀️ Shukla' : ' 🌙 Krishna';
+  const label = (name||'Ekadashi') + pakshaLabel + (isViddha ? ' (Mahadvadashi)' : '');
+  return { name: name||'Ekadashi', paksha, isViddha, startDate, startTime, endDate, endTime, fastingDate, label };
+}
+
+// Ekadashi names indexed by JS Date.getMonth() (0=Jan … 11=Dec)
+// Shukla Paksha (Bright Fortnight) Ekadashis
+const _EK_NAMES_SHUKLA = [
+  'Pausha Putrada',  // 0 = January   (Month 10 Pausha)
+  'Jaya',            // 1 = February  (Month 11 Magha)
+  'Amalaki',         // 2 = March     (Month 12 Phalguna)
+  'Kamada',          // 3 = April     (Month 1  Chaitra)
+  'Mohini',          // 4 = May       (Month 2  Vaishakha)
+  'Nirjala',         // 5 = June      (Month 3  Jyeshtha)
+  'Devshayani',      // 6 = July      (Month 4  Ashadha)
+  'Shravana Putrada',// 7 = August    (Month 5  Shravana)
+  'Parsva',          // 8 = September (Month 6  Bhadrapada)
+  'Papankusha',      // 9 = October   (Month 7  Ashwin)
+  'Devutthana',      // 10 = November (Month 8  Kartik)
+  'Mokshada'         // 11 = December (Month 9  Margashirsha)
+];
+// Krishna Paksha (Dark Fortnight) Ekadashis
+const _EK_NAMES_KRISHNA = [
+  'Saphala',         // 0 = January   (Month 10 Pausha)
+  'Shattila',        // 1 = February  (Month 11 Magha)
+  'Vijaya',          // 2 = March     (Month 12 Phalguna)
+  'Papamochani',     // 3 = April     (Month 1  Chaitra)
+  'Varuthini',       // 4 = May       (Month 2  Vaishakha)
+  'Apara',           // 5 = June      (Month 3  Jyeshtha)
+  'Yogini',          // 6 = July      (Month 4  Ashadha)
+  'Kamika',          // 7 = August    (Month 5  Shravana)
+  'Aja',             // 8 = September (Month 6  Bhadrapada)
+  'Indira',          // 9 = October   (Month 7  Ashwin)
+  'Rama',            // 10 = November (Month 8  Kartik)
+  'Utpanna'          // 11 = December (Month 9  Margashirsha)
+];
+
+// _ADHIK_MAAS_WINDOWS, _getAdhikMaasWindow, isAdhikMaasDate
+// defined in panchangData.js (loaded before app.js)
+
+let _panchangFetching = false;
+
+async function fetchPanchangEkadashis() {
+  if (_panchangFetching) return;
+  _panchangFetching = true;
+  const btn = document.getElementById('panchangFetchBtn');
+  const status = document.getElementById('panchangStatus');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Computing…'; }
+  if (status) status.textContent = '📍 Getting GPS location…';
+  try {
+    const pos = await new Promise((res,rej) => {
+      if (!navigator.geolocation) { rej(new Error('GPS unavailable')); return; }
+      navigator.geolocation.getCurrentPosition(res, rej, {timeout:10000, maximumAge:3600000});
+    });
+    const lat = pos.coords.latitude, lng = pos.coords.longitude;
+    if (status) status.textContent = '🔢 Computing tithis…';
+
+    if (!App.S.customEkadashi) App.S.customEkadashi = [];
+    if (!App.S.occasions) App.S.occasions = {};
+
+    const today = new Date(); today.setHours(0,0,0,0);
+    const DAY = 86400000;
+    let added = 0, cur = new Date(today);
+    // Scan 6 months × 2 pakshas = 12 Ekadashis
+    for (let i = 0; i < 12; i++) {
+      for (const paksha of ['shukla','krishna']) {
+        const wStart = new Date(cur);
+        const wEnd   = new Date(cur.getTime() + 17*DAY);
+        const ek = _findEkInWindow(wStart, wEnd, paksha);
+        if (ek && ek.ekStart >= today) {
+          const mi = ek.ekStart.getMonth();
+          const ekDateStr = ek.ekStart.toISOString().slice(0,10);
+          const adhikWin = _getAdhikMaasWindow(ekDateStr);
+          let name;
+          if (adhikWin) {
+            // Adhik Maas Ekadashis: Padmini (Shukla) / Parama (Krishna)
+            name = paksha === 'shukla' ? 'Padmini' : 'Parama';
+          } else {
+            name = paksha === 'shukla'
+              ? (_EK_NAMES_SHUKLA[mi] || 'Ekadashi')
+              : (_EK_NAMES_KRISHNA[mi] || 'Ekadashi');
+          }
+          const resolved = _resolveEkFasting(ek, lat, lng, name);
+          const exists = App.S.customEkadashi.some(e => _ekDate(e) === resolved.startDate);
+          if (!exists) {
+            App.S.customEkadashi.push({
+              name: resolved.name, paksha: resolved.paksha,
+              startDate: resolved.startDate, startTime: resolved.startTime,
+              endDate: resolved.endDate, endTime: resolved.endTime,
+              autoFetched: true
+            });
+            App.S.occasions[resolved.fastingDate] = resolved.label;
+            added++;
+          }
+        }
+        cur.setTime(cur.getTime() + 15*DAY);
+      }
+    }
+    App.S.customEkadashi.sort((a,b) => _ekDate(a)<_ekDate(b)?-1:1);
+    App.save(); fbDebouncedPush();
+    renderEkadashiList(); renderCal();
+    if (status) status.textContent = `✅ ${added} added · ${12-added} already saved`;
+    toast(`📅 ${added} Ekadashis auto-added for ~6 months! 🙏`);
+  } catch(e) {
+    if (status) status.textContent = '⚠️ ' + (e.message||'Location denied');
+    toast('GPS error: ' + (e.message||'denied'));
+  } finally {
+    _panchangFetching = false;
+    if (btn) { btn.disabled = false; btn.textContent = '🌙 Auto-Fetch from GPS'; }
+  }
+}
+
 // ── Brahmacharya Progress Graph ──
 // Anchor: May 16, 2026 = Amavasya (new moon, tithi 30/0 of Krishna paksha)
 // Synodic month ≈ 29.530589 days
@@ -3572,26 +4118,374 @@ const BC_AMAVASYA_ANCHOR = new Date('2026-05-16T00:00:00');
 const SYNODIC_MONTH = 29.530589;
 
 function getLunarTithi(date) {
-  // Returns tithi 1–30 (1=Shukla Pratipada ... 15=Purnima, 16=Krishna Pratipada ... 30=Amavasya)
-  const diffDays = (date - BC_AMAVASYA_ANCHOR) / 86400000;
-  // diffDays from amavasya anchor; amavasya = tithi 30
-  // Normalize to synodic cycle
-  let phase = ((diffDays % SYNODIC_MONTH) + SYNODIC_MONTH) % SYNODIC_MONTH;
-  // tithi 30 starts at phase 0 (amavasya), tithi 1 at phase 1 day
-  let tithi = Math.floor(phase) + 1; // 1..30
-  if (tithi > 30) tithi = 30;
-  // Map: 1..15 = Shukla (bright half), 16..30 = Krishna (dark half)
-  // In our system: Navami=9, Trayodashi=13 in each paksha
-  // Shukla Navami = tithi 9, Shukla Trayodashi = tithi 13
-  // Krishna Navami = tithi 24 (15+9), Krishna Trayodashi = tithi 28 (15+13)
-  return tithi;
+  // Primary: precise moon elongation (VSOP87 simplified)
+  return _tithiAtMoment(date);
 }
 
 function isRiskDay(date) {
   const t = getLunarTithi(date);
   // Risk window: Navami to Trayodashi in both paksha
   // Shukla: 9-13, Krishna: 24-28 (15+9 to 15+13)
-  return (t >= 9 && t <= 13) || (t >= 24 && t <= 28);
+  if ((t >= 9 && t <= 13) || (t >= 24 && t <= 28)) return true;
+  // Check custom Ekadashi periods (2-day risk window around startDate AND endDate)
+  const customDates = App.S.customEkadashi || [];
+  if (customDates.length > 0) {
+    const dateMs = date.getTime();
+    const DAY = 86400000;
+    for (const ek of customDates) {
+      const sd = _ekDate(ek);
+      const ed = _ekEndDate(ek);
+      if (sd) {
+        const sdMs = new Date(sd + 'T00:00:00').getTime();
+        const edMs = ed ? new Date(ed + 'T00:00:00').getTime() : sdMs;
+        // Inside the period OR within 2 days of either edge
+        if (dateMs >= sdMs - 2 * DAY && dateMs <= edMs + 2 * DAY) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Helper: extract start date string from a customEkadashi entry (supports legacy string/object formats)
+function _ekDate(e) {
+  if (typeof e === 'string') return e;
+  if (!e) return '';
+  return e.startDate || e.date || '';
+}
+// Helper: extract end date string from a customEkadashi entry
+function _ekEndDate(e) {
+  if (typeof e === 'string') return e;
+  if (!e) return '';
+  return e.endDate || e.startDate || e.date || '';
+}
+
+// Returns true if date falls within any custom Ekadashi period (startDate→endDate)
+function isCustomEkadashiDay(date) {
+  const customDates = App.S.customEkadashi || [];
+  if (!customDates.length) return false;
+  const key = _ldk(date);
+  return customDates.some(e => key >= _ekDate(e) && key <= _ekEndDate(e));
+}
+
+// ── Ekadashi: Parampara ──
+const EK_NOTES = {
+  smarta: '☀️ <b>Smarta rule:</b> Fast on the day when Ekadashi tithi is prevailing at local sunrise — even if Dashami was present just before it.',
+  vaishnava: '🌸 <b>Vaishnava/Gaudiya rule (Arunodaya Viddha):</b> If Dashami tithi overlaps even one second into the 96-min Arunodaya window before sunrise, that day is "Viddha" (contaminated). Fast is moved to the next day (Mahadvadashi), even though Dvadashi tithi is running.'
+};
+
+function saveEkParampara(val) {
+  App.S.ekParampara = val;
+  App.save(); fbDebouncedPush();
+  renderEkParampara();
+  toast(val === 'smarta' ? '☀️ Smarta Parampara set' : '🌸 Vaishnava Parampara set');
+}
+
+function renderEkParampara() {
+  const p = App.S.ekParampara || 'smarta';
+  const smBtn = document.getElementById('ekParSmarta');
+  const vaBtn = document.getElementById('ekParVaishnav');
+  const note = document.getElementById('ekParamparaNote');
+  const activeStyle = 'padding:10px 6px;border-radius:10px;border:2px solid;font-size:12px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;';
+  if (smBtn) {
+    smBtn.style.cssText = activeStyle + (p === 'smarta'
+      ? 'border-color:rgba(241,196,15,0.8);background:rgba(241,196,15,0.22);color:#F1C40F;'
+      : 'border-color:rgba(241,196,15,0.2);background:transparent;color:rgba(241,196,15,0.4);');
+  }
+  if (vaBtn) {
+    vaBtn.style.cssText = activeStyle + (p === 'vaishnava'
+      ? 'border-color:rgba(189,147,249,0.8);background:rgba(155,89,182,0.22);color:#BD93F9;'
+      : 'border-color:rgba(155,89,182,0.2);background:transparent;color:rgba(189,147,249,0.4);');
+  }
+  if (note) note.innerHTML = EK_NOTES[p] || '';
+}
+
+// ── Custom Ekadashi Date Management ──
+function _fmtTime12(t24) {
+  if (!t24) return '';
+  const [hStr, mStr] = t24.split(':');
+  let h = parseInt(hStr), m = parseInt(mStr);
+  const ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return h + ':' + String(m).padStart(2, '0') + ' ' + ap;
+}
+
+function addEkadashiDate() {
+  const startDate = (document.getElementById('ekStartDateIn') || {}).value || '';
+  const startTime = (document.getElementById('ekStartTimeIn') || {}).value || '';
+  const endDate   = (document.getElementById('ekEndDateIn')   || {}).value || '';
+  const endTime   = (document.getElementById('ekEndTimeIn')   || {}).value || '';
+  const nameEl    = document.getElementById('ekNameIn');
+  const name      = nameEl ? nameEl.value.trim() : '';
+  const pakshaEl  = document.querySelector('input[name="ekPaksha"]:checked');
+  const paksha    = pakshaEl ? pakshaEl.value : 'shukla';
+
+  if (!startDate) { toast('Please select a start date 📅'); return; }
+  if (!App.S.customEkadashi) App.S.customEkadashi = [];
+  if (App.S.customEkadashi.some(e => _ekDate(e) === startDate)) {
+    toast('An Ekadashi starting on this date already exists'); return;
+  }
+
+  const entry = { name, paksha, startDate, startTime, endDate: endDate || startDate, endTime };
+  App.S.customEkadashi.push(entry);
+  App.S.customEkadashi.sort((a, b) => _ekDate(a) < _ekDate(b) ? -1 : 1);
+
+  // Clear inputs
+  ['ekStartDateIn','ekStartTimeIn','ekEndDateIn','ekEndTimeIn'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  if (nameEl) nameEl.value = '';
+  const shuklaRadio = document.getElementById('ekPakshaShukla');
+  if (shuklaRadio) shuklaRadio.checked = true;
+
+  // ── Write single fasting-date occasion per Parampara ──
+  // Get real GPS-based sunrise for the Ekadashi start date, then compute fasting day
+  if (!App.S.occasions) App.S.occasions = {};
+  const label = (name || 'Ekadashi') + (paksha === 'shukla' ? ' ☀️ Shukla' : ' 🌙 Krishna');
+  const startFmt = startTime ? _fmtTime12(startTime) : '';
+  const endFmt   = endTime   ? _fmtTime12(endTime)   : '';
+
+  function _applyEkFasting(sunriseH) {
+    // Arunodaya (Brahmamuhurta start) = 96 min before actual sunrise
+    const arunodayaH = sunriseH - 96/60;
+    let fastingDate = startDate;
+    let isViddha = false;
+    const parampara = App.S.ekParampara || 'smarta';
+    if (startTime && endDate && endDate !== startDate) {
+      const [sh, sm] = startTime.split(':').map(Number);
+      const ekStartH = sh + sm/60;
+      if (parampara === 'vaishnava') {
+        // Vaishnava: if Ekadashi tithi starts after Arunodaya, day is Viddha → fast on endDate (Mahadvadashi)
+        if (ekStartH >= arunodayaH) { fastingDate = endDate; isViddha = true; }
+      } else {
+        // Smarta: if Ekadashi tithi starts after actual sunrise, fast on endDate
+        if (ekStartH >= sunriseH) fastingDate = endDate;
+      }
+    }
+    const timeNote = isViddha
+      ? ' (Mahadvadashi · Arunodaya Viddha · Sunrise ' + fmtHour(sunriseH) + ' / Arunodaya ' + fmtHour(arunodayaH) + ')'
+      : startFmt ? ' ' + startFmt + (endFmt ? '–' + endFmt : '') + ' (Sunrise ' + fmtHour(sunriseH) + ')' : '';
+    App.S.occasions[fastingDate] = label + timeNote;
+    App.save(); fbDebouncedPush();
+    renderEkadashiList();
+    renderCal();
+    toast('Ekadashi added 📅 (Sunrise ' + fmtHour(sunriseH) + ', Arunodaya ' + fmtHour(arunodayaH) + ')');
+  }
+
+  // Use GPS to get real sunrise for the Ekadashi start date
+  if (navigator.geolocation) {
+    toast('📍 Getting GPS for sunrise…');
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const ekDate = new Date(startDate + 'T00:00:00');
+        const srData = calcSunTimes(pos.coords.latitude, pos.coords.longitude, ekDate);
+        const sunriseH = srData ? srData.sunriseH : 6.0;
+        _applyEkFasting(sunriseH);
+      },
+      () => {
+        // GPS denied/failed — fall back to 6.00 AM with a warning
+        toast('⚠️ GPS unavailable, using 06:00 sunrise fallback');
+        _applyEkFasting(6.0);
+      },
+      { timeout: 8000, maximumAge: 3600000 }
+    );
+  } else {
+    _applyEkFasting(6.0);
+  }
+}
+
+function removeEkadashiDate(startDate) {
+  const entry = (App.S.customEkadashi || []).find(e => _ekDate(e) === startDate);
+  App.S.customEkadashi = (App.S.customEkadashi || []).filter(e => _ekDate(e) !== startDate);
+  if (App.S.occasions) {
+    // Remove both dates set by this Ekadashi
+    [startDate, entry && entry.endDate].filter(Boolean).forEach(d => {
+      if (App.S.occasions[d] && (App.S.occasions[d].includes('Ekadashi') || App.S.occasions[d].includes(entry && entry.name))) {
+        delete App.S.occasions[d];
+      }
+    });
+  }
+  App.save(); fbDebouncedPush();
+  renderEkadashiList();
+  renderCal();
+  toast('Ekadashi removed');
+}
+
+function renderEkadashiList() {
+  const list = document.getElementById('ekadashiList');
+  if (!list) return;
+  const entries = App.S.customEkadashi || [];
+  if (entries.length === 0) {
+    list.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,0.3);text-align:center;padding:10px 0 4px;">No Ekadashis saved yet.</div>';
+    return;
+  }
+  const parampara = App.S.ekParampara || 'smarta';
+  list.innerHTML = entries.map(e => {
+    const sd = _ekDate(e);
+    const ed = (typeof e==='object'&&e.endDate)?e.endDate:sd;
+    const name = (typeof e==='object'&&e.name)?e.name:'Ekadashi';
+    const paksha = (typeof e==='object'&&e.paksha)?e.paksha:'shukla';
+    const startTime=(typeof e==='object'&&e.startTime)?e.startTime:'';
+    const endTime  =(typeof e==='object'&&e.endTime  )?e.endTime  :'';
+    const isAuto   =(typeof e==='object'&&e.autoFetched)?true:false;
+    const fmtD = d => { const _d=new Date(d+'T00:00:00'); const _days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; return _days[_d.getDay()]+' '+String(_d.getDate()).padStart(2,'0')+':'+String(_d.getMonth()+1).padStart(2,'0')+':'+_d.getFullYear(); };
+    const sfmt = startTime?_fmtTime12(startTime):'';
+    const efmt = endTime  ?_fmtTime12(endTime  ):'';
+    const pLabel = paksha==='shukla'
+      ?'<span style="font-size:9px;background:rgba(241,196,15,0.2);color:#F1C40F;border-radius:4px;padding:2px 5px;font-weight:700;">☀️ SHUKLA</span>'
+      :'<span style="font-size:9px;background:rgba(155,89,182,0.25);color:#BD93F9;border-radius:4px;padding:2px 5px;font-weight:700;">🌙 KRISHNA</span>';
+    const autoTag = isAuto?'<span style="font-size:8px;color:rgba(46,204,113,0.7);margin-left:4px;">AUTO</span>':'';
+    const eid = 'ekEd_'+sd.replace(/-/g,'');
+
+    // ── Fasting date per parampara ──────────────────────────────────
+    let fastingDate = sd, isViddha = false;
+    if (startTime) {
+      const [hh, mm] = startTime.split(':').map(Number);
+      const ekStartMinutes = hh * 60 + mm;
+      if (parampara === 'vaishnava') {
+        // Vaishnava: if Ekadashi starts after arunodaya (sunrise − 96 min ≈ 4:24 = 264 min)
+        if (ekStartMinutes >= 264) { fastingDate = ed; isViddha = true; }
+      } else {
+        // Smarta: if Ekadashi starts after sunrise (approx 6:00 = 360 min)
+        if (ekStartMinutes >= 360) fastingDate = ed;
+      }
+    }
+    const isTomorrow = fastingDate === ed && sd !== ed;
+    const fastLabel = isViddha
+      ? `<span style="color:#FF9800;font-weight:700">🌅 Fast: ${fmtD(fastingDate)}</span> <span style="font-size:9px;background:rgba(255,152,0,0.2);color:#FF9800;border-radius:4px;padding:2px 6px;">Mahadvadashi</span>`
+      : isTomorrow
+        ? `<span style="color:#76ff7a;font-weight:700">🌅 Fast: ${fmtD(fastingDate)}</span>`
+        : `<span style="color:#76ff7a;font-weight:700">🌅 Fast: ${fmtD(fastingDate)}</span>`;
+    const paramparaTag = parampara === 'vaishnava'
+      ? '<span style="font-size:8px;background:rgba(74,144,226,0.2);color:#6DB8FF;border-radius:4px;padding:1px 5px;margin-left:4px;">Vaishnava</span>'
+      : '<span style="font-size:8px;background:rgba(46,204,113,0.15);color:#2ecc71;border-radius:4px;padding:1px 5px;margin-left:4px;">Smarta</span>';
+
+    // ── Parana (fast-breaking) time ──
+    let paranaHtml = '';
+    try {
+      const _ekStartDt = new Date(sd+'T'+((typeof e==='object'&&e.startTime)?e.startTime:'06:00')+':00');
+      const _ekEndDt   = new Date(ed+'T'+((typeof e==='object'&&e.endTime  )?e.endTime  :'06:00')+':00');
+      const _ekObjP = { ekStart: _ekStartDt, ekEnd: _ekEndDt };
+      const _pLat = (App.S&&App.S.lastLat)||22.5, _pLng = (App.S&&App.S.lastLng)||78.5;
+      const _par = _computeParanaWindow(_ekObjP, _pLat, _pLng, fastingDate);
+      if (_par) paranaHtml = '<div style="font-size:10px;color:#FFD700;margin-top:3px;">☀️ Parana: '+fmtD(_par.date)+' · '+_fmtTime12(_par.windowStart)+'–'+_fmtTime12(_par.windowEnd)+'</div>';
+    } catch(_pe) {}
+
+    return `<div style="background:rgba(155,89,182,0.09);border:1px solid rgba(155,89,182,0.22);border-radius:12px;padding:11px;margin-bottom:9px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:#BD93F9;font-weight:700;margin-bottom:3px;">${name} ${pLabel}${autoTag}</div>
+          <div style="font-size:10px;color:rgba(255,255,255,0.45);margin-bottom:5px;">Tithi: ${fmtD(sd)}${sfmt?' · '+sfmt:''} → ${fmtD(ed)}${efmt?' · '+efmt:''}</div>
+          <div style="font-size:11px;margin-bottom:2px;">${fastLabel}${paramparaTag}</div>
+          ${paranaHtml}
+        </div>
+        <div style="display:flex;gap:5px;flex-shrink:0;margin-left:7px;">
+          <button onclick="toggleEkEdit('${sd}')" style="background:rgba(74,144,226,0.15);border:1px solid rgba(74,144,226,0.3);border-radius:7px;color:#6DB8FF;font-size:11px;padding:5px 9px;cursor:pointer;font-family:Inter,sans-serif;">✏</button>
+          <button onclick="removeEkadashiDate('${sd}')" style="background:rgba(232,51,109,0.15);border:1px solid rgba(232,51,109,0.3);border-radius:7px;color:#e8336d;font-size:11px;padding:5px 9px;cursor:pointer;font-family:Inter,sans-serif;">✕</button>
+        </div>
+      </div>
+      <div id="${eid}" style="display:none;margin-top:10px;background:rgba(0,0,0,0.3);border-radius:9px;padding:10px;">
+        <div style="font-size:9px;color:rgba(189,147,249,0.6);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;font-weight:700;">Edit</div>
+        <input type="text" id="${eid}_n" value="${name.replace(/"/g,'&quot;')}" placeholder="Name" style="display:block;width:100%;box-sizing:border-box;background:rgba(0,0,0,0.4);border:1px solid rgba(155,89,182,0.35);border-radius:8px;padding:7px 10px;color:#fff;font-size:12px;font-family:Inter,sans-serif;outline:none;margin-bottom:8px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px;">
+          <label style="display:flex;align-items:center;gap:6px;background:rgba(241,196,15,0.08);border:1px solid rgba(241,196,15,0.25);border-radius:7px;padding:7px 9px;cursor:pointer;">
+            <input type="radio" name="${eid}_p" value="shukla" ${paksha==='shukla'?'checked':''} style="accent-color:#F1C40F;">
+            <span style="font-size:11px;color:#F1C40F;font-weight:600;">☀️ Shukla</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;background:rgba(155,89,182,0.08);border:1px solid rgba(155,89,182,0.25);border-radius:7px;padding:7px 9px;cursor:pointer;">
+            <input type="radio" name="${eid}_p" value="krishna" ${paksha==='krishna'?'checked':''} style="accent-color:#BD93F9;">
+            <span style="font-size:11px;color:#BD93F9;font-weight:600;">🌙 Krishna</span>
+          </label>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:5px;">
+          <div><div style="font-size:9px;color:rgba(255,255,255,0.35);margin-bottom:3px;text-transform:uppercase;">Start Date</div>
+            <input type="date" id="${eid}_sd" value="${sd}" style="display:block;width:100%;box-sizing:border-box;background:rgba(0,0,0,0.4);border:1px solid rgba(155,89,182,0.35);border-radius:7px;padding:7px 5px;color:#fff;font-size:11px;font-family:Inter,sans-serif;outline:none;"></div>
+          <div><div style="font-size:9px;color:rgba(255,255,255,0.35);margin-bottom:3px;text-transform:uppercase;">Start Time</div>
+            <input type="time" id="${eid}_st" value="${startTime}" style="display:block;width:100%;box-sizing:border-box;background:rgba(0,0,0,0.4);border:1px solid rgba(155,89,182,0.35);border-radius:7px;padding:7px 5px;color:#fff;font-size:11px;font-family:Inter,sans-serif;outline:none;"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:9px;">
+          <div><div style="font-size:9px;color:rgba(255,255,255,0.35);margin-bottom:3px;text-transform:uppercase;">End Date</div>
+            <input type="date" id="${eid}_ed" value="${ed}" style="display:block;width:100%;box-sizing:border-box;background:rgba(0,0,0,0.4);border:1px solid rgba(155,89,182,0.35);border-radius:7px;padding:7px 5px;color:#fff;font-size:11px;font-family:Inter,sans-serif;outline:none;"></div>
+          <div><div style="font-size:9px;color:rgba(255,255,255,0.35);margin-bottom:3px;text-transform:uppercase;">End Time</div>
+            <input type="time" id="${eid}_et" value="${endTime}" style="display:block;width:100%;box-sizing:border-box;background:rgba(0,0,0,0.4);border:1px solid rgba(155,89,182,0.35);border-radius:7px;padding:7px 5px;color:#fff;font-size:11px;font-family:Inter,sans-serif;outline:none;"></div>
+        </div>
+        <button onclick="saveEkadashiEdit('${sd}')" style="display:block;width:100%;padding:9px;border-radius:8px;border:none;background:linear-gradient(135deg,rgba(155,89,182,0.7),rgba(90,50,190,0.6));color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">💾 Save Changes</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleEkEdit(startDate) {
+  const eid = 'ekEd_'+startDate.replace(/-/g,'');
+  const el = document.getElementById(eid);
+  if (el) el.style.display = el.style.display==='none'?'block':'none';
+}
+
+function saveEkadashiEdit(oldSd) {
+  const eid = 'ekEd_'+oldSd.replace(/-/g,'');
+  const newName = (document.getElementById(eid+'_n')||{}).value||'';
+  const newSd   = (document.getElementById(eid+'_sd')||{}).value||'';
+  const newSt   = (document.getElementById(eid+'_st')||{}).value||'';
+  const newEd   = (document.getElementById(eid+'_ed')||{}).value||'';
+  const newEt   = (document.getElementById(eid+'_et')||{}).value||'';
+  const pEl     = document.querySelector(`input[name="${eid}_p"]:checked`);
+  const newPaksha = pEl?pEl.value:'shukla';
+  if (!newSd) { toast('Start date required 📅'); return; }
+
+  // Remove old entry and its occasions
+  const oldEntry = (App.S.customEkadashi||[]).find(e=>_ekDate(e)===oldSd);
+  App.S.customEkadashi = (App.S.customEkadashi||[]).filter(e=>_ekDate(e)!==oldSd);
+  if (App.S.occasions && oldEntry) {
+    [oldSd, oldEntry.endDate].filter(Boolean).forEach(d=>{
+      if(App.S.occasions[d]&&(App.S.occasions[d].includes('Ekadashi')||App.S.occasions[d].includes('Mahadvadashi')||(oldEntry.name&&App.S.occasions[d].includes(oldEntry.name))))
+        delete App.S.occasions[d];
+    });
+  }
+
+  // Push updated entry first so it's saved even before GPS resolves
+  App.S.customEkadashi.push({name:newName.trim(),paksha:newPaksha,startDate:newSd,startTime:newSt,endDate:newEd||newSd,endTime:newEt});
+  App.S.customEkadashi.sort((a,b)=>_ekDate(a)<_ekDate(b)?-1:1);
+
+  const lbl = (newName.trim()||'Ekadashi')+(newPaksha==='shukla'?' ☀️ Shukla':' 🌙 Krishna');
+  const sf = newSt?_fmtTime12(newSt):'', ef = newEt?_fmtTime12(newEt):'';
+  if (!App.S.occasions) App.S.occasions={};
+
+  function _applyEditFasting(sunriseH) {
+    // Arunodaya (Brahmamuhurta start) = 96 min before actual sunrise
+    const arunodayaH = sunriseH - 96/60;
+    let fastingDate = newSd, isViddha = false;
+    const parampara = App.S.ekParampara || 'smarta';
+    if (newSt && newEd && newEd !== newSd) {
+      const [h, m] = newSt.split(':').map(Number), ekH = h + m/60;
+      if (parampara === 'vaishnava' && ekH >= arunodayaH) { fastingDate = newEd; isViddha = true; }
+      else if (parampara === 'smarta' && ekH >= sunriseH) fastingDate = newEd;
+    }
+    const tnote = isViddha
+      ? ' (Mahadvadashi · Arunodaya Viddha · Sunrise ' + fmtHour(sunriseH) + ' / Arunodaya ' + fmtHour(arunodayaH) + ')'
+      : sf ? ' ' + sf + (ef ? '–' + ef : '') + ' (Sunrise ' + fmtHour(sunriseH) + ')' : '';
+    App.S.occasions[fastingDate] = lbl + tnote;
+    App.save(); fbDebouncedPush();
+    renderEkadashiList(); renderCal();
+    toast('Ekadashi updated ✅ (Sunrise ' + fmtHour(sunriseH) + ', Arunodaya ' + fmtHour(arunodayaH) + ')');
+  }
+
+  // Get real GPS sunrise for the (new) Ekadashi start date
+  if (navigator.geolocation) {
+    toast('📍 Getting GPS for sunrise…');
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const ekDate = new Date(newSd + 'T00:00:00');
+        const srData = calcSunTimes(pos.coords.latitude, pos.coords.longitude, ekDate);
+        _applyEditFasting(srData ? srData.sunriseH : 6.0);
+      },
+      () => {
+        toast('⚠️ GPS unavailable, using 06:00 sunrise fallback');
+        _applyEditFasting(6.0);
+      },
+      { timeout: 8000, maximumAge: 3600000 }
+    );
+  } else {
+    _applyEditFasting(6.0);
+  }
 }
 
 // ── Graph range state: offset in days from today (0 = last 90d, -90 = prev 90d, etc.)
@@ -3612,391 +4506,335 @@ function bcShiftRange(delta) {
   renderBcGraph();
 }
 
-function renderBcGraph() {
-  const canvas = document.getElementById('bcGraph');
-  if (!canvas) return;
-  const dpr = window.devicePixelRatio || 1;
-  const W = canvas.offsetWidth || 320;
-  const H = canvas.offsetHeight || 160;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
+// ── Brahma Muhurta boundary helpers ──────────────────────────────
+// Brahma Muhurta starts 96 minutes (1hr 36min) before sunrise.
+// For a given date's brahmacharya stamping: if current clock time is
+// between midnight and that day's Brahma Muhurta start, it belongs
+// to the PREVIOUS calendar date.
 
-  const today = new Date(); today.setHours(0,0,0,0);
-  const startD = new Date(getBrahmaStart()); startD.setHours(0,0,0,0);
-  const totalDays = Math.round((today - startD) / 86400000) + 1;
-
-  // Compute window end/start based on offset
-  // _bcRangeOffset <= 0; 0 means last 90 days ending today
-  const windowEnd = new Date(today);
-  windowEnd.setDate(windowEnd.getDate() + _bcRangeOffset); // offset is <=0 so this goes back
-  // Actually offset shifts the window: positive delta moves forward, so:
-  // windowEnd = today + _bcRangeOffset (negative = earlier end)
-  // But we want: 0 = last 90 days (end = today), -90 = prev window (end = today-90)
-  // Recalculate: windowEnd is today when offset=0
-  const wEnd = new Date(today);
-  if (_bcRangeOffset < 0) wEnd.setDate(wEnd.getDate() + _bcRangeOffset);
-  const wStart = new Date(wEnd);
-  wStart.setDate(wStart.getDate() - 89); // 90 days window
-  // clamp wStart to brahma start
-  if (wStart < startD) wStart.setTime(startD.getTime());
-
-  const DAYS = Math.round((wEnd - wStart) / 86400000) + 1;
-
-  // Update range label
-  const lbl = document.getElementById('bcRangeLabel');
-  if (lbl) {
-    const fmt = d => d.toLocaleDateString('en-GB', {day:'numeric', month:'short'});
-    const isLatest = _bcRangeOffset === 0;
-    lbl.textContent = isLatest ? 'Last 90 days' : `${fmt(wStart)} – ${fmt(wEnd)}`;
+// Returns Brahma Muhurta start time (Date object) for a given date
+function _getBrahmaMuhurtStart(dateObj, lat, lng) {
+  lat = lat || (App.S && App.S.lastLat) || 23.8103;
+  lng = lng || (App.S && App.S.lastLng) || 90.4125;
+  if (typeof calcSunTimes === 'function') {
+    const sr = calcSunTimes(lat, lng, dateObj);
+    if (sr && sr.sunriseH !== undefined) {
+      // sunriseH is decimal hours e.g. 5.95 = 5:57 AM
+      const sunriseMs = sr.sunriseH * 3600000;
+      const bmMs = sunriseMs - 96 * 60000; // subtract 96 minutes
+      const bm = new Date(dateObj);
+      bm.setHours(0, 0, 0, 0);
+      bm.setTime(bm.getTime() + bmMs);
+      return bm;
+    }
   }
-  const nextBtn = document.getElementById('bcRangeNext');
-  if (nextBtn) nextBtn.style.opacity = _bcRangeOffset < 0 ? '1' : '0.3';
+  // Fallback: 4:21 AM
+  const bm = new Date(dateObj); bm.setHours(4, 21, 0, 0); return bm;
+}
 
-  if (DAYS < 2) {
-    ctx.fillStyle = 'rgba(255,255,255,0.2)';
-    ctx.font = '12px Inter';
-    ctx.fillText('Not enough data yet', 10, H/2);
-    renderPatternEngine();
+// Returns a local-timezone YYYY-MM-DD string — used for ALL date keys
+// (date changes at 12:00 AM local/device time, matching GPS timezone).
+function _localDateStr(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+// Short alias
+function _ldk(d){ return _localDateStr(d); }
+
+// Returns the brahmacharya date key for a given timestamp.
+// Date changes at 12:00 AM local time (GPS/device timezone) — same as getTk().
+function getBcDateKey(now) {
+  now = now || new Date();
+  return now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+}
+
+// Time-of-day label based on clock hour
+function _bcTimeLabel(h) {
+  if (h < 5)       return 'night';      // 12 AM – 5 AM
+  if (h < 12)      return 'morning';    // 5 AM – 12 PM
+  if (h < 16)      return 'afternoon';  // 12 PM – 4 PM
+  if (h < 20)      return 'evening';    // 4 PM – 8 PM
+  return 'night';                        // 8 PM – 12 AM
+}
+
+// Format break time: "16 May, 2026 at night 12:15"
+function formatBcBreakTime(timeStr, dateKey) {
+  // timeStr is HH:MM (24hr from <input type="time">)
+  // dateKey is YYYY-MM-DD (the BC date key, already adjusted for BM boundary)
+  if (!timeStr || !dateKey) return '';
+  const [hh, mm] = timeStr.split(':').map(Number);
+
+  const label = _bcTimeLabel(hh + mm/60);
+
+  // Always show the BC date (dateKey) — this is the day the user sees in the
+  // calendar. If they broke at 1:23 AM on May 11's BC day, show "11 May".
+  // The time (1:23 AM) already makes clear it was in the early night hours.
+  const displayDate = new Date(dateKey + 'T00:00:00');
+  const day = displayDate.getDate();
+  const mon = displayDate.toLocaleDateString('en-GB', { month: 'long' });
+  const yr  = displayDate.getFullYear();
+
+  // 12hr format for the time
+  let h12 = hh % 12 || 12;
+  const mStr = String(mm).padStart(2,'0');
+  const ampm = hh < 12 ? 'AM' : 'PM';
+
+  return `${day} ${mon}, ${yr} at ${label} ${h12}:${mStr} ${ampm}`;
+}
+
+function renderBcGraph() {
+  var canvas = document.getElementById('bcGraph');
+  if (!canvas) return;
+
+  // Retry until App and its data are fully initialised
+  if (typeof App === 'undefined' || !App.S || typeof App.S.brahma === 'undefined') {
+    setTimeout(renderBcGraph, 400);
     return;
   }
 
-  // Build streak from brahma start up to wEnd (for correct streak count in window)
-  const allStart = new Date(startD);
-  const fullDays = Math.round((wEnd - allStart) / 86400000) + 1;
-  let streak = 0;
-  const allDayData = [];
-  for (let i = 0; i < fullDays; i++) {
-    const d = new Date(allStart); d.setDate(d.getDate() + i);
-    const key = d.toISOString().split('T')[0];
-    const en = App.S.brahma[key];
-    const broken = en && en.status === 'b';
-    if (broken) { streak = 0; } else { streak++; }
-    const inWindow = d >= wStart && d <= wEnd;
-    if (inWindow) allDayData.push({ date: new Date(d), key, broken, streak, risk: isRiskDay(d), times: (en && en.times) || [] });
-  }
-  const days = allDayData;
+  var dpr = window.devicePixelRatio || 1;
 
-  const maxStreak = Math.max(...days.map(d => d.streak), 1);
-  const PAD = { l: 32, r: 10, t: 12, b: 24 };
-  const gW = W - PAD.l - PAD.r;
-  const gH = H - PAD.t - PAD.b;
-  const xStep = gW / (days.length - 1 || 1);
-
-  // Draw risk bands
-  days.forEach((d, i) => {
-    if (d.risk) {
-      const x = PAD.l + i * xStep;
-      ctx.fillStyle = 'rgba(231,76,60,0.10)';
-      ctx.fillRect(Math.floor(x - xStep/2), PAD.t, Math.ceil(xStep + 1), gH);
+  // Resolve container width robustly — fall back through several anchors
+  var containerW = window.innerWidth - 56;
+  var scrollWrap = canvas.parentElement;
+  if (scrollWrap && scrollWrap.offsetWidth > 20) containerW = scrollWrap.offsetWidth;
+  else {
+    var _sec = scrollWrap && scrollWrap.closest && scrollWrap.closest('.bc-graph-section');
+    if (_sec && _sec.offsetWidth > 20) containerW = _sec.offsetWidth - 36;
+    else {
+      var _vb = document.getElementById('vb');
+      if (_vb && _vb.offsetWidth > 20) containerW = _vb.offsetWidth - 28;
     }
+  }
+  if (containerW < 20) { requestAnimationFrame(function(){ setTimeout(renderBcGraph, 150); }); return; }
+
+  var today = new Date(); today.setHours(0,0,0,0);
+  var brahmaStart = getBrahmaStart();
+  var startD = new Date(brahmaStart); startD.setHours(0,0,0,0);
+  if (isNaN(startD.getTime())) startD = new Date(); startD.setHours(0,0,0,0);
+
+  var wEnd = new Date(today);
+  if (_bcRangeOffset < 0) wEnd.setDate(wEnd.getDate() + _bcRangeOffset);
+  var wStart = new Date(wEnd);
+  wStart.setDate(wStart.getDate() - 89);
+  if (wStart < startD) wStart.setTime(startD.getTime());
+  var DAYS = Math.round((wEnd - wStart) / 86400000) + 1;
+
+  // Update range label
+  var lbl = document.getElementById('bcRangeLabel');
+  if (lbl) {
+    var fmt = function(d){ return d.toLocaleDateString('en-GB', {day:'numeric', month:'short'}); };
+    lbl.textContent = _bcRangeOffset === 0 ? 'Last 90 days' : (fmt(wStart) + ' \u2013 ' + fmt(wEnd));
+  }
+  var nextBtn = document.getElementById('bcRangeNext');
+  if (nextBtn) nextBtn.style.opacity = _bcRangeOffset < 0 ? '1' : '0.3';
+
+  var PER_DAY = Math.max(32, Math.floor(containerW / Math.min(DAYS, 28)));
+  var W = Math.max(containerW, DAYS * PER_DAY + 72);
+  var H = 360;
+
+  // Size the canvas — set CSS first so the parent expands, then internal buffer
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.width  = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+
+  var ctx = canvas.getContext('2d');
+  if (!ctx) { setTimeout(renderBcGraph, 300); return; }
+  ctx.scale(dpr, dpr);
+
+  // White background
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+
+  if (DAYS < 2) {
+    ctx.fillStyle = '#aaa';
+    ctx.font = '13px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Not enough data yet', W / 2, H / 2);
+    return;
+  }
+
+  // Build streak data — walk from brahma start for correct carry-in
+  var brahmaData = App.S.brahma || {};
+  var allStart = new Date(startD);
+  var fullDays = Math.round((wEnd - allStart) / 86400000) + 1;
+  var streak = 0;
+  var days = [];
+  try {
+    for (var i = 0; i < fullDays; i++) {
+      var d = new Date(allStart); d.setDate(d.getDate() + i);
+      var key = _ldk(d);
+      var en = brahmaData[key];
+      var broken = !!(en && en.status === 'b');
+      if (broken) streak = 0; else streak++;
+      if (d >= wStart && d <= wEnd) {
+        days.push({ date: new Date(d), key: key, broken: broken, streak: streak, times: (en && en.times) || [] });
+      }
+    }
+  } catch(e) {
+    ctx.fillStyle = '#e00';
+    ctx.font = '12px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Graph error — please reload', W / 2, H / 2);
+    return;
+  }
+
+  if (days.length === 0) {
+    ctx.fillStyle = '#aaa';
+    ctx.font = '13px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Not enough data yet', W / 2, H / 2);
+    return;
+  }
+
+  var maxStreak = Math.max.apply(null, days.map(function(d){ return d.streak; }).concat([1]));
+
+  // Generous padding — space around every edge
+  var PAD = { l: 52, r: 28, t: 28, b: 56 };
+  var gW = W - PAD.l - PAD.r;
+  var gH = H - PAD.t - PAD.b;
+  var xStep = days.length > 1 ? gW / (days.length - 1) : gW;
+
+  // Horizontal grid lines — very light, dashed
+  [0.25, 0.5, 0.75, 1].forEach(function(f) {
+    var y = PAD.t + gH - f * gH;
+    ctx.beginPath();
+    ctx.moveTo(PAD.l, y);
+    ctx.lineTo(W - PAD.r, y);
+    ctx.strokeStyle = 'rgba(0,0,0,0.07)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#bbb';
+    ctx.font = '10px Inter, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(Math.round(f * maxStreak) + 'd', PAD.l - 10, y + 4);
   });
 
-  // Draw grid lines
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-  ctx.lineWidth = 1;
-  [0.25, 0.5, 0.75, 1].forEach(f => {
-    const y = PAD.t + gH - f * gH;
-    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
-    ctx.font = '9px Inter';
-    ctx.fillText(Math.round(f * maxStreak), 2, y + 3);
+  // Weekly vertical guide lines (Sundays)
+  days.forEach(function(d, i) {
+    if (d.date.getDay() !== 0) return;
+    var x = PAD.l + i * xStep;
+    ctx.beginPath();
+    ctx.moveTo(x, PAD.t);
+    ctx.lineTo(x, PAD.t + gH);
+    ctx.strokeStyle = 'rgba(0,0,0,0.04)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    ctx.stroke();
   });
 
-  // Draw filled streak line
+  // Green fill under curve
   ctx.beginPath();
-  days.forEach((d, i) => {
-    const x = PAD.l + i * xStep;
-    const y = PAD.t + gH - (d.streak / maxStreak) * gH;
+  days.forEach(function(d, i) {
+    var x = PAD.l + i * xStep;
+    var y = PAD.t + gH - (d.streak / maxStreak) * gH;
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   });
-  const lastX = PAD.l + (days.length - 1) * xStep;
+  var lastX = PAD.l + (days.length - 1) * xStep;
   ctx.lineTo(lastX, PAD.t + gH);
   ctx.lineTo(PAD.l, PAD.t + gH);
   ctx.closePath();
-  const grad = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + gH);
-  grad.addColorStop(0, 'rgba(46,204,113,0.55)');
-  grad.addColorStop(1, 'rgba(46,204,113,0.05)');
-  ctx.fillStyle = grad;
+  var fillGrad = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + gH);
+  fillGrad.addColorStop(0, 'rgba(34,197,94,0.20)');
+  fillGrad.addColorStop(1, 'rgba(34,197,94,0.01)');
+  ctx.fillStyle = fillGrad;
   ctx.fill();
 
-  // Draw streak line stroke
+  // Green streak line — smooth, 2.5px
   ctx.beginPath();
-  days.forEach((d, i) => {
-    const x = PAD.l + i * xStep;
-    const y = PAD.t + gH - (d.streak / maxStreak) * gH;
+  days.forEach(function(d, i) {
+    var x = PAD.l + i * xStep;
+    var y = PAD.t + gH - (d.streak / maxStreak) * gH;
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   });
-  ctx.strokeStyle = 'rgba(46,204,113,0.9)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#22c55e';
+  ctx.lineWidth = 2.5;
   ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.setLineDash([]);
   ctx.stroke();
 
-  // Draw relapse dots with time labels
-  days.forEach((d, i) => {
-    if (!d.broken) return;
-    const x = PAD.l + i * xStep;
-    const y = PAD.t + gH - 2;
+  // Small green node dots on maintained days
+  days.forEach(function(d, i) {
+    if (d.broken) return;
+    var x = PAD.l + i * xStep;
+    var y = PAD.t + gH - (d.streak / maxStreak) * gH;
     ctx.beginPath();
-    ctx.arc(x, y, 5, 0, Math.PI * 2);
-    ctx.fillStyle = '#E74C3C';
+    ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#22c55e';
+    ctx.fill();
+  });
+
+  // Red broken-day dots — pinned near baseline, prominent
+  days.forEach(function(d, i) {
+    if (!d.broken) return;
+    var x = PAD.l + i * xStep;
+    var dotY = PAD.t + gH - 6;
+
+    ctx.beginPath();
+    ctx.arc(x, dotY + 2, 8, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(239,68,68,0.15)';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(x, dotY, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#ef4444';
     ctx.fill();
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 2;
     ctx.stroke();
-    const times = d.times || [];
+
+    var times = d.times || [];
     if (times.length > 0 && times[0].time) {
-      ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      ctx.font = 'bold 8px Inter';
+      // Convert HH:MM to 12hr format for graph label
+      var tParts = times[0].time.split(':');
+      var th = parseInt(tParts[0]), tm = parseInt(tParts[1]||0);
+      var tampm = th >= 12 ? 'pm' : 'am';
+      var th12 = th % 12 || 12;
+      var tLabel = th12 + ':' + String(tm).padStart(2,'0') + ' ' + tampm;
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 9px Inter, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(times[0].time, x, y - 8);
-      if (times.length > 1) ctx.fillText('+' + (times.length-1) + 'x', x, y - 17);
+      ctx.fillText(tLabel, x, dotY - 12);
+      if (times.length > 1) {
+        ctx.fillStyle = '#f87171';
+        ctx.font = '8px Inter, sans-serif';
+        ctx.fillText('+' + (times.length - 1), x, dotY - 22);
+      }
     }
   });
 
-  // X-axis month/date labels
-  ctx.fillStyle = 'rgba(255,255,255,0.4)';
-  ctx.font = '9px Inter';
+  // Baseline axis line
+  ctx.beginPath();
+  ctx.moveTo(PAD.l, PAD.t + gH);
+  ctx.lineTo(W - PAD.r, PAD.t + gH);
+  ctx.strokeStyle = 'rgba(0,0,0,0.10)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+  ctx.stroke();
+
+  // X-axis labels: date on Sundays + month name when it changes
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var lastLabelMonth = -1;
+  ctx.textAlign = 'center';
+  days.forEach(function(d, i) {
+    var x = PAD.l + i * xStep;
+    var isSunOrFirst = d.date.getDay() === 0 || i === 0;
+    if (isSunOrFirst) {
+      ctx.fillStyle = '#999';
+      ctx.font = '10px Inter, sans-serif';
+      ctx.fillText(d.date.getDate(), x, PAD.t + gH + 18);
+    }
+    if (d.date.getMonth() !== lastLabelMonth) {
+      lastLabelMonth = d.date.getMonth();
+      ctx.fillStyle = '#555';
+      ctx.font = 'bold 11px Inter, sans-serif';
+      ctx.fillText(MONTHS[d.date.getMonth()], x, PAD.t + gH + 36);
+    }
+  });
   ctx.textAlign = 'left';
-  let lastMonth = -1;
-  days.forEach((d, i) => {
-    if (d.date.getMonth() !== lastMonth) {
-      lastMonth = d.date.getMonth();
-      const x = PAD.l + i * xStep;
-      const label = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.date.getMonth()];
-      ctx.fillText(label, Math.min(x, W - PAD.r - 18), H - 5);
-    }
-  });
-
-  // Legend
-  ctx.textAlign = 'left';
-  ctx.font = '9px Inter';
-  ctx.fillStyle = 'rgba(46,204,113,0.8)';
-  ctx.fillText('● Streak', W - 90, PAD.t + 10);
-  ctx.fillStyle = '#E74C3C';
-  ctx.fillText('● Relapse', W - 90, PAD.t + 22);
-  ctx.fillStyle = 'rgba(231,76,60,0.4)';
-  ctx.fillRect(W - 50, PAD.t + 27, 8, 8);
-  ctx.fillStyle = 'rgba(255,255,255,0.4)';
-  ctx.fillText('Risk', W - 40, PAD.t + 35);
-
-  // Always refresh pattern engine when graph renders
-  renderPatternEngine();
-}
-
-// ── Pattern Engine ──────────────────────────────────────────────
-
-let _bcPatternOpen = false;
-function toggleBcPattern() {
-  _bcPatternOpen = !_bcPatternOpen;
-  const body = document.getElementById('bcPatternBody');
-  const chev = document.getElementById('bcPatternChevron');
-  if (body) body.style.display = _bcPatternOpen ? 'block' : 'none';
-  if (chev) chev.textContent = _bcPatternOpen ? '▲' : '▼';
-  if (_bcPatternOpen) renderPatternEngine();
-}
-
-function renderPatternEngine() {
-  const brahma = App.S.brahma || {};
-  // Gather all break entries with rich data
-  const breaks = []; // {date, dow, hour, tithi, streakDay}
-  const allKeys = Object.keys(brahma).filter(k => brahma[k].status === 'b').sort();
-
-  // Compute streak-before-break for each relapse
-  const startD = new Date(getBrahmaStart()); startD.setHours(0,0,0,0);
-  allKeys.forEach(key => {
-    const d = new Date(key + 'T00:00:00');
-    const en = brahma[key];
-    const times = en.times || [];
-    // Compute streak length before this break
-    let sb = 0;
-    const prev = new Date(d); prev.setDate(prev.getDate() - 1);
-    while (true) {
-      const pk = prev.toISOString().split('T')[0];
-      if (prev < startD) break;
-      const pe = brahma[pk];
-      if (pe && pe.status === 'b') break;
-      sb++; prev.setDate(prev.getDate() - 1);
-      if (sb > 200) break;
-    }
-    const tithi = getLunarTithi(d);
-    if (times.length === 0) {
-      // No time data — record as hour-unknown (-1)
-      breaks.push({ date: d, dow: d.getDay(), hour: -1, tithi, streakDay: sb, count: en.count || 1 });
-    } else {
-      times.forEach(t => {
-        const hr = t.time ? parseInt(t.time.split(':')[0]) : -1;
-        breaks.push({ date: d, dow: d.getDay(), hour: hr, tithi, streakDay: sb, count: 1 });
-      });
-    }
-  });
-
-  // ── Today's live risk score ──────────────────────
-  const today = new Date(); today.setHours(0,0,0,0);
-  const nowH = new Date().getHours();
-  const todayDow = today.getDay();
-  const todayTithi = getLunarTithi(today);
-
-  // Component 1: time-of-day risk (what hour is vulnerable)
-  const hourCounts = new Array(24).fill(0);
-  let knownHourBreaks = 0;
-  breaks.forEach(b => { if (b.hour >= 0) { hourCounts[b.hour]++; knownHourBreaks++; } });
-  const maxHourCount = Math.max(...hourCounts, 1);
-  const timeScore = knownHourBreaks > 0 ? (hourCounts[nowH] / maxHourCount) * 100 : 0;
-
-  // Component 2: day-of-week risk
-  const dowCounts = new Array(7).fill(0);
-  breaks.forEach(b => dowCounts[b.dow]++);
-  const maxDow = Math.max(...dowCounts, 1);
-  const dowScore = (dowCounts[todayDow] / maxDow) * 100;
-
-  // Component 3: lunar tithi risk
-  const tithibroken = breaks.filter(b => b.tithi === todayTithi).length;
-  const tithiTotal = breaks.length;
-  const tithiScore = tithiTotal > 0 ? Math.min(100, (tithibroken / tithiTotal) * 100 * 5) : 0;
-
-  // Component 4: streak vulnerability — today's streak day
-  let todayStreak = 0;
-  const tmpD = new Date(today);
-  while (true) {
-    const k = tmpD.toISOString().split('T')[0];
-    if (tmpD < startD) break;
-    const e = brahma[k];
-    if (e && e.status === 'b') break;
-    todayStreak++; tmpD.setDate(tmpD.getDate() - 1);
-    if (todayStreak > 200) break;
-  }
-  const streakDays = breaks.map(b => b.streakDay);
-  const streakVulnWindow = 3;
-  const streakMatches = streakDays.filter(s => Math.abs(s - todayStreak) <= streakVulnWindow).length;
-  const streakScore = streakDays.length > 0 ? Math.min(100, (streakMatches / streakDays.length) * 100 * 4) : 0;
-
-  // Composite risk
-  const totalBreaks = breaks.length;
-  let composite;
-  if (totalBreaks < 3) {
-    composite = isRiskDay(today) ? 55 : 25; // fallback for sparse data
-  } else {
-    composite = Math.min(100, Math.round(
-      timeScore * 0.35 + dowScore * 0.25 + tithiScore * 0.20 + streakScore * 0.20
-    ));
-  }
-
-  // Render risk score UI
-  const riskBar = document.getElementById('bcRiskBar');
-  const riskPct = document.getElementById('bcRiskPct');
-  const riskSlots = document.getElementById('bcRiskSlots');
-  if (riskBar) {
-    const col = composite >= 70 ? '#E74C3C' : composite >= 40 ? '#F39C12' : '#2ECC71';
-    riskBar.style.width = composite + '%';
-    riskBar.style.background = col;
-  }
-  if (riskPct) {
-    const label = composite >= 70 ? '🔴 High Risk' : composite >= 40 ? '🟡 Moderate' : '🟢 Low Risk';
-    riskPct.textContent = `${composite}% — ${label}`;
-    riskPct.style.color = composite >= 70 ? '#E74C3C' : composite >= 40 ? '#F39C12' : '#2ECC71';
-  }
-
-  // Next 3 vulnerable time slots today
-  if (riskSlots) {
-    const sortedHours = hourCounts
-      .map((c, h) => ({ h, c }))
-      .filter(x => x.h > nowH && x.c > 0)
-      .sort((a, b) => b.c - a.c)
-      .slice(0, 3);
-    if (sortedHours.length > 0) {
-      riskSlots.innerHTML = '<div style="font-size:10px;opacity:.6;margin-bottom:4px">⚠️ Vulnerable slots ahead today:</div>' +
-        sortedHours.map(x => {
-          const pct = Math.round((x.c / maxHourCount) * 100);
-          return `<span class="bc-risk-slot">${x.h}:00–${x.h+1}:00 (${pct}%)</span>`;
-        }).join(' ');
-    } else if (knownHourBreaks === 0) {
-      riskSlots.innerHTML = '<div style="font-size:10px;opacity:.5">Add break times to see hourly predictions</div>';
-    } else {
-      riskSlots.innerHTML = '<div style="font-size:10px;color:#2ECC71">✓ No high-risk slots remaining today</div>';
-    }
-  }
-
-  if (!_bcPatternOpen) return; // Don't render cards if collapsed
-
-  // ── Pattern Cards ────────────────────────────────
-  const cards = document.getElementById('bcPatternCards');
-  if (!cards) return;
-  if (totalBreaks < 2) {
-    cards.innerHTML = '<div class="bc-pc-empty">Need at least 2 relapse entries with times to build patterns. Keep logging! 🙏</div>';
-    return;
-  }
-
-  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const DAYS_W = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-
-  // Card 1: Peak hours
-  const topHours = hourCounts
-    .map((c, h) => ({ h, c }))
-    .filter(x => x.c > 0)
-    .sort((a, b) => b.c - a.c)
-    .slice(0, 3);
-  let c1 = '<div class="bc-pc"><div class="bc-pc-title">🕐 Peak Vulnerable Hours</div>';
-  if (topHours.length === 0) {
-    c1 += '<div class="bc-pc-note">No time data. Add times when logging breaks.</div>';
-  } else {
-    topHours.forEach(x => {
-      const pct = Math.round((x.c / knownHourBreaks) * 100);
-      c1 += `<div class="bc-pc-row"><span>${x.h}:00–${x.h+1}:00</span><div class="bc-pc-bar-wrap"><div class="bc-pc-bar" style="width:${pct}%;background:#E74C3C"></div></div><span class="bc-pc-val">${pct}%</span></div>`;
-    });
-    const [t1, t2] = topHours;
-    c1 += `<div class="bc-pc-insight">Most vulnerable: ${t1.h}:00–${t1.h+1}:00${t2 ? ` and ${t2.h}:00–${t2.h+1}:00` : ''}</div>`;
-  }
-  c1 += '</div>';
-
-  // Card 2: Day of week
-  const dowRank = dowCounts.map((c,i) => ({d:i,c})).sort((a,b) => b.c - a.c);
-  const topDows = dowRank.filter(x => x.c > 0).slice(0, 3);
-  let c2 = '<div class="bc-pc"><div class="bc-pc-title">📅 High-Risk Days of Week</div>';
-  topDows.forEach(x => {
-    const pct = Math.round((x.c / totalBreaks) * 100);
-    c2 += `<div class="bc-pc-row"><span>${DAYS_W[x.d]}</span><div class="bc-pc-bar-wrap"><div class="bc-pc-bar" style="width:${pct}%;background:#F39C12"></div></div><span class="bc-pc-val">${pct}%</span></div>`;
-  });
-  if (topDows.length >= 2) c2 += `<div class="bc-pc-insight">${DAYS_W[topDows[0].d]} & ${DAYS_W[topDows[1].d]} are your highest-risk days</div>`;
-  c2 += '</div>';
-
-  // Card 3: Streak vulnerability
-  const streakBuckets = {};
-  breaks.forEach(b => {
-    const bucket = Math.floor(b.streakDay / 5) * 5; // bucket by 5-day ranges
-    streakBuckets[bucket] = (streakBuckets[bucket] || 0) + 1;
-  });
-  const topStreak = Object.entries(streakBuckets).sort((a,b) => b[1] - a[1]).slice(0, 3);
-  let c3 = '<div class="bc-pc"><div class="bc-pc-title">⏱ Streak Day Vulnerability</div>';
-  topStreak.forEach(([bucket, cnt]) => {
-    const b = parseInt(bucket);
-    const pct = Math.round((cnt / totalBreaks) * 100);
-    c3 += `<div class="bc-pc-row"><span>Day ${b}–${b+4}</span><div class="bc-pc-bar-wrap"><div class="bc-pc-bar" style="width:${pct}%;background:#9B59B6"></div></div><span class="bc-pc-val">${pct}%</span></div>`;
-  });
-  if (topStreak.length > 0) {
-    const topB = parseInt(topStreak[0][0]);
-    c3 += `<div class="bc-pc-insight">Relapses cluster around day ${topB}–${topB+4} of a streak</div>`;
-  }
-  c3 += '</div>';
-
-  // Card 4: Lunar tithi pattern
-  const tithiBuckets = {};
-  breaks.forEach(b => { tithiBuckets[b.tithi] = (tithiBuckets[b.tithi] || 0) + 1; });
-  const topTithis = Object.entries(tithiBuckets).sort((a,b) => b[1]-a[1]).slice(0,3);
-  const tithiNames = { 9:'Navami', 10:'Dashami', 11:'Ekadashi', 12:'Dwadashi', 13:'Trayodashi',
-    15:'Purnima', 24:'Krishna Navami', 28:'Krishna Trayodashi', 30:'Amavasya' };
-  const tithiLabel = t => tithiNames[parseInt(t)] || `Tithi ${t}`;
-  let c4 = '<div class="bc-pc"><div class="bc-pc-title">🌙 Lunar Tithi Pattern</div>';
-  topTithis.forEach(([t, cnt]) => {
-    const pct = Math.round((cnt / totalBreaks) * 100);
-    c4 += `<div class="bc-pc-row"><span>${tithiLabel(t)}</span><div class="bc-pc-bar-wrap"><div class="bc-pc-bar" style="width:${pct}%;background:#1ABC9C"></div></div><span class="bc-pc-val">${pct}%</span></div>`;
-  });
-  const riskWindowBreaks = breaks.filter(b => isRiskDay(b.date)).length;
-  const riskPctVal = totalBreaks > 0 ? Math.round((riskWindowBreaks / totalBreaks) * 100) : 0;
-  c4 += `<div class="bc-pc-insight">${riskPctVal}% of relapses fall in Navami–Trayodashi window</div></div>`;
-
-  cards.innerHTML = c1 + c2 + c3 + c4;
 }
 
 // ── Brahmacharya ──
@@ -4022,7 +4860,7 @@ const MN = ['January','February','March','April','May','June','July','August','S
 function renderBcal() { renderCal(); }
 function cbm(d){bcd.setMonth(bcd.getMonth()+d);renderBcal();}
 function openBcDay(key,isBroken,cnt){
-  const parts=key.split('-'), label=MN[parseInt(parts[1])-1]+' '+parseInt(parts[2])+', '+parts[0];
+  const parts=key.split('-'), label=String(parseInt(parts[2])).padStart(2,'0')+':'+String(parseInt(parts[1])).padStart(2,'0')+':'+parts[0];
   document.getElementById('bcmoT').textContent=(isBroken?'❌ Broken — ':'✅ Maintained — ')+label;
   document.getElementById('bcmoD').textContent=isBroken?'Tap to restore or update.':'Tap to mark as broken.';
   document.getElementById('bcmoCnt').value=cnt||1;
@@ -4043,8 +4881,9 @@ function openBcDay(key,isBroken,cnt){
 }
 function lb(st){
   const cnt=parseInt(document.getElementById('bci').value)||1;
-  if(st==='b')App.S.brahma[App.S.tk]={status:'b',count:cnt};
-  else delete App.S.brahma[App.S.tk];
+  const bcKey = getBcDateKey(); // use BM-aware date key
+  if(st==='b')App.S.brahma[bcKey]={status:'b',count:cnt};
+  else delete App.S.brahma[bcKey];
   App.save(); fbDebouncedPush(); renderBcal();
   toast(st==='b'?'Logged. Keep going 🙏':'✅ Restored!');
 }
@@ -4057,10 +4896,10 @@ function uBStats(){
   const tmc=Object.values(App.S.brahma).filter(e=>e.status==='b').reduce((s,e)=>s+e.count,0);
   const pct=totalDays>0?Math.round(maint/totalDays*100):0;
   let cs=0;const d=new Date();d.setHours(0,0,0,0);
-  while(cs<999){const k=d.toISOString().split('T')[0];if(k<getBrahmaStart())break;const en=App.S.brahma[k];if(!en||en.status!=='b'){cs++;d.setDate(d.getDate()-1);}else break;}
+  while(cs<999){const k=_ldk(d);if(k<getBrahmaStart())break;const en=App.S.brahma[k];if(!en||en.status!=='b'){cs++;d.setDate(d.getDate()-1);}else break;}
   let bs=0,run=0;
   const allDays=[],cur=new Date(getBrahmaStart());cur.setHours(0,0,0,0);
-  while(cur<=todayD){allDays.push(cur.toISOString().split('T')[0]);cur.setDate(cur.getDate()+1);}
+  while(cur<=todayD){allDays.push(_ldk(cur));cur.setDate(cur.getDate()+1);}
   allDays.forEach(k=>{const en=App.S.brahma[k];if(!en||en.status!=='b'){run++;if(run>bs)bs=run;}else run=0;});
   document.getElementById('bcs').textContent=cs; document.getElementById('bbs').textContent=bs;
   document.getElementById('bbc').textContent=brok; document.getElementById('bmd').textContent=maint;
@@ -4092,7 +4931,17 @@ function renderCal(){
     if(occ)c.classList.add('occ');
     let inner='<span>'+d+'</span>';
     if(cnt>0)inner+='<span class="ccc">'+cnt+'</span>';
-    if(occ)inner+='<span class="cco">'+escHtml(occ)+'</span>';
+    if(occ){
+      // Strip parampara/paksha/time details — show only the core occasion name
+      let occShort = occ
+        .replace(/\s*[☀️🌙]\s*(Shukla|Krishna)(\s*Paksha)?/g, '')  // remove paksha labels
+        .replace(/\s*\(Mahadvadashi[^)]*\)/g, '')                    // remove Mahadvadashi note
+        .replace(/\s*\(Arunodaya[^)]*\)/g, '')                       // remove Arunodaya note
+        .replace(/\s+\d{1,2}:\d{2}\s*(AM|PM)[\s\S]*$/i, '')         // remove time ranges
+        .replace(/\s*·\s*(Smarta|Vaishnava|Gaudiya)[^·]*/gi, '')     // remove parampara
+        .trim();
+      inner+='<span class="cco">'+escHtml(occShort)+'</span>';
+    }
     c.innerHTML=inner;
     c.onclick=(()=>{const k=key,n=cnt,t=timeSec,t28=time28Sec;return()=>showDay(k,n,t,t28);})();
     g.appendChild(c);
@@ -4103,6 +4952,101 @@ function renderCal(){
 function chm(d){cald.setMonth(cald.getMonth()+d);renderCal();}
 // ── Calendar day bottom sheet ──
 let _sheetKey = null;
+// ── Panchang rendering for the day popup ─────────────────────────
+function _renderDayPanchang(key) {
+  // Reset to loading state
+  const ids = ['cdmpPaksha','cdmpTithi','cdmpNakshatra','cdmpYoga','cdmpKarana','cdmpVaara'];
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = '<span style="color:rgba(255,255,255,0.25);font-size:12px">…</span>'; });
+  const monthEl = document.getElementById('cdmoPanchangMonth');
+  if (monthEl) monthEl.innerHTML = '<span style="color:rgba(255,255,255,0.25);font-size:12px">Loading…</span>';
+
+  if (typeof getPanchangData !== 'function') {
+    if (monthEl) monthEl.textContent = 'Panchang module not loaded';
+    return;
+  }
+
+  // Build date at local midnight (00:00) so the panchang search starts from the
+  // beginning of the calendar day — otherwise if called after a tithi change
+  // (e.g. Amavasya ends at 3 AM and we pass 6 AM), we miss that tithi entirely.
+  const parts = key.split('-');
+  const dateAtMidnight = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]), 0, 0, 0);
+
+  async function _renderWithLatLng(lat, lng) {
+    try {
+      const p = await getPanchangData(lat, lng, dateAtMidnight);
+
+      // Month block — Purnimanta + Amanta + Gaudiya
+      if (monthEl) {
+        const adhikBadge = p.month.isAdhik
+          ? ' <span style="font-size:9px;background:rgba(206,147,216,0.2);border:1px solid rgba(206,147,216,0.4);border-radius:4px;padding:1px 6px;color:#ce93d8;">Adhik Maas</span>'
+          : '';
+        const sameMonth = p.month.std === p.month.amanta; // true during Shukla Paksha
+        monthEl.innerHTML =
+          // Row 1: Bengali names + Gaurabda
+          `<span style="font-size:11px;color:rgba(255,255,255,0.35);letter-spacing:.5px">Purnimanta</span> ` +
+          `<span style="color:#ce93d8;font-weight:600">${p.month.stdBn}</span>` +
+          ` <span style="color:rgba(255,255,255,0.25);font-size:11px">/</span> ` +
+          `<span style="color:#b39ddb">${p.month.gaudiyaBn}</span>${adhikBadge}` +
+          `<span style="font-size:11px;color:rgba(255,255,255,0.28);margin-left:8px">${p.gaurabdaYear} Gaurabda</span><br>` +
+          // Row 2: English Purnimanta
+          `<span style="font-size:11px;color:rgba(255,255,255,0.4)">${p.month.std} / ${p.month.gaudiya}</span><br>` +
+          // Row 3: Amanta (only show if different from Purnimanta)
+          (sameMonth ? '' :
+            `<span style="font-size:10px;color:rgba(255,255,255,0.3);letter-spacing:.5px">Amanta</span> ` +
+            `<span style="font-size:11px;color:#9fa8da">${p.month.amantaBn}</span>` +
+            ` <span style="color:rgba(255,255,255,0.2);font-size:10px">/</span> ` +
+            `<span style="font-size:11px;color:#7986cb">${p.month.amantaGaudiyaBn}</span><br>` +
+            `<span style="font-size:10px;color:rgba(255,255,255,0.28)">${p.month.amanta} / ${p.month.amantaGaudiya}</span>`
+          );
+      }
+
+      // Helper to build a val span with Bengali + end time
+      function val(en, bn, endTime) {
+        let html = `${en} <span class="cdmp-bn">${bn}</span>`;
+        if (endTime) html += ` <span class="cdmp-end">up to ${endTime}</span>`;
+        return html;
+      }
+
+      const pakshaEl = document.getElementById('cdmpPaksha');
+      if (pakshaEl) pakshaEl.innerHTML = val(p.paksha.gaudiya, p.paksha.gaudiyaBn, null);
+
+      const tithiEl = document.getElementById('cdmpTithi');
+      if (tithiEl) tithiEl.innerHTML = val(p.tithi.name, p.tithi.nameBn, p.tithi.endTimeHM);
+
+      const nakEl = document.getElementById('cdmpNakshatra');
+      if (nakEl) nakEl.innerHTML = val(p.nakshatra.name, p.nakshatra.nameBn, p.nakshatra.endTimeHM);
+
+      const yogaEl = document.getElementById('cdmpYoga');
+      if (yogaEl) yogaEl.innerHTML = val(p.yoga.name, p.yoga.nameBn, p.yoga.endTimeHM);
+
+      const karanaEl = document.getElementById('cdmpKarana');
+      if (karanaEl) karanaEl.innerHTML = val(p.karana.name, p.karana.nameBn, null);
+
+      const vaaraEl = document.getElementById('cdmpVaara');
+      if (vaaraEl) vaaraEl.innerHTML = val(p.vaara.name, p.vaara.nameBn, null);
+
+    } catch(e) {
+      if (monthEl) monthEl.textContent = 'Panchang error';
+      console.error('Panchang error:', e);
+    }
+  }
+
+  // Use saved GPS coords if available, else try to get location
+  const savedLat = App.S && App.S.lastLat;
+  const savedLng = App.S && App.S.lastLng;
+  if (savedLat && savedLng) {
+    _renderWithLatLng(savedLat, savedLng);
+  } else if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => _renderWithLatLng(pos.coords.latitude, pos.coords.longitude),
+      ()  => _renderWithLatLng(23.0, 89.5), // Bangladesh fallback
+      { timeout: 8000, maximumAge: 3600000 }
+    );
+  } else {
+    _renderWithLatLng(23.0, 89.5); // fallback
+  }
+}
+
 function showDay(key, cnt, timeSec, time28Sec) {
   _sheetKey = key;
   const ms = App.S.ms || 108;
@@ -4110,7 +5054,7 @@ function showDay(key, cnt, timeSec, time28Sec) {
   const occ = App.S.occasions && App.S.occasions[key];
 
   // Title
-  document.getElementById('cdmoTitle').textContent = MN[parseInt(mo)-1] + ' ' + parseInt(d) + ', ' + yr;
+  document.getElementById('cdmoTitle').textContent = String(parseInt(d)).padStart(2,'0')+':'+String(parseInt(mo)).padStart(2,'0')+':'+yr;
 
   // Stats — detailed breakdown
   const radhaCount = App.S.history[key] || 0;
@@ -4163,37 +5107,45 @@ function showDay(key, cnt, timeSec, time28Sec) {
       if (savedTimes.length > 0) {
         timesHtml = '<div class="bc-times-display">';
         savedTimes.forEach((t, i) => {
-          const tStr = t.time ? ('<span class="bc-time-badge">🕐 ' + t.time + '</span>') : '<span class="bc-time-badge bc-time-unknown">🕐 —</span>';
+          const formatted = t.time ? formatBcBreakTime(t.time, key) : '';
+          const tStr = formatted
+            ? ('<span class="bc-time-badge">🕐 ' + formatted + '</span>')
+            : '<span class="bc-time-badge bc-time-unknown">🕐 —</span>';
           const nStr = t.note ? ('<span class="bc-note-badge">' + escHtml(t.note) + '</span>') : '';
           timesHtml += '<div class="bc-time-item">' + (savedTimes.length > 1 ? '<span class="bc-instance-num">#' + (i+1) + '</span>' : '') + tStr + nStr + '</div>';
         });
         timesHtml += '</div>';
       }
       bcStatus.innerHTML = '❌ <span style="color:var(--red)">Broken</span>' + (bcEn.count > 1 ? ' (' + bcEn.count + 'x)' : '') + timesHtml;
+      // Allow editing count/times directly without first marking maintained
       bcMaintBtn.style.display = '';
-      bcBrkBtn.style.display = 'none';
-      bcCntRow.style.display = 'none';
+      bcBrkBtn.style.display = '';
+      bcBrkBtn.textContent = 'Update';
+      bcCntRow.style.display = 'flex';
       const bcTimeRows = document.getElementById('bcTimeRows');
-      if (bcTimeRows) bcTimeRows.style.display = 'none';
+      if (bcTimeRows) bcTimeRows.style.display = 'block';
     } else {
       bcStatus.innerHTML = '✅ <span style="color:var(--green)">Maintained</span>';
       bcMaintBtn.style.display = 'none';
       bcBrkBtn.style.display = '';
+      bcBrkBtn.textContent = 'Mark Broken';
       bcCntRow.style.display = 'flex';
       const bcTimeRows = document.getElementById('bcTimeRows');
       if (bcTimeRows) bcTimeRows.style.display = 'block';
-      renderBcTimeRows();
     }
     const cntInputEl = document.getElementById('cdmoBcCnt');
     if (cntInputEl) cntInputEl.oninput = function() { renderBcTimeRows(); };
     document.getElementById('cdmoBcCnt').value = (bcEn && bcEn.count) || 1;
-    if (!isBroken) renderBcTimeRows();
+    renderBcTimeRows();
   } else {
     bcSec.style.display = 'none';
   }
 
   // Clear input
   document.getElementById('cdmoOccIn').value = '';
+
+  // Panchang
+  _renderDayPanchang(key);
 
   document.getElementById('cdmo').classList.add('show');
 }
@@ -4228,6 +5180,8 @@ function addOccasionFromSheet() {
 }
 function closeDaySheet() {
   document.getElementById('cdmo').classList.remove('show');
+  const container = document.getElementById('bcTimeRows');
+  if (container) container.dataset.sheetKey = '';
   _sheetKey = null;
 }
 function sheetMarkBc(action) {
@@ -4268,20 +5222,30 @@ function renderBcTimeRows() {
   const cnt = parseInt(cntEl ? cntEl.value : 1) || 1;
   const container = document.getElementById('bcTimeRows');
   if (!container) return;
-  // Preserve existing values
+
+  // Only preserve existing DOM values if we're still on the same day
+  // (i.e. user changed the count spinner, not opened a different day)
+  const domKey = container.dataset.sheetKey;
+  const sameDay = domKey === key;
+
   const existing = [];
-  const old = container.querySelectorAll('.bc-time-row');
-  old.forEach((row, i) => {
-    existing[i] = {
-      time: (row.querySelector('input[type="time"]') || {}).value || '',
-      note: (row.querySelector('input[type="text"]') || {}).value || ''
-    };
-  });
-  // Pre-fill from saved data if available
+  if (sameDay) {
+    const old = container.querySelectorAll('.bc-time-row');
+    old.forEach((row, i) => {
+      existing[i] = {
+        time: (row.querySelector('input[type="time"]') || {}).value || '',
+        note: (row.querySelector('input[type="text"]') || {}).value || ''
+      };
+    });
+  }
+
+  // Pre-fill from saved data for this specific day
   const saved = key && App.S.brahma[key] && App.S.brahma[key].times ? App.S.brahma[key].times : [];
   container.innerHTML = '';
+  container.dataset.sheetKey = key; // stamp current day on container
+
   for (let i = 0; i < cnt; i++) {
-    const prefill = existing[i] || saved[i] || {};
+    const prefill = (sameDay && existing[i] && existing[i].time) ? existing[i] : (saved[i] || {});
     const div = document.createElement('div');
     div.className = 'bc-time-row';
     div.innerHTML =
@@ -4304,22 +5268,72 @@ function renderOccasionList(){
   const el=document.getElementById('occList'); if(!el)return;
   const occs=App.S.occasions||{}, keys=Object.keys(occs).sort();
   if(!keys.length){el.innerHTML='<div style="font-size:12px;color:var(--td);padding:4px 0">No occasions added yet.</div>';return;}
-  el.innerHTML=keys.map(k=>{const pts=k.split('-'),label=MN[parseInt(pts[1])-1]+' '+parseInt(pts[2])+', '+pts[0];return'<div class="occ-item"><span class="occ-item-date">'+label+'</span><span class="occ-item-name">🪔 '+escHtml(occs[k])+'</span><button class="occ-item-del" onclick="deleteOccasion(\''+k+'\')">✕</button></div>';}).join('');
+  el.innerHTML=keys.map(k=>{const pts=k.split('-'),label=String(parseInt(pts[2])).padStart(2,'0')+':'+String(parseInt(pts[1])).padStart(2,'0')+':'+pts[0];return'<div class="occ-item"><span class="occ-item-date">'+label+'</span><span class="occ-item-name">🪔 '+escHtml(occs[k])+'</span><button class="occ-item-del" onclick="deleteOccasion(\''+k+'\')">✕</button></div>';}).join('');
 }
 
 // ── Sun Times ──
 function calcSunTimes(lat,lng,date){
-  const rad=Math.PI/180,JD=(date.getTime()/86400000)+2440587.5,n=JD-2451545.0;
-  const L=(280.46+0.9856474*n)%360,g=(357.528+0.9856003*n)%360;
-  const lambda=L+1.915*Math.sin(g*rad)+0.02*Math.sin(2*g*rad);
-  const epsilon=23.439-0.0000004*n,sinDec=Math.sin(epsilon*rad)*Math.sin(lambda*rad);
-  const dec=Math.asin(sinDec),cosHA=(Math.cos(90.833*rad)-Math.sin(lat*rad)*sinDec)/(Math.cos(lat*rad)*Math.cos(dec));
-  if(cosHA>1||cosHA<-1)return null;
-  const HA=Math.acos(cosHA)/rad,GMST=6.697375+0.0657098242*n,LMST=(GMST*15+lng)%360;
-  const transit=(360-LMST+lambda)/15,sunrise=transit-HA/15,sunset=transit+HA/15;
-  function toLocal(utcH){const off=date.getTimezoneOffset()/(-60);let h=(utcH+24+off)%24;const hh=Math.floor(h),mm=Math.round((h-hh)*60),fH=mm===60?hh+1:hh,fM=mm===60?0:mm,ap=fH>=12?'PM':'AM',h12=((fH%12)||12);return String(h12).padStart(2,'0')+':'+String(fM).padStart(2,'0')+' '+ap;}
-  function toLocalRaw(utcH){const off=date.getTimezoneOffset()/(-60);return(utcH+24+off)%24;}
-  return{sunriseH:toLocalRaw(sunrise),sunsetH:toLocalRaw(sunset),sunrise:toLocal(sunrise),sunset:toLocal(sunset)};
+  // NOAA Solar Calculator algorithm — accurate to within ~1 minute
+  // Anchors Julian Day at integer noon to eliminate time-of-day drift
+  const rad=Math.PI/180;
+  const JD = Math.floor(date.getTime()/86400000) + 2440587.5 + 0.5; // JD at noon UTC for this date
+  const T  = (JD - 2451545.0) / 36525.0;  // Julian centuries since J2000.0
+
+  // Geometric mean longitude and anomaly of the Sun
+  const L0 = ((280.46646 + 36000.76983*T + 0.0003032*T*T) % 360 + 360) % 360;
+  const M  = ((357.52911 + 35999.05029*T - 0.0001537*T*T) % 360 + 360) % 360;
+  const Mr = M*rad;
+
+  // Equation of centre
+  const C = (1.914602 - 0.004817*T - 0.000014*T*T)*Math.sin(Mr)
+           +(0.019993 - 0.000101*T)*Math.sin(2*Mr)
+           + 0.000289*Math.sin(3*Mr);
+
+  // Sun true longitude → apparent longitude (aberration + nutation)
+  const sunTrueLon = L0 + C;
+  const omega      = 125.04 - 1934.136*T;
+  const lambda     = sunTrueLon - 0.00569 - 0.00478*Math.sin(omega*rad);
+
+  // Mean obliquity + correction
+  const epsilon0 = 23.0 + 26.0/60 + 21.448/3600 - (46.8150/3600)*T - (0.00059/3600)*T*T + (0.001813/3600)*T*T*T;
+  const epsilon  = (epsilon0 + 0.00256*Math.cos(omega*rad)) * rad;
+
+  // Declination
+  const dec = Math.asin(Math.sin(epsilon)*Math.sin(lambda*rad));
+
+  // Equation of time (minutes)
+  const y    = Math.tan(epsilon/2)**2;
+  const L0r  = L0*rad;
+  const eqT  = 4/rad * (y*Math.sin(2*L0r) - 2*0.016708634*Math.sin(Mr)
+             + 4*0.016708634*y*Math.sin(Mr)*Math.cos(2*L0r)
+             - 0.5*y*y*Math.sin(4*L0r) - 1.25*0.016708634**2*Math.sin(2*Mr));
+
+  // Hour angle at sunrise / sunset (90.833° = centre of sun + atmospheric refraction)
+  const cosHA = (Math.cos(90.833*rad) - Math.sin(lat*rad)*Math.sin(dec))
+              / (Math.cos(lat*rad)*Math.cos(dec));
+  if(cosHA>1||cosHA<-1) return null; // polar night / midnight sun
+
+  const HA = Math.acos(cosHA)/rad; // degrees
+
+  // Solar noon, sunrise, sunset — all in UTC minutes from midnight
+  const solarNoonUTC = 720 - 4*lng - eqT;
+  const sunriseUTC   = solarNoonUTC - HA*4;
+  const sunsetUTC    = solarNoonUTC + HA*4;
+
+  // UTC minutes → local decimal hours using device timezone offset
+  const tzOffMin = -date.getTimezoneOffset(); // positive = east of UTC
+  function toLocalH(utcMin){ return ((utcMin + tzOffMin)/60 % 24 + 24) % 24; }
+
+  const sunriseH = toLocalH(sunriseUTC);
+  const sunsetH  = toLocalH(sunsetUTC);
+
+  function fmtH(h){
+    let hh=Math.floor(h), mm=Math.round((h-hh)*60);
+    if(mm>=60){hh++;mm=0;} if(hh>=24)hh-=24;
+    const ap=hh>=12?'PM':'AM', h12=((hh%12)||12);
+    return String(h12).padStart(2,'0')+':'+String(mm).padStart(2,'0')+' '+ap;
+  }
+  return{ sunriseH, sunsetH, sunrise:fmtH(sunriseH), sunset:fmtH(sunsetH) };
 }
 function fmtHour(h){let hh=Math.floor(h),mm=Math.round((h-hh)*60);if(mm>=60){hh++;mm=0;}if(hh>=24)hh-=24;const ap=hh>=12?'PM':'AM',h12=((hh%12)||12);return String(h12).padStart(2,'0')+':'+String(mm).padStart(2,'0')+' '+ap;}
 function updateSunInfo(lat,lng){
@@ -4336,7 +5350,13 @@ function updateSunInfo(lat,lng){
 function initSunTimes(){
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(
-      pos=>{updateSunInfo(pos.coords.latitude,pos.coords.longitude);setInterval(()=>updateSunInfo(pos.coords.latitude,pos.coords.longitude),600000);},
+      pos=>{
+        const lat=pos.coords.latitude, lng=pos.coords.longitude;
+        // Save for panchang use
+        if(App.S){ App.S.lastLat=lat; App.S.lastLng=lng; }
+        updateSunInfo(lat,lng);
+        setInterval(()=>updateSunInfo(lat,lng),600000);
+      },
       ()=>updateSunInfo(23.8103,90.4125),
       {timeout:8000,maximumAge:3600000}
     );
@@ -4463,6 +5483,10 @@ window.addEventListener('load', async () => {
   fbInit();
   initSunTimes();
   buildPwaManifest();
+  // Migrate any legacy two-date Ekadashi occasions to single fasting date
+  _cleanLegacyEkadashiOccasions();
+  // Persist the cleaned occasions immediately
+  App.save(); fbDebouncedPush();
 
   // Hide loading — guaranteed cleanup
   setTimeout(() => {
@@ -5033,15 +6057,15 @@ function histPreset(days) {
   const to = new Date();
   const from = new Date();
   from.setDate(from.getDate() - (days - 1));
-  document.getElementById('histFrom').value = from.toISOString().slice(0,10);
-  document.getElementById('histTo').value = to.toISOString().slice(0,10);
+  document.getElementById('histFrom').value = _ldk(from);
+  document.getElementById('histTo').value = _ldk(to);
 }
 
 function histPresetMonth() {
   const now = new Date();
   const from = new Date(now.getFullYear(), now.getMonth(), 1);
-  document.getElementById('histFrom').value = from.toISOString().slice(0,10);
-  document.getElementById('histTo').value = now.toISOString().slice(0,10);
+  document.getElementById('histFrom').value = _ldk(from);
+  document.getElementById('histTo').value = _ldk(now);
 }
 
 function _histGetDates(from, to) {
@@ -5049,7 +6073,7 @@ function _histGetDates(from, to) {
   const cur = new Date(from);
   const end = new Date(to);
   while (cur <= end) {
-    dates.push(cur.toISOString().slice(0,10));
+    dates.push(_ldk(cur));
     cur.setDate(cur.getDate() + 1);
   }
   return dates;
@@ -5204,9 +6228,9 @@ function showHistDay(tk) {
   const tkPrefix = tk.slice(0,10);
 
   // Get mala entries for this day
-  const radhaEntries = log.filter(e => e.t === 'mala' && e.mode !== 'rv' && new Date(e.ts).toISOString().slice(0,10) === tkPrefix);
-  const rvEntries    = log.filter(e => e.t === 'mala' && e.mode === 'rv'  && new Date(e.ts).toISOString().slice(0,10) === tkPrefix);
-  const cycleEntries = log.filter(e => e.t === '28cycle'                  && new Date(e.ts).toISOString().slice(0,10) === tkPrefix);
+  const radhaEntries = log.filter(e => e.t === 'mala' && e.mode !== 'rv' && _ldk(new Date(e.ts)) === tkPrefix);
+  const rvEntries    = log.filter(e => e.t === 'mala' && e.mode === 'rv'  && _ldk(new Date(e.ts)) === tkPrefix);
+  const cycleEntries = log.filter(e => e.t === '28cycle'                  && _ldk(new Date(e.ts)) === tkPrefix);
 
   const hasDetail = radhaEntries.length > 0 || rvEntries.length > 0 || cycleEntries.length > 0;
 
@@ -5386,4 +6410,319 @@ async function getLifetimeActivityLog() {
   });
   all.sort(function(a, b) { return (a.ts || 0) - (b.ts || 0); });
   return all;
+}
+
+// ══════════════════════════════════════════════════════
+// ── Annual Ekadashi Calendar (2025/2026/2027) ─────────
+// ══════════════════════════════════════════════════════
+
+let _annualEkYear = null;
+let _annualEkComputing = false;
+
+function toggleAnnualEk(year) {
+  const listEl = document.getElementById('annualEkList');
+  const statusEl = document.getElementById('annualEkStatus');
+  if (!listEl) return;
+
+  // If same year toggled again, hide
+  if (_annualEkYear === year && listEl.style.display !== 'none') {
+    listEl.style.display = 'none';
+    _annualEkYear = null;
+    return;
+  }
+
+  _annualEkYear = year;
+  listEl.style.display = 'block';
+  listEl.innerHTML = '<div style="font-size:12px;color:rgba(255,255,255,0.4);text-align:center;padding:16px 0;">⏳ Computing ' + year + ' Ekadashis…</div>';
+  if (statusEl) statusEl.textContent = '';
+
+  if (_annualEkComputing) return;
+  _annualEkComputing = true;
+
+  // Use saved GPS, fallback to India center
+  const lat = (App.S && App.S.lastLat) ? App.S.lastLat : 22.5;
+  const lng = (App.S && App.S.lastLng) ? App.S.lastLng : 78.5;
+
+  setTimeout(function() {
+    try {
+      const results = _computeYearEkadashis(year, lat, lng);
+      _renderAnnualEkList(results, year, listEl, statusEl);
+    } catch(e) {
+      listEl.innerHTML = '<div style="font-size:12px;color:#e8336d;padding:8px;">Error: ' + e.message + '</div>';
+    }
+    _annualEkComputing = false;
+  }, 30);
+}
+
+function _computeYearEkadashis(year, lat, lng) {
+  const DAY = 86400000;
+  const results = [];
+  // Scan from Dec 1 prev year to Jan 15 next year (to catch all Ekadashis in the year)
+  const scanStart = new Date(year - 1, 11, 1); // Dec 1 of previous year
+  const scanEnd   = new Date(year + 1, 0, 15); // Jan 15 of next year
+
+  for (const paksha of ['shukla', 'krishna']) {
+    let cur = new Date(scanStart);
+    while (cur < scanEnd) {
+      const wStart = new Date(cur);
+      const wEnd   = new Date(cur.getTime() + 17 * DAY);
+      const ek = _findEkInWindow(wStart, wEnd, paksha);
+      if (ek && ek.ekStart.getFullYear() === year) {
+        const mi = ek.ekStart.getMonth();
+        const ekDateStr = ek.ekStart.toISOString().slice(0, 10);
+        const adhikWin = _getAdhikMaasWindow ? _getAdhikMaasWindow(ekDateStr) : null;
+        let name;
+        if (adhikWin) {
+          name = paksha === 'shukla' ? 'Padmini' : 'Parama';
+        } else {
+          name = paksha === 'shukla'
+            ? (_EK_NAMES_SHUKLA[mi] || 'Ekadashi')
+            : (_EK_NAMES_KRISHNA[mi] || 'Ekadashi');
+        }
+        const resolved = _resolveEkFasting(ek, lat, lng, name);
+        // Compute parana window
+        const parana = _computeParanaWindow(ek, lat, lng, resolved.fastingDate);
+        results.push({ ...resolved, parana });
+      }
+      cur.setTime(cur.getTime() + 15 * DAY);
+    }
+  }
+
+  // Sort by fasting date
+  results.sort((a, b) => a.fastingDate < b.fastingDate ? -1 : 1);
+
+  // Remove duplicates (same fastingDate)
+  const seen = new Set();
+  return results.filter(r => {
+    if (seen.has(r.fastingDate)) return false;
+    seen.add(r.fastingDate);
+    return true;
+  });
+}
+
+// Compute Parana (fast-breaking) window:
+// Parana is on the day AFTER the fasting date, between sunrise and 1/5 of daytime
+// OR before Dvadashi tithi ends (whichever comes first)
+// Returns { date, windowStart, windowEnd } all as hh:mm strings
+function _computeParanaWindow(ek, lat, lng, fastingDate) {
+  try {
+    // Parana day = day after fasting day
+    const [fy, fm, fd] = fastingDate.split('-').map(Number);
+    const paranaDay = new Date(fy, fm - 1, fd + 1);
+    const srData = calcSunTimes(lat, lng, paranaDay);
+    if (!srData) return null;
+    const srH = srData.sunriseH; // decimal hours
+    const ssH = srData.sunsetH;
+    // 1/5 of daytime
+const dayLen = ssH - srH;
+    const fifthDay = srH + dayLen / 5;
+    // Dvadashi ends roughly when next tithi (Trayodashi) starts
+    // Approximation: Dvadashi lasts ~24h after Ekadashi ends
+    const dvadashiEndH = ek.ekEnd ? (ek.ekEnd.getHours() + ek.ekEnd.getMinutes() / 60) : null;
+
+    // Parana window: sunrise → min(1/5 of day, dvadashi end if same day)
+    let windowEnd = fifthDay;
+    if (dvadashiEndH !== null) {
+      // If Dvadashi ends before 1/5 of day on parana day, parana must finish before that
+      windowEnd = Math.min(fifthDay, dvadashiEndH);
+    }
+    // But parana can't start before sunrise
+    const windowStart = srH;
+
+    return {
+      date: paranaDay.getFullYear() + '-' + String(paranaDay.getMonth()+1).padStart(2,'0') + '-' + String(paranaDay.getDate()).padStart(2,'0'),
+      windowStart: _decHToHHMM(windowStart),
+      windowEnd: _decHToHHMM(windowEnd)
+    };
+  } catch(e) { return null; }
+}
+
+function _decHToHHMM(h) {
+  const hh = Math.floor(h), mm = Math.round((h - hh) * 60);
+  return String(hh).padStart(2,'0') + ':' + String(mm % 60).padStart(2,'0');
+}
+
+function _fmtDateDMY(dateStr) {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-');
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const dt = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
+  return days[dt.getDay()] + ' ' + String(parseInt(d)).padStart(2,'0') + ':' + String(parseInt(m)).padStart(2,'0') + ':' + y;
+}
+
+function _renderAnnualEkList(results, year, listEl, statusEl) {
+  if (!results.length) {
+    listEl.innerHTML = '<div style="font-size:12px;color:rgba(255,255,255,0.4);text-align:center;padding:10px;">No Ekadashis found for ' + year + '</div>';
+    return;
+  }
+  const parampara = App.S.ekParampara || 'smarta';
+  const paramTag = parampara === 'vaishnava'
+    ? '<span style="font-size:8px;background:rgba(74,144,226,0.2);color:#6DB8FF;border-radius:4px;padding:1px 5px;">Vaishnava</span>'
+    : '<span style="font-size:8px;background:rgba(46,204,113,0.15);color:#2ecc71;border-radius:4px;padding:1px 5px;">Smarta</span>';
+
+  listEl.innerHTML = results.map(r => {
+    const pLabel = r.paksha === 'shukla'
+      ? '<span style="font-size:9px;background:rgba(241,196,15,0.2);color:#F1C40F;border-radius:4px;padding:2px 5px;font-weight:700;">☀️ SHUKLA</span>'
+      : '<span style="font-size:9px;background:rgba(155,89,182,0.25);color:#BD93F9;border-radius:4px;padding:2px 5px;font-weight:700;">🌙 KRISHNA</span>';
+    const viddhaTag = r.isViddha
+      ? ' <span style="font-size:8px;background:rgba(255,152,0,0.2);color:#FF9800;border-radius:4px;padding:1px 5px;">Mahadvadashi</span>' : '';
+
+    const paranaHtml = r.parana
+      ? `<div style="font-size:10px;color:#FFD700;margin-top:3px;">🌅 Parana: ${_fmtDateDMY(r.parana.date)} · ${_fmtTime12(r.parana.windowStart)}–${_fmtTime12(r.parana.windowEnd)}</div>`
+      : '';
+
+    return `<div style="background:rgba(74,144,226,0.07);border:1px solid rgba(74,144,226,0.18);border-radius:10px;padding:9px 11px;margin-bottom:7px;">
+      <div style="font-size:11px;color:#6DB8FF;font-weight:700;margin-bottom:2px;">${r.name} ${pLabel}${viddhaTag}</div>
+      <div style="font-size:10px;color:rgba(255,255,255,0.45);">Tithi: ${_fmtDateDMY(r.startDate)} ${r.startTime ? '· ' + _fmtTime12(r.startTime) : ''}</div>
+      <div style="font-size:10px;color:#76ff7a;font-weight:600;margin-top:2px;">🌙 Fast: ${_fmtDateDMY(r.fastingDate)} ${paramTag}</div>
+      ${paranaHtml}
+    </div>`;
+  }).join('');
+
+  if (statusEl) statusEl.textContent = '✅ ' + results.length + ' Ekadashis for ' + year + (App.S.lastLat ? ' (GPS location)' : ' (default location)');
+}
+
+
+// ══════════════════════════════════════════════════════
+// ── Multi-Sampraday: Spawn animations & core logic ───
+// ══════════════════════════════════════════════════════
+
+let _ramAcf = false, _shivAcf = false;
+
+// Ram Naam spawn — like Radha but saffron/gold
+function spawnRam(e, zone) {
+  if (!zone) return;
+  const r = zone.getBoundingClientRect();
+  let x = e.clientX - r.left, y = e.clientY - r.top;
+  if (e.touches && e.touches[0]) { x = e.touches[0].clientX - r.left; y = e.touches[0].clientY - r.top; }
+  const el = document.createElement('div');
+  el.className = 'fn-ram';
+  const fs = 48 + Math.random()*28;
+  const sc = App.S.mantraScript || 'hi';
+  el.textContent = sc === 'bn' ? 'রাম' : 'राम';
+  el.style.fontSize = fs + 'px';
+  el.style.fontFamily = "'Tiro Devanagari Hindi','Hind Siliguri',serif";
+  el.style.left = (x - fs*0.6) + 'px'; el.style.top = (y - fs*0.5) + 'px';
+  _ramAcf = !_ramAcf;
+  el.style.color = _ramAcf ? '#FF9933' : '#FFD700';
+  el.style.textShadow = _ramAcf ? '0 0 28px rgba(255,153,51,0.9)' : '0 0 28px rgba(255,215,0,0.9)';
+  zone.appendChild(el); setTimeout(() => el.remove(), 2400);
+}
+
+// Shiv spawn — blue/silver
+function spawnShiv(e, zone) {
+  if (!zone) return;
+  const r = zone.getBoundingClientRect();
+  let x = e.clientX - r.left, y = e.clientY - r.top;
+  if (e.touches && e.touches[0]) { x = e.touches[0].clientX - r.left; y = e.touches[0].clientY - r.top; }
+  const el = document.createElement('div');
+  el.className = 'fn-shiv';
+  const fs = 44 + Math.random()*24;
+  const sc = App.S.mantraScript || 'hi';
+  el.textContent = sc === 'bn' ? 'হর হর মহাদেব' : 'हर हर महादेव';
+  el.style.fontSize = (fs*0.6) + 'px';
+  el.style.fontFamily = "'Tiro Devanagari Hindi','Hind Siliguri',serif";
+  el.style.left = (x - fs) + 'px'; el.style.top = (y - fs*0.5) + 'px';
+  _shivAcf = !_shivAcf;
+  el.style.color = _shivAcf ? '#6DB8FF' : '#E0E0E0';
+  el.style.textShadow = _shivAcf ? '0 0 28px rgba(109,184,255,0.9)' : '0 0 28px rgba(224,224,224,0.7)';
+  zone.appendChild(el); setTimeout(() => el.remove(), 2400);
+}
+
+// ── setSampraday: switch the whole tradition ─────────────────────────────
+const SAMPRADAY_DEFAULT_MODES = {
+  rv: 'radha', gaudiya: 'mahamantra', ramanandi: 'ram', shaiva: 'shiv'
+};
+const SAMPRADAY_LABELS = {
+  rv: 'Radha Vallabh Sampraday 🌸',
+  gaudiya: 'Gaudiya / ISKCON 🔔',
+  ramanandi: 'Ramanandi Sampraday 🏹',
+  shaiva: 'Shaiva Sampraday 🔱',
+};
+
+function setSampraday(sp) {
+  App.S.sampraday = sp;
+  // Switch jap mode to default for that sampraday
+  const defaultMode = SAMPRADAY_DEFAULT_MODES[sp] || 'radha';
+  // For ramanandi: offer both sub-modes; default to 'ram'
+  App.S.japMode = defaultMode;
+  if (sp === 'ramanandi') App.S.japModeRamanandi = defaultMode;
+
+  // Update 28-names nav button
+  const nav28 = document.getElementById('nav28Btn');
+  if (nav28) {
+    nav28.style.opacity = sp === 'rv' ? '1' : '0.35';
+    nav28.style.pointerEvents = sp === 'rv' ? '' : 'none';
+    nav28.title = sp !== 'rv' ? '28 Names available in Radha Vallabh mode only' : '';
+  }
+
+  // If currently on v28 and switching away from rv, go back to jap view
+  if (sp !== 'rv') {
+    const v28 = document.getElementById('v28');
+    if (v28 && v28.classList.contains('active')) {
+      sv('vj', document.querySelector('.nb'));
+    }
+  }
+
+  updateSampradayUI();
+  switchJapMode(App.S.japMode);
+  App.save();
+  toast(SAMPRADAY_LABELS[sp] + ' ✓');
+}
+
+function updateSampradayUI() {
+  const sp = App.S.sampraday || 'rv';
+  ['rv','gaudiya','ramanandi','shaiva'].forEach(s => {
+    const btn = document.getElementById('spBtn_' + s);
+    if (btn) btn.classList.toggle('active-sp', s === sp);
+  });
+  const statusEl = document.getElementById('sampradayStatus');
+  if (statusEl) statusEl.textContent = SAMPRADAY_LABELS[sp] || '';
+
+  // Show/hide ramanandi sub-mode selector
+  let rmWrap = document.getElementById('ramaSubWrap');
+  if (!rmWrap) {
+    // Create it dynamically once
+    rmWrap = document.createElement('div');
+    rmWrap.id = 'ramaSubWrap';
+    rmWrap.style = 'display:none;margin-top:10px;';
+    rmWrap.innerHTML = '<div style="font-size:11px;color:var(--td);margin-bottom:6px;">Choose Ramanandi Jap type:</div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button onclick="switchJapMode(\'ram\')" id="rmBtnRam" style="flex:1;padding:8px;border-radius:10px;border:1px solid rgba(255,153,51,0.3);background:rgba(255,153,51,0.1);color:#FF9933;font-size:11px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;">🏹 राम / রাম</button><button onclick="switchJapMode(\'ramvijay\')" id="rmBtnRV" style="flex:1;padding:8px;border-radius:10px;border:1px solid rgba(255,153,51,0.2);background:transparent;color:rgba(255,153,51,0.7);font-size:10px;font-weight:600;cursor:pointer;font-family:\'Hind Siliguri\',serif;">श्री राम जय राम</button></div>';
+    const spCard = document.getElementById('sampradayCard');
+    if (spCard) spCard.appendChild(rmWrap);
+  }
+  rmWrap.style.display = sp === 'ramanandi' ? 'block' : 'none';
+
+  // Ramanandi sub-mode active state
+  if (sp === 'ramanandi') {
+    const cur = App.S.japMode;
+    const rb = document.getElementById('rmBtnRam'); if(rb) rb.style.background = cur==='ram'?'rgba(255,153,51,0.2)':'transparent';
+    const rvb = document.getElementById('rmBtnRV'); if(rvb) rvb.style.background = cur==='ramvijay'?'rgba(255,153,51,0.2)':'transparent';
+  }
+
+  // 28 nav
+  const nav28 = document.getElementById('nav28Btn');
+  if (nav28) {
+    nav28.style.opacity = sp === 'rv' ? '1' : '0.35';
+    nav28.style.pointerEvents = sp === 'rv' ? '' : 'none';
+  }
+}
+
+// ── uStats override: show only active sampraday stats ────────────────────
+// Patch the Radha/RV/28-names breakdown section in stats view
+function _updateStatsSampradayLabels() {
+  const sp = App.S.sampraday || 'rv';
+  // Update the "separated lifetime" labels in stats view if those elements exist
+  const rLabel = document.getElementById('sRadhaTotLabel');
+  const rvLabel = document.getElementById('sRVTotLabel');
+  const n28Label = document.getElementById('s28TotLabel');
+  if (sp === 'rv') {
+    if (rLabel) rLabel.style.display = '';
+    if (rvLabel) rvLabel.style.display = '';
+    if (n28Label) n28Label.style.display = '';
+  } else {
+    // Hide RV-specific breakdown, show sampraday total
+    if (rLabel) rLabel.style.display = 'none';
+    if (rvLabel) rvLabel.style.display = 'none';
+    if (n28Label) n28Label.style.display = 'none';
+  }
 }

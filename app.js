@@ -5,6 +5,146 @@
 // ═══════════════════════════════════════════════════════
 // APP — Single unified state object
 // ═══════════════════════════════════════════════════════
+
+
+
+
+
+// Sampraday config data
+const SAMPRADAY_MODES = {
+  radha:      { sp:'rv',        titleHi:'राधा',            titleBn:'রাধা',           toast:'राधा 🌸' },
+  rv:         { sp:'rv',        titleHi:'राधावल्लभ\nश्री हरिवंश', titleBn:'রাধাবল্লভ\nশ্রী হরিবংশ', toast:'राधावल्लभ श्री हरिवंश 🙏' },
+  mahamantra: { sp:'gaudiya',   titleHi:'महामंत्र',         titleBn:'মহামন্ত্র',       toast:'हरे कृष्ण 🔔' },
+  ram:        { sp:'ramanandi', titleHi:'राम',             titleBn:'রাম',            toast:'राम 🏹' },
+  ramvijay:   { sp:'ramanandi', titleHi:'राम विजय',        titleBn:'রাম বিজয়',       toast:'श्री राम जय राम 🏹' },
+  shiv:       { sp:'shaiva',    titleHi:'सदा शिव',         titleBn:'সদা শিব',         toast:'हर हर महादेव 🔱' },
+};
+const MANTRA_DATA = {
+  mahamantra: {
+    hi: 'हरे कृष्ण हरे कृष्ण\nकृष्ण कृष्ण हरे हरे\nहरे राम हरे राम\nराम राम हरे हरे',
+    bn: 'হরে কৃষ্ণ হরে কৃষ্ণ\nকৃষ্ণ কৃষ্ণ হরে হরে\nহরে রাম হরে রাম\nরাম রাম হরে হরে',
+    celebHi: 'জয় শ্রী কৃষ্ণ চৈতন্য',
+    celebLine1Hi: 'জয় শ্রীকৃষ্ণ চৈতন্য প্রভু নিত্যানন্দ',
+    celebLine2Hi: 'শ্রী অদ্বৈত গদাধর শ্রীবাসাদি শ্রী গৌরভক্তবৃন্দ',
+    celebLine1Bn: 'জয় শ্রীকৃষ্ণ চৈতন্য প্রভু নিত্যানন্দ',
+    celebLine2Bn: 'শ্রী অদ্বৈত গদাধর শ্রীবাসাদি শ্রী গৌরভক্তবৃন্দ',
+  },
+  ramvijay: {
+    hi: 'श्री राम जय राम जय जय राम\nश्री राम जय राम जय जय राम',
+    bn: 'শ্রী রাম জয় রাম জয় জয় রাম\nশ্রী রাম জয় রাম জয় জয় রাম',
+  },
+};
+const CELEB_DATA = {
+  rv:         { line1:'Radha Ballabh', line2:'Sri Harivansh', line1Hi:'राधावल्लभ', line2Hi:'श्री हरिवंश', line1Bn:'রাধাবল্লভ', line2Bn:'শ্রী হরিবংশ' },
+  radha:      { line1:'Radha Ballabh', line2:'Sri Harivansh', line1Hi:'राधावल्लभ', line2Hi:'श्री हरिवंश', line1Bn:'রাধাবল্লভ', line2Bn:'শ্রী হরিবংশ' },
+  mahamantra: { line1Hi:'জয় শ্রীকৃষ্ণ চৈতন্য', line2Hi:'শ্রী অদ্বৈত গদাধর শ্রীবাসাদি শ্রী গৌরভক্তবৃন্দ', line1Bn:'জয় শ্রীকৃষ্ণ চৈতন্য', line2Bn:'শ্রী গৌরভক্তবৃন্দ' },
+  ram:        { line1Hi:'जय श्री राम', line2Hi:'', line1Bn:'জয় শ্রী রাম', line2Bn:'' },
+  ramvijay:   { line1Hi:'जय श्री राम', line2Hi:'', line1Bn:'জয় শ্রী রাম', line2Bn:'' },
+  shiv:       { line1Hi:'हर हर महादेव', line2Hi:'', line1Bn:'হর হর মহাদেব', line2Bn:'' },
+};
+
+function _getLmcKey(mode) {
+  if (mode === 'rv') return 'lmcRV';
+  if (mode === 'mahamantra') return 'lmcGaudiya';
+  if (mode === 'ram' || mode === 'ramvijay') return 'lmcRamanandi';
+  if (mode === 'shiv') return 'lmcShaiva';
+  return 'lmc';
+}
+
+function _updateMalaCelebration(mode) {
+  const script = (App.S.mantraScript || 'hi');
+  const cd = CELEB_DATA[mode] || CELEB_DATA['rv'];
+  const l1 = cd['line1'+script.charAt(0).toUpperCase()+script.slice(1)] || cd.line1Hi || cd.line1 || '';
+  const l2 = cd['line2'+script.charAt(0).toUpperCase()+script.slice(1)] || cd.line2Hi || cd.line2 || '';
+  // Normal mf
+  const el1 = document.getElementById('mfLine1'); if (el1) el1.textContent = l1;
+  const el2 = document.getElementById('mfLine2'); if (el2) el2.textContent = l2;
+  // Mantra mf
+  const ml1 = document.getElementById('mfMantraLine1'); if (ml1) ml1.textContent = l1;
+  const ml2 = document.getElementById('mfMantraLine2'); if (ml2) ml2.textContent = l2;
+}
+
+function toggleMantraScript(sc) {
+  App.S.mantraScript = sc;
+  App.save();
+  document.getElementById('msBtnHi').style.background = sc==='hi' ? 'rgba(255,152,0,0.2)' : 'transparent';
+  document.getElementById('msBtnBn').style.background = sc==='bn' ? 'rgba(109,184,255,0.2)' : 'transparent';
+  _updateMantraDisplay();
+}
+
+function _updateMantraDisplay() {
+  const mode = App.S.japMode;
+  const sc = App.S.mantraScript || 'hi';
+  const isMantraMode = mode === 'mahamantra' || mode === 'ramvijay';
+  const wrap = document.getElementById('mantraDisplayWrap');
+  const tz = document.getElementById('tz');
+  if (wrap) wrap.style.display = isMantraMode ? 'block' : 'none';
+  if (tz) tz.style.display = isMantraMode ? 'none' : '';
+  if (!isMantraMode) return;
+  const md = MANTRA_DATA[mode];
+  if (!md) return;
+  const mt = document.getElementById('mantraText');
+  const mb = document.getElementById('mantraBengali');
+  if (mt) { mt.textContent = md.hi; mt.style.whiteSpace = 'pre-line'; }
+  if (mb) {
+    if (sc === 'bn') { mb.textContent = md.bn; mb.style.display = ''; mt.style.display = 'none'; }
+    else { mb.style.display = 'none'; mt.style.display = ''; }
+  }
+}
+
+function switchJapMode(mode) {
+  App.S.japMode = mode;
+  const dd = document.getElementById('naamSelDd');
+  const btn = document.getElementById('naamSelBtn');
+  if (dd) dd.classList.remove('show');
+  if (btn) btn.classList.remove('open');
+  document.removeEventListener('click', closeNaamSelOutside);
+
+  // Update checkmarks
+  ['Radha','RV','Maha','Ram','RamVijay','Shiv'].forEach(id => {
+    const opt = document.getElementById('naamOpt'+id);
+    if (opt) { opt.classList.remove('active'); opt.querySelector('.ns-check').textContent = ''; }
+  });
+  const modeToOptId = { radha:'Radha', rv:'RV', mahamantra:'Maha', ram:'Ram', ramvijay:'RamVijay', shiv:'Shiv' };
+  const activeOpt = document.getElementById('naamOpt' + (modeToOptId[mode] || 'Radha'));
+  if (activeOpt) { activeOpt.classList.add('active'); activeOpt.querySelector('.ns-check').textContent = '✓'; }
+
+  // Update title display
+  const titleEl = document.getElementById('rnTitle');
+  if (titleEl) {
+    const sc = App.S.mantraScript || 'hi';
+    const sd = SAMPRADAY_MODES[mode] || SAMPRADAY_MODES['radha'];
+    const titleKey = sc === 'bn' ? 'titleBn' : 'titleHi';
+    const titleText = sd[titleKey] || sd.titleHi;
+    if (titleText.includes('\n')) {
+      const parts = titleText.split('\n');
+      titleEl.innerHTML = '<span style="font-size:clamp(18px,5vw,28px);line-height:1.1">'+parts[0]+'</span><br><span style="font-size:clamp(16px,4.5vw,24px);line-height:1.1">'+parts[1]+'</span>';
+      titleEl.style.textAlign = 'center';
+    } else {
+      titleEl.textContent = titleText;
+      titleEl.style.textAlign = '';
+    }
+  }
+
+  // Show/hide mantra display vs tap zone
+  _updateMantraDisplay();
+  // Update celebration text
+  _updateMalaCelebration(mode);
+  // Update script toggle buttons
+  const sc = App.S.mantraScript || 'hi';
+  const hb = document.getElementById('msBtnHi'); if(hb) hb.style.background = sc==='hi'?'rgba(255,152,0,0.2)':'transparent';
+  const bb = document.getElementById('msBtnBn'); if(bb) bb.style.background = sc==='bn'?'rgba(109,184,255,0.2)':'transparent';
+
+  // Reset lmc counter
+  const ms = App.S.ms || 108;
+  const lmcKey = _getLmcKey(mode);
+  App[lmcKey] = Math.floor((App.getCurHistory()[App.S.tk] || 0) / ms);
+
+  App.save(); App.ua(); uStats(); renderMalaLog();
+  const sd = SAMPRADAY_MODES[mode] || SAMPRADAY_MODES['radha'];
+  toast(sd.toast);
+}
+
 const App = {
   // ── State ──
   S: {
@@ -1024,6 +1164,15 @@ function syncTargetMalaToJap(prefix) {
 }
 
 // ── Init RV mode UI on page load ──
+
+// ── Naam Selector Toggle ──
+
+
+// ── Naam Selector Toggle ──
+// Sampraday config data
+
+// ── Naam Selector Toggle ──
+
 function initJapModeUI() {
   const mode = App.S.japMode || 'radha';
   switchJapMode(mode);
@@ -1058,140 +1207,6 @@ function closeNaamSelOutside(e) {
     btn.classList.remove('open');
     document.removeEventListener('click', closeNaamSelOutside);
   }
-}
-// Sampraday config data
-const SAMPRADAY_MODES = {
-  radha:      { sp:'rv',        titleHi:'राधा',            titleBn:'রাধা',           toast:'राधा 🌸' },
-  rv:         { sp:'rv',        titleHi:'राधावल्लभ\nश्री हरिवंश', titleBn:'রাধাবল্লভ\nশ্রী হরিবংশ', toast:'राधावल्लभ श्री हरिवंश 🙏' },
-  mahamantra: { sp:'gaudiya',   titleHi:'महामंत्र',         titleBn:'মহামন্ত্র',       toast:'हरे कृष्ण 🔔' },
-  ram:        { sp:'ramanandi', titleHi:'राम',             titleBn:'রাম',            toast:'राम 🏹' },
-  ramvijay:   { sp:'ramanandi', titleHi:'राम विजय',        titleBn:'রাম বিজয়',       toast:'श्री राम जय राम 🏹' },
-  shiv:       { sp:'shaiva',    titleHi:'सदा शिव',         titleBn:'সদা শিব',         toast:'हर हर महादेव 🔱' },
-};
-const MANTRA_DATA = {
-  mahamantra: {
-    hi: 'हरे कृष्ण हरे कृष्ण\nकृष्ण कृष्ण हरे हरे\nहरे राम हरे राम\nराम राम हरे हरे',
-    bn: 'হরে কৃষ্ণ হরে কৃষ্ণ\nকৃষ্ণ কৃষ্ণ হরে হরে\nহরে রাম হরে রাম\nরাম রাম হরে হরে',
-    celebHi: 'জয় শ্রী কৃষ্ণ চৈতন্য',
-    celebLine1Hi: 'জয় শ্রীকৃষ্ণ চৈতন্য প্রভু নিত্যানন্দ',
-    celebLine2Hi: 'শ্রী অদ্বৈত গদাধর শ্রীবাসাদি শ্রী গৌরভক্তবৃন্দ',
-    celebLine1Bn: 'জয় শ্রীকৃষ্ণ চৈতন্য প্রভু নিত্যানন্দ',
-    celebLine2Bn: 'শ্রী অদ্বৈত গদাধর শ্রীবাসাদি শ্রী গৌরভক্তবৃন্দ',
-  },
-  ramvijay: {
-    hi: 'श्री राम जय राम जय जय राम\nश्री राम जय राम जय जय राम',
-    bn: 'শ্রী রাম জয় রাম জয় জয় রাম\nশ্রী রাম জয় রাম জয় জয় রাম',
-  },
-};
-const CELEB_DATA = {
-  rv:         { line1:'Radha Ballabh', line2:'Sri Harivansh', line1Hi:'राधावल्लभ', line2Hi:'श्री हरिवंश', line1Bn:'রাধাবল্লভ', line2Bn:'শ্রী হরিবংশ' },
-  radha:      { line1:'Radha Ballabh', line2:'Sri Harivansh', line1Hi:'राधावल्लभ', line2Hi:'श्री हरिवंश', line1Bn:'রাধাবল্লভ', line2Bn:'শ্রী হরিবংশ' },
-  mahamantra: { line1Hi:'জয় শ্রীকৃষ্ণ চৈতন্য', line2Hi:'শ্রী অদ্বৈত গদাধর শ্রীবাসাদি শ্রী গৌরভক্তবৃন্দ', line1Bn:'জয় শ্রীকৃষ্ণ চৈতন্য', line2Bn:'শ্রী গৌরভক্তবৃন্দ' },
-  ram:        { line1Hi:'जय श्री राम', line2Hi:'', line1Bn:'জয় শ্রী রাম', line2Bn:'' },
-  ramvijay:   { line1Hi:'जय श्री राम', line2Hi:'', line1Bn:'জয় শ্রী রাম', line2Bn:'' },
-  shiv:       { line1Hi:'हर हर महादेव', line2Hi:'', line1Bn:'হর হর মহাদেব', line2Bn:'' },
-};
-
-function _getLmcKey(mode) {
-  if (mode === 'rv') return 'lmcRV';
-  if (mode === 'mahamantra') return 'lmcGaudiya';
-  if (mode === 'ram' || mode === 'ramvijay') return 'lmcRamanandi';
-  if (mode === 'shiv') return 'lmcShaiva';
-  return 'lmc';
-}
-
-function _updateMalaCelebration(mode) {
-  const script = (App.S.mantraScript || 'hi');
-  const cd = CELEB_DATA[mode] || CELEB_DATA['rv'];
-  const l1 = cd['line1'+script.charAt(0).toUpperCase()+script.slice(1)] || cd.line1Hi || cd.line1 || '';
-  const l2 = cd['line2'+script.charAt(0).toUpperCase()+script.slice(1)] || cd.line2Hi || cd.line2 || '';
-  // Normal mf
-  const el1 = document.getElementById('mfLine1'); if (el1) el1.textContent = l1;
-  const el2 = document.getElementById('mfLine2'); if (el2) el2.textContent = l2;
-  // Mantra mf
-  const ml1 = document.getElementById('mfMantraLine1'); if (ml1) ml1.textContent = l1;
-  const ml2 = document.getElementById('mfMantraLine2'); if (ml2) ml2.textContent = l2;
-}
-
-function toggleMantraScript(sc) {
-  App.S.mantraScript = sc;
-  App.save();
-  document.getElementById('msBtnHi').style.background = sc==='hi' ? 'rgba(255,152,0,0.2)' : 'transparent';
-  document.getElementById('msBtnBn').style.background = sc==='bn' ? 'rgba(109,184,255,0.2)' : 'transparent';
-  _updateMantraDisplay();
-}
-
-function _updateMantraDisplay() {
-  const mode = App.S.japMode;
-  const sc = App.S.mantraScript || 'hi';
-  const isMantraMode = mode === 'mahamantra' || mode === 'ramvijay';
-  const wrap = document.getElementById('mantraDisplayWrap');
-  const tz = document.getElementById('tz');
-  if (wrap) wrap.style.display = isMantraMode ? 'block' : 'none';
-  if (tz) tz.style.display = isMantraMode ? 'none' : '';
-  if (!isMantraMode) return;
-  const md = MANTRA_DATA[mode];
-  if (!md) return;
-  const mt = document.getElementById('mantraText');
-  const mb = document.getElementById('mantraBengali');
-  if (mt) { mt.textContent = md.hi; mt.style.whiteSpace = 'pre-line'; }
-  if (mb) {
-    if (sc === 'bn') { mb.textContent = md.bn; mb.style.display = ''; mt.style.display = 'none'; }
-    else { mb.style.display = 'none'; mt.style.display = ''; }
-  }
-}
-
-function switchJapMode(mode) {
-  App.S.japMode = mode;
-  const dd = document.getElementById('naamSelDd');
-  const btn = document.getElementById('naamSelBtn');
-  if (dd) dd.classList.remove('show');
-  if (btn) btn.classList.remove('open');
-  document.removeEventListener('click', closeNaamSelOutside);
-
-  // Update checkmarks
-  ['Radha','RV','Maha','Ram','RamVijay','Shiv'].forEach(id => {
-    const opt = document.getElementById('naamOpt'+id);
-    if (opt) { opt.classList.remove('active'); opt.querySelector('.ns-check').textContent = ''; }
-  });
-  const modeToOptId = { radha:'Radha', rv:'RV', mahamantra:'Maha', ram:'Ram', ramvijay:'RamVijay', shiv:'Shiv' };
-  const activeOpt = document.getElementById('naamOpt' + (modeToOptId[mode] || 'Radha'));
-  if (activeOpt) { activeOpt.classList.add('active'); activeOpt.querySelector('.ns-check').textContent = '✓'; }
-
-  // Update title display
-  const titleEl = document.getElementById('rnTitle');
-  if (titleEl) {
-    const sc = App.S.mantraScript || 'hi';
-    const sd = SAMPRADAY_MODES[mode] || SAMPRADAY_MODES['radha'];
-    const titleKey = sc === 'bn' ? 'titleBn' : 'titleHi';
-    const titleText = sd[titleKey] || sd.titleHi;
-    if (titleText.includes('\n')) {
-      const parts = titleText.split('\n');
-      titleEl.innerHTML = '<span style="font-size:clamp(18px,5vw,28px);line-height:1.1">'+parts[0]+'</span><br><span style="font-size:clamp(16px,4.5vw,24px);line-height:1.1">'+parts[1]+'</span>';
-      titleEl.style.textAlign = 'center';
-    } else {
-      titleEl.textContent = titleText;
-      titleEl.style.textAlign = '';
-    }
-  }
-
-  // Show/hide mantra display vs tap zone
-  _updateMantraDisplay();
-  // Update celebration text
-  _updateMalaCelebration(mode);
-  // Update script toggle buttons
-  const sc = App.S.mantraScript || 'hi';
-  const hb = document.getElementById('msBtnHi'); if(hb) hb.style.background = sc==='hi'?'rgba(255,152,0,0.2)':'transparent';
-  const bb = document.getElementById('msBtnBn'); if(bb) bb.style.background = sc==='bn'?'rgba(109,184,255,0.2)':'transparent';
-
-  // Reset lmc counter
-  const ms = App.S.ms || 108;
-  const lmcKey = _getLmcKey(mode);
-  App[lmcKey] = Math.floor((App.getCurHistory()[App.S.tk] || 0) / ms);
-
-  App.save(); App.ua(); uStats(); renderMalaLog();
-  const sd = SAMPRADAY_MODES[mode] || SAMPRADAY_MODES['radha'];
-  toast(sd.toast);
 }
 
 

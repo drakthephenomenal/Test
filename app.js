@@ -67,9 +67,22 @@ function _updateMalaCelebration(mode) {
 function toggleMantraScript(sc) {
   App.S.mantraScript = sc;
   App.save();
-  document.getElementById('msBtnHi').style.background = sc==='hi' ? 'rgba(255,152,0,0.2)' : 'transparent';
-  document.getElementById('msBtnBn').style.background = sc==='bn' ? 'rgba(109,184,255,0.2)' : 'transparent';
+  const hb = document.getElementById('msBtnHi'); if (hb) hb.style.background = sc==='hi' ? 'rgba(255,152,0,0.2)' : 'transparent';
+  const bb = document.getElementById('msBtnBn'); if (bb) bb.style.background = sc==='bn' ? 'rgba(109,184,255,0.2)' : 'transparent';
   _updateMantraDisplay();
+  // Re-render title so script change reflects immediately
+  if (typeof switchJapMode === 'function' && App.S.japMode) {
+    // Light refresh of title only
+    const titleEl = document.getElementById('rnTitle');
+    if (titleEl) {
+      const sd = SAMPRADAY_MODES[App.S.japMode] || SAMPRADAY_MODES['radha'];
+      const titleText = (sc === 'bn' ? sd.titleBn : sd.titleHi) || sd.titleHi;
+      if (titleText.includes('\n')) {
+        const parts = titleText.split('\n');
+        titleEl.innerHTML = '<span style="font-size:clamp(18px,5vw,28px);line-height:1.1">'+parts[0]+'</span><br><span style="font-size:clamp(16px,4.5vw,24px);line-height:1.1">'+parts[1]+'</span>';
+      } else { titleEl.textContent = titleText; }
+    }
+  }
 }
 
 function _updateMantraDisplay() {
@@ -1172,9 +1185,57 @@ function syncTargetMalaToJap(prefix) {
 // ── Naam Selector Toggle ──
 // Sampraday config data
 
+// ── Ensure sampraday-mode markup exists in the DOM (idempotent) ──
+function _ensureSampradayMarkup() {
+  try {
+    // 1) Dropdown options — rebuild if any of the 6 options are missing
+    const dd = document.getElementById('naamSelDd');
+    const needed = ['Radha','RV','Maha','Ram','RamVijay','Shiv'];
+    if (dd && needed.some(k => !document.getElementById('naamOpt'+k))) {
+      const opt = (id, mode, label, sub) =>
+        '<div class="ns-opt" id="naamOpt'+id+'" onclick="switchJapMode(\''+mode+'\')" style="display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;border-radius:8px;">'+
+        '<span class="ns-check" style="width:14px;display:inline-block;color:#FF9933;font-weight:700;"></span>'+
+        '<span style="flex:1;"><div style="font-weight:700;font-size:13px;">'+label+'</div>'+
+        (sub?'<div style="font-size:10px;color:var(--td,#999);">'+sub+'</div>':'')+'</span></div>';
+      dd.innerHTML =
+        opt('Radha','radha','राधा','Radhavallabh Sampraday') +
+        opt('RV','rv','राधावल्लभ श्री हरिवंश','Radhavallabh Sampraday') +
+        opt('Maha','mahamantra','हरे कृष्ण महामंत्र','Gaudiya Sampraday') +
+        opt('Ram','ram','राम','Ramanandi Sampraday') +
+        opt('RamVijay','ramvijay','श्री राम जय राम','Ramanandi Sampraday') +
+        opt('Shiv','shiv','सदा शिव','Shaiva Sampraday');
+    }
+
+    // 2) Hi/Bn script toggle near title
+    const titleEl = document.getElementById('rnTitle');
+    if (titleEl && !document.getElementById('msBtnHi')) {
+      const bar = document.createElement('div');
+      bar.id = 'mantraScriptBar';
+      bar.style = 'display:flex;gap:6px;justify-content:center;margin:6px 0 4px;';
+      bar.innerHTML =
+        '<button id="msBtnHi" onclick="toggleMantraScript(\'hi\')" style="padding:4px 12px;border-radius:8px;border:1px solid rgba(255,152,0,0.4);background:rgba(255,152,0,0.2);color:#FF9800;font-size:11px;font-weight:700;cursor:pointer;">हिं</button>'+
+        '<button id="msBtnBn" onclick="toggleMantraScript(\'bn\')" style="padding:4px 12px;border-radius:8px;border:1px solid rgba(109,184,255,0.4);background:transparent;color:#6DB8FF;font-size:11px;font-weight:700;cursor:pointer;">বাং</button>';
+      titleEl.parentNode.insertBefore(bar, titleEl.nextSibling);
+    }
+
+    // 3) Mantra display wrap for long mantras (Mahamantra / Ram Vijay)
+    const tz = document.getElementById('tz');
+    if (tz && !document.getElementById('mantraDisplayWrap')) {
+      const w = document.createElement('div');
+      w.id = 'mantraDisplayWrap';
+      w.style = 'display:none;text-align:center;padding:20px 12px;min-height:200px;';
+      w.innerHTML =
+        '<div id="mantraText" onclick="(function(e){e.style.color=\'#FF9933\';setTimeout(()=>e.style.color=\'\',400);})(this)" style="font-family:\'Hind Siliguri\',serif;font-size:clamp(20px,5.5vw,28px);line-height:1.6;white-space:pre-line;color:var(--tx,#fff);cursor:pointer;user-select:none;"></div>'+
+        '<div id="mantraBengali" onclick="(function(e){e.style.color=\'#6DB8FF\';setTimeout(()=>e.style.color=\'\',400);})(this)" style="display:none;font-family:\'Hind Siliguri\',serif;font-size:clamp(20px,5.5vw,28px);line-height:1.6;white-space:pre-line;color:var(--tx,#fff);cursor:pointer;user-select:none;"></div>';
+      tz.parentNode.insertBefore(w, tz);
+    }
+  } catch(e) { console.warn('ensureSampradayMarkup', e); }
+}
+
 // ── Naam Selector Toggle ──
 
 function initJapModeUI() {
+  _ensureSampradayMarkup();
   const mode = App.S.japMode || 'radha';
   switchJapMode(mode);
   // Populate RV target inputs

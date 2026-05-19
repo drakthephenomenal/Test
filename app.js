@@ -8428,29 +8428,42 @@ if ("serviceWorker" in navigator) {
       .register("./sw.js", { scope: "./" })
       .then((r) => {
         console.log("SW registered:", r.scope);
-        // When a new SW takes over, reload the page to get fresh files
+
+        // If there is already a waiting SW (installed PWA reopened), activate it now
+        if (r.waiting) r.waiting.postMessage({ type: "SKIP_WAITING" });
+
         r.addEventListener("updatefound", () => {
           const newWorker = r.installing;
           if (!newWorker) return;
           newWorker.addEventListener("statechange", () => {
+            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+              // New SW ready — skip waiting so it takes over immediately
+              newWorker.postMessage({ type: "SKIP_WAITING" });
+            }
             if (newWorker.state === "activated") {
-              console.log(
-                "[SW] New SW activated — reloading for fresh content",
-              );
-              window.location.reload();
+              console.log("[SW] New SW activated — hard reloading");
+              window.location.reload(true);
             }
           });
         });
       })
       .catch((e) => console.warn("SW registration failed:", e.message));
 
-    // Also listen for SW_UPDATED message from the service worker
+    // SW_UPDATED message from service worker (covers installed PWA path)
     navigator.serviceWorker.addEventListener("message", (e) => {
       if (e.data && e.data.type === "SW_UPDATED") {
-        console.log("[SW] Received SW_UPDATED, reloading…", e.data.version);
-        window.location.reload();
+        console.log("[SW] SW_UPDATED received, hard reloading…", e.data.version);
+        window.location.reload(true);
       }
     });
+
+    // Periodic update check — installed PWAs never navigate, so SW never auto-checks.
+    // Every 60s we manually trigger a check so updates are caught quickly.
+    setInterval(() => {
+      navigator.serviceWorker.getRegistration().then(reg => {
+        if (reg) reg.update().catch(() => {});
+      });
+    }, 60000);
   });
 }
 

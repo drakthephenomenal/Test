@@ -6,7 +6,25 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="app-version" content="54">
+<meta name="app-version" content="55">
+<script>
+// ── Force-reload if SW is serving a stale cached page ──
+// This runs before anything else. If the page's version stamp doesn't
+// match what the SW last cached, we do a hard reload to get the fresh page.
+(function(){
+  var PAGE_VERSION = 55;
+  try {
+    var stored = parseInt(sessionStorage.getItem('_pv') || '0');
+    if (stored && stored < PAGE_VERSION) {
+      sessionStorage.setItem('_pv', PAGE_VERSION);
+      // Hard reload bypassing SW cache
+      window.location.reload(true);
+      return;
+    }
+    sessionStorage.setItem('_pv', PAGE_VERSION);
+  } catch(e) {}
+})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">

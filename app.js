@@ -3661,7 +3661,41 @@ function renderMilestonesTab() {
 
   let out = "";
 
-  // ─── LAKH MILESTONES ───
+  // ─── EARLY MALA MILESTONES (for new practitioners) ───
+  const MALA_MS = [
+    { malas: 1,    label: "First Mala",       icon: "🌱", desc: "The journey begins" },
+    { malas: 7,    label: "7 Malas",          icon: "🪷", desc: "One week of daily sadhana" },
+    { malas: 10,   label: "10 Malas",         icon: "📿", desc: "First decade" },
+    { malas: 16,   label: "16 Rounds",        icon: "🙏", desc: "ISKCON daily vow — 16 rounds" },
+    { malas: 25,   label: "25 Malas",         icon: "✨", desc: "Silver milestone" },
+    { malas: 64,   label: "64 Rounds",        icon: "🌸", desc: "Classical Gaudiya recommendation" },
+    { malas: 100,  label: "100 Malas",        icon: "🏆", desc: "First century" },
+    { malas: 108,  label: "108 Malas",        icon: "👑", desc: "Sacred 108 — one full cycle" },
+    { malas: 216,  label: "216 Malas",        icon: "🌟", desc: "Double 108" },
+    { malas: 500,  label: "500 Malas",        icon: "💎", desc: "500 malas — deep practice" },
+    { malas: 1000, label: "1000 Malas",       icon: "🔱", desc: "One thousand malas" },
+  ];
+  const ms_size = App.S.ms || 108;
+  const totalMalasMs = Math.floor(total / ms_size);
+
+  out += '<div class="ms-phase-title">🌱 Mala Milestones</div>';
+  out += '<div class="ms-phase-sub">YOUR FIRST STEPS — MALA BY MALA</div>';
+  out += '<div class="ms-lakh-grid">';
+  MALA_MS.forEach((m) => {
+    const targetJap = m.malas * ms_size;
+    const achieved = total >= targetJap;
+    const pct = Math.min(100, (total / targetJap) * 100);
+    out += '<div class="ms-lakh-card' + (achieved ? " achieved" : "") +
+      "\" onclick=\"openMsDetail('lakh'," + targetJap + "," + pct.toFixed(1) + "," + achieved + ')\">';
+    out += '<div class="ms-lakh-label">' + m.icon + " " + (achieved ? "✓ " : "") + m.label + "</div>";
+    out += '<div class="ms-lakh-pct">' + (achieved ? "✓" : pct.toFixed(1) + "%") + "</div>";
+    out += '<div class="ms-progress-wrap"><div class="ms-progress-fill ' +
+      (achieved ? "gold" : "bronze") + '" style="width:' + pct + '%"></div></div>';
+    out += "</div>";
+  });
+  out += "</div>";
+  out += '<div class="ms-section-sep"></div>';
+
   out += '<div class="ms-phase-title">📿 Lakh Milestones</div>';
   out += '<div class="ms-phase-sub">10K → 1 CRORE JOURNEY</div>';
 
@@ -7719,16 +7753,21 @@ function showDay(key, cnt, timeSec, time28Sec) {
   const totalMalas = Math.floor(totalCount / ms);
   const totalTimeSec = isGaudiyaDay ? hkTime : (radhaTime + rvTime + n28TimeSec);
 
-  document.getElementById("cdmoRadhaJap").textContent = isGaudiyaDay
-    ? (hkCount > 0 ? hkCount + " jap · " + hkMalas + " malas" : "—")
-    : (radhaCount > 0 ? radhaCount + " jap · " + radhaMalas + " malas" : "—");
-  document.getElementById("cdmoRvJap").textContent = isGaudiyaDay
-    ? "—"
-    : (rvCount > 0 ? rvCount + " jap · " + rvMalas + " malas" : "—");
-  document.getElementById("cdmoRadhaTime").textContent = isGaudiyaDay
-    ? (hkTime > 0 ? App.fmtTime(hkTime) : "—")
-    : (radhaTime > 0 ? App.fmtTime(radhaTime) : "—");
-  document.getElementById("cdmoRvTime").textContent = isGaudiyaDay ? "—" : (rvTime > 0 ? App.fmtTime(rvTime) : "—");
+  // Populate dedicated HK fields
+  const elHkJap = document.getElementById("cdmoHkJap");
+  if (elHkJap) elHkJap.textContent = hkCount > 0 ? hkCount + " jap · " + hkMalas + " malas" : "—";
+  const elHkTime = document.getElementById("cdmoHkTime");
+  if (elHkTime) elHkTime.textContent = hkTime > 0 ? App.fmtTime(hkTime) : "—";
+
+  // Populate Radha/RV fields (always reset so stale data doesn't show)
+  document.getElementById("cdmoRadhaJap").textContent =
+    radhaCount > 0 ? radhaCount + " jap · " + radhaMalas + " malas" : "—";
+  document.getElementById("cdmoRvJap").textContent =
+    rvCount > 0 ? rvCount + " jap · " + rvMalas + " malas" : "—";
+  document.getElementById("cdmoRadhaTime").textContent =
+    radhaTime > 0 ? App.fmtTime(radhaTime) : "—";
+  document.getElementById("cdmoRvTime").textContent =
+    rvTime > 0 ? App.fmtTime(rvTime) : "—";
   document.getElementById("cdmo28Names").textContent =
     n28Count > 0 ? n28Count + " jap · " + n28Cycles + " cycles" : "—";
   const el28 = document.getElementById("cdmoTime28");
@@ -7743,6 +7782,11 @@ function showDay(key, cnt, timeSec, time28Sec) {
     totalCount > 0 ? totalCount + " jap (" + totalMalas + " malas)" : "—";
   document.getElementById("cdmoTotalTime").textContent =
     totalTimeSec > 0 ? App.fmtTime(totalTimeSec) : "—";
+  // HK totals (for Gaudiya mode dedicated rows)
+  const elHkTot = document.getElementById("cdmoHkTotalCount");
+  if (elHkTot) elHkTot.textContent = hkCount > 0 ? hkCount + " jap (" + hkMalas + " malas)" : "—";
+  const elHkTotT = document.getElementById("cdmoHkTotalTime");
+  if (elHkTotT) elHkTotT.textContent = hkTime > 0 ? App.fmtTime(hkTime) : "—";
   const combinedDt = isGaudiyaDay ? (App.S.dtHK || 0) : ((App.S.dt || 0) + (App.S.dtRV || 0));
   const pct = combinedDt > 0 ? Math.round((totalCount / combinedDt) * 100) + "%" : "—";
   document.getElementById("cdmoPct").textContent = pct;

@@ -48,6 +48,7 @@ const App = {
     syncBaselineTimerHK: {},
     nameJapDeductHK: 0,
     gaudiyaMode: false,
+    hkLang: "hi",
   },
   lmcRV: 0,
   lmcHK: 0,
@@ -196,6 +197,7 @@ const App = {
       syncBaselineTimerHK: this.S.syncBaselineTimerHK || {},
       nameJapDeductHK: this.S.nameJapDeductHK || 0,
       gaudiyaMode: this.S.gaudiyaMode || false,
+      hkLang: this.S.hkLang || "hi",
     });
     // Keep per-day stores updated for compatibility with existing offline data
     const tk = this.S.tk;
@@ -322,6 +324,7 @@ const App = {
     if (!this.S.syncBaselineTimerHK) this.S.syncBaselineTimerHK = {};
     if (this.S.nameJapDeductHK === undefined) this.S.nameJapDeductHK = 0;
     if (this.S.gaudiyaMode === undefined) this.S.gaudiyaMode = false;
+    if (!this.S.hkLang) this.S.hkLang = "hi";
     if (!this.S.historyHK[this.S.tk]) this.S.historyHK[this.S.tk] = 0;
     if (!this.S.timerHistoryHK[this.S.tk]) this.S.timerHistoryHK[this.S.tk] = 0;
     // Load malaLogHK — only keep if today has HK jap
@@ -1145,22 +1148,30 @@ let _hkColorIdx = 0;
 function spawnHK() {
   const el = document.getElementById("hkPersist");
   if (!el) return;
-  el.innerHTML = HK_TEXT.split("\n")
-    .map((l) => "<div>" + l + "</div>")
-    .join("");
-  if (!el.classList.contains("hk-visible")) {
+  const paint = () => {
+    el.innerHTML = HK_TEXT.split("\n")
+      .map((l) => "<div>" + l + "</div>")
+      .join("");
     el.style.color = HK_COLORS[_hkColorIdx % 2];
     el.style.textShadow = HK_SHADOWS[_hkColorIdx % 2];
     _hkColorIdx++;
+  };
+  if (!el.classList.contains("hk-visible")) {
+    paint();
+    el.classList.remove("hk-flip-out");
+    // force reflow then show
+    void el.offsetWidth;
     el.classList.add("hk-visible");
   } else {
-    el.classList.add("hk-flash");
+    // page-turn: flip current page out, then flip new page in from the other side
+    el.classList.remove("hk-visible");
+    el.classList.add("hk-flip-out");
     setTimeout(() => {
-      el.style.color = HK_COLORS[_hkColorIdx % 2];
-      el.style.textShadow = HK_SHADOWS[_hkColorIdx % 2];
-      _hkColorIdx++;
-      el.classList.remove("hk-flash");
-    }, 140);
+      paint();
+      el.classList.remove("hk-flip-out");
+      void el.offsetWidth;
+      el.classList.add("hk-visible");
+    }, 200);
   }
 }
 
@@ -1335,7 +1346,12 @@ function syncTargetMalaToJap(prefix) {
 
 // ── Init jap mode UI on page load ──
 function initJapModeUI() {
-  switchJapMode(App.S.japMode || "radha");
+  // Normalize: in Gaudiya mode only HK is allowed; otherwise HK is not allowed
+  let initMode = App.S.japMode || "radha";
+  if (App.S.gaudiyaMode && initMode !== "hk") initMode = "hk";
+  if (!App.S.gaudiyaMode && initMode === "hk") initMode = "radha";
+  switchJapMode(initMode);
+
   const ms = App.S.ms || 108;
   // Populate RV target inputs
   const dtRVIn = document.getElementById("dtRVIn");
@@ -1352,6 +1368,14 @@ function initJapModeUI() {
   if (tgG)
     App.S.gaudiyaMode ? tgG.classList.add("on") : tgG.classList.remove("on");
   if (App.S.gaudiyaMode) document.body.classList.add("gaudiya-mode");
+  // Init HK language toggle state
+  const tgH = document.getElementById("tgHkLang");
+  if (tgH)
+    App.S.hkLang === "bn"
+      ? tgH.classList.add("on")
+      : tgH.classList.remove("on");
+  const lblH = document.getElementById("hkLangLabel");
+  if (lblH) lblH.textContent = App.S.hkLang === "bn" ? "Bangla" : "Hindi";
 }
 
 // ── Naam Selector Toggle ──
@@ -1412,8 +1436,12 @@ function switchJapMode(mode) {
       optHK.classList.add("active");
       optHK.querySelector(".ns-check").textContent = "✓";
     }
+    const lang = App.S.hkLang || "hi";
+    const word = lang === "bn" ? "মহামন্ত্র" : "महामंत्र";
     titleEl.innerHTML =
-      '<span style="font-size:clamp(12px,3.5vw,18px);line-height:1.5;color:#6DB8FF">हरे कृष्ण हरे कृष्ण<br>कृष्ण कृष्ण हरे हरे।<br>हरे राम हरे राम<br>राम राम हरे हरे॥</span>';
+      '<span style="font-size:clamp(22px,6vw,34px);line-height:1.1;color:#6DB8FF;font-family:\'Tiro Devanagari Hindi\',\'Hind Siliguri\',serif">' +
+      word +
+      "</span>";
     titleEl.style.textAlign = "center";
     if (hkEl) {
       hkEl.classList.remove("hk-visible");
@@ -1627,6 +1655,21 @@ function svm() {
   toast("Mala size saved! 📿");
 }
 function tgs(k) {
+  if (k === "hkLang") {
+    App.S.hkLang = App.S.hkLang === "bn" ? "hi" : "bn";
+    const tgH = document.getElementById("tgHkLang");
+    if (tgH)
+      App.S.hkLang === "bn"
+        ? tgH.classList.add("on")
+        : tgH.classList.remove("on");
+    const lblH = document.getElementById("hkLangLabel");
+    if (lblH) lblH.textContent = App.S.hkLang === "bn" ? "Bangla" : "Hindi";
+    if (App.S.japMode === "hk") switchJapMode("hk");
+    App.save();
+    fbDebouncedPush();
+    toast(App.S.hkLang === "bn" ? "মহামন্ত্র · Bangla" : "महामंत्र · Hindi");
+    return;
+  }
   if (k === "gaudiyaMode") {
     App.S.gaudiyaMode = !App.S.gaudiyaMode;
     const tgG = document.getElementById("tgGaudiya");
@@ -1635,6 +1678,12 @@ function tgs(k) {
     App.S.gaudiyaMode
       ? document.body.classList.add("gaudiya-mode")
       : document.body.classList.remove("gaudiya-mode");
+    // Auto-switch jap mode so only valid options are visible at the top toggle
+    if (App.S.gaudiyaMode) {
+      if (App.S.japMode !== "hk") switchJapMode("hk");
+    } else {
+      if (App.S.japMode === "hk") switchJapMode("radha");
+    }
     App.save();
     fbDebouncedPush();
     uStats();
@@ -1642,6 +1691,7 @@ function tgs(k) {
     toast(App.S.gaudiyaMode ? "🪷 Gaudiya Mode ON" : "🪷 Gaudiya Mode OFF");
     return;
   }
+
   App.S.cfg[k] = !App.S.cfg[k];
   const m = { vib: "tgVib", sound: "tgSnd" };
   App.S.cfg[k]
@@ -2524,10 +2574,15 @@ function uStats() {
       .filter(([k]) => k.startsWith(mp))
       .reduce((s, [, v]) => s + v, 0) + liveExtraHK;
   const hkLt = Object.values(hkTH).reduce((s, v) => s + v, 0) + liveExtraHK;
-  _set("tHKTod", hkTod);
-  _set("tHKWk", hkWk);
-  _set("tHKMo", hkMo);
-  _set("tHKLt", hkLt);
+  const _setHK = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = fmtShort(v);
+  };
+  _setHK("tHKTod", hkTod);
+  _setHK("tHKWk", hkWk);
+  _setHK("tHKMo", hkMo);
+  _setHK("tHKLt", hkLt);
+
   // Lifetime Jap Time (all jap time + all 28 names time)
   const ltTimeSec =
     Object.values(App.getCombinedTimerHistory()).reduce((a, b) => a + b, 0) +

@@ -2628,6 +2628,40 @@ function uStats() {
   if (sHKM) sHKM.textContent = Math.floor(hkLifetime / ms) + " malas";
   const sHKF = document.getElementById("sHKTotF");
   if (sHKF) sHKF.textContent = fmtCount(hkLifetime) + " jap";
+
+  // ── Lotus Petals: populate new Gaudiya-mode stat elements ──
+  const _lp = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  _lp("lpHKTot", hkLifetime.toLocaleString("en-IN"));
+  _lp("lpHKTotM", Math.floor(hkLifetime / ms) + " malas");
+  _lp("lpHKTotF", fmtCount(hkLifetime) + " jap");
+  // Today/Week/Month counts
+  const hkTodCount = App.S.historyHK[App.S.tk] || 0;
+  const hkWkCount = wk.reduce((s, k) => s + (App.S.historyHK[k] || 0), 0);
+  const hkMoCount = Object.entries(App.S.historyHK || {})
+    .filter(([k]) => k.startsWith(mp)).reduce((s, [, v]) => s + v, 0);
+  _lp("lpHKTod", hkTodCount.toLocaleString("en-IN"));
+  _lp("lpHKTodM", Math.floor(hkTodCount / ms) + " malas");
+  _lp("lpHKWk", hkWkCount.toLocaleString("en-IN"));
+  _lp("lpHKWkM", Math.floor(hkWkCount / ms) + " malas");
+  _lp("lpHKMo", hkMoCount.toLocaleString("en-IN"));
+  _lp("lpHKMoM", Math.floor(hkMoCount / ms) + " malas");
+  // Time for Lotus Petals tri-col subs
+  const _lpTimeSub = (id, sec) => {
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s2 = sec % 60;
+    _lp(id, (h > 0 ? h + "h " : "") + m + "m " + String(s2).padStart(2,"0") + "s");
+  };
+  const hkTH2 = App.S.timerHistoryHK || {};
+  const isHKMode2 = App.S.japMode === "hk";
+  const liveHK2 = App.timerRunning && isHKMode2 ? Math.max(0, App.timerSeconds - App.timerSavedSeconds) : 0;
+  const hkTodT = (hkTH2[App.S.tk] || 0) + liveHK2;
+  const hkWkT = wk.reduce((s, k) => s + (hkTH2[k] || 0), 0) + liveHK2;
+  const hkMoT = Object.entries(hkTH2).filter(([k]) => k.startsWith(mp)).reduce((s, [, v]) => s + v, 0) + liveHK2;
+  const hkLtT = Object.values(hkTH2).reduce((s, v) => s + v, 0) + liveHK2;
+  _lpTimeSub("lpHKTodT", hkTodT);
+  _lpTimeSub("lpHKWkT", hkWkT);
+  _lpTimeSub("lpHKMoT", hkMoT);
+  _lpTimeSub("lpHKTimeTod", hkTodT); _lpTimeSub("lpHKTimeWk", hkWkT); _lpTimeSub("lpHKTimeMo", hkMoT); _lpTimeSub("lpHKTimeLt", hkLtT);
+
   // Combined Lifetime Jap (Radha + RV + 28 names)
   const ltJapAll = radhaLifetime + rvLifetime + n28Lifetime;
   const sLtJA = document.getElementById("sLtJapAll");

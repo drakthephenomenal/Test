@@ -680,8 +680,33 @@ const App = {
   // ── Mala Complete — Bell sound + TRIPLE vibration + log duration + animate timer ──
   malaOk() {
     const f = document.getElementById("mf");
-    f.classList.add("show");
-    setTimeout(() => f.classList.remove("show"), 2800);
+    const isHKmala = this.S.japMode === "hk";
+    // For HK mode: show Chaitanya verse instead of RV
+    if (isHKmala) {
+      const lang = this.S.hkLang || "hi";
+      const line1 = lang === "bn"
+        ? "জয় শ্রীকৃষ্ণ চৈতন্য প্রভু নিত্যানন্দ।"
+        : "जय श्री कृष्ण चैतन्य प्रभु नित्यानन्द।";
+      const line2 = lang === "bn"
+        ? "শ্রীঅদ্বৈত গদাধর শ্রীবাসাদি গৌরভক্তবৃন্দ।"
+        : "श्री अद्वैत गदाधर श्रीवासादि गौर भक्त वृन्द॥";
+      const l1el = f.querySelector(".mf-line1");
+      const l2el = f.querySelector(".mf-line2");
+      const _orig1 = l1el ? l1el.textContent : "";
+      const _orig2 = l2el ? l2el.textContent : "";
+      if (l1el) { l1el.textContent = line1; l1el.style.fontSize = "clamp(14px,3.8vw,22px)"; }
+      if (l2el) { l2el.textContent = line2; l2el.style.fontSize = "clamp(12px,3.2vw,18px)"; l2el.style.fontFamily = "'Tiro Devanagari Hindi','Hind Siliguri',serif"; l2el.style.color = "var(--gold)"; }
+      f.classList.add("show-long");
+      setTimeout(() => {
+        f.classList.remove("show-long");
+        // Restore original content
+        if (l1el) { l1el.textContent = _orig1; l1el.style.fontSize = ""; }
+        if (l2el) { l2el.textContent = _orig2; l2el.style.fontSize = ""; l2el.style.fontFamily = ""; l2el.style.color = ""; }
+      }, 4000);
+    } else {
+      f.classList.add("show");
+      setTimeout(() => f.classList.remove("show"), 2800);
+    }
     // Bell sound
     if (this.S.cfg.sound) playSynthBell();
     // Triple long vibration synced with bell
@@ -1139,6 +1164,8 @@ function spawnRV(e, zone) {
 // HK Mahamantra — stays in place, alternates gold/blue on each tap
 const HK_TEXT =
   "हरे कृष्ण हरे कृष्ण\nकृष्ण कृष्ण हरे हरे।\nहरे राम हरे राम\nराम राम हरे हरे॥";
+const HK_TEXT_BN =
+  "হরে কৃষ্ণ হরে কৃষ্ণ\nকৃষ্ণ কৃষ্ণ হরে হরে।\nহরে রাম হরে রাম\nরাম রাম হরে হরে॥";
 const HK_COLORS = ["#FFD700", "#6DB8FF"];
 const HK_SHADOWS = [
   "0 0 30px rgba(255,215,0,0.9)",
@@ -1148,8 +1175,24 @@ let _hkColorIdx = 0;
 function spawnHK() {
   const el = document.getElementById("hkPersist");
   if (!el) return;
+  const lang = App.S.hkLang || "hi";
+  const text = lang === "bn" ? HK_TEXT_BN : HK_TEXT;
+  // Floating animation like 28 names — colour alternates, text rises and fades
+  const zone = document.getElementById("tz");
+  if (zone) {
+    const floatEl = document.createElement("div");
+    floatEl.className = "hk-float-name";
+    floatEl.innerHTML = text.split("\n")
+      .map((l) => "<div>" + l + "</div>")
+      .join("");
+    floatEl.style.color = HK_COLORS[_hkColorIdx % 2];
+    floatEl.style.textShadow = HK_SHADOWS[_hkColorIdx % 2];
+    zone.appendChild(floatEl);
+    setTimeout(() => floatEl.remove(), 2400);
+  }
+  // Also update persistent display
   const paint = () => {
-    el.innerHTML = HK_TEXT.split("\n")
+    el.innerHTML = text.split("\n")
       .map((l) => "<div>" + l + "</div>")
       .join("");
     el.style.color = HK_COLORS[_hkColorIdx % 2];
@@ -1159,11 +1202,9 @@ function spawnHK() {
   if (!el.classList.contains("hk-visible")) {
     paint();
     el.classList.remove("hk-flip-out");
-    // force reflow then show
     void el.offsetWidth;
     el.classList.add("hk-visible");
   } else {
-    // page-turn: flip current page out, then flip new page in from the other side
     el.classList.remove("hk-visible");
     el.classList.add("hk-flip-out");
     setTimeout(() => {
@@ -1664,6 +1705,12 @@ function tgs(k) {
         : tgH.classList.remove("on");
     const lblH = document.getElementById("hkLangLabel");
     if (lblH) lblH.textContent = App.S.hkLang === "bn" ? "Bangla" : "Hindi";
+    // Update hkPersist text immediately if visible
+    const hkEl = document.getElementById("hkPersist");
+    if (hkEl && hkEl.classList.contains("hk-visible")) {
+      const newText = App.S.hkLang === "bn" ? HK_TEXT_BN : HK_TEXT;
+      hkEl.innerHTML = newText.split("\n").map((l) => "<div>" + l + "</div>").join("");
+    }
     if (App.S.japMode === "hk") switchJapMode("hk");
     App.save();
     fbDebouncedPush();
@@ -1937,8 +1984,30 @@ function addManualJap() {
     // ghost entry. We only want the visual/audio celebration here.
     const _mf = document.getElementById("mf");
     if (_mf) {
-      _mf.classList.add("show");
-      setTimeout(() => _mf.classList.remove("show"), 2800);
+      if (isHK) {
+        const lang = App.S.hkLang || "hi";
+        const line1 = lang === "bn"
+          ? "জয় শ্রীকৃষ্ণ চৈতন্য প্রভু নিত্যানন্দ।"
+          : "जय श्री कृष्ण चैतन्य प्रभु नित्यानन्द।";
+        const line2 = lang === "bn"
+          ? "শ্রীঅদ্বৈত গদাধর শ্রীবাসাদি গৌরভক্তবৃন্দ।"
+          : "श्री अद्वैत गदाधर श्रीवासादि गौर भक्त वृन्द॥";
+        const l1e = _mf.querySelector(".mf-line1");
+        const l2e = _mf.querySelector(".mf-line2");
+        const o1 = l1e ? l1e.textContent : "";
+        const o2 = l2e ? l2e.textContent : "";
+        if (l1e) { l1e.textContent = line1; l1e.style.fontSize = "clamp(14px,3.8vw,22px)"; }
+        if (l2e) { l2e.textContent = line2; l2e.style.fontSize = "clamp(12px,3.2vw,18px)"; l2e.style.fontFamily = "'Tiro Devanagari Hindi','Hind Siliguri',serif"; l2e.style.color = "var(--gold)"; }
+        _mf.classList.add("show-long");
+        setTimeout(() => {
+          _mf.classList.remove("show-long");
+          if (l1e) { l1e.textContent = o1; l1e.style.fontSize = ""; }
+          if (l2e) { l2e.textContent = o2; l2e.style.fontSize = ""; l2e.style.fontFamily = ""; l2e.style.color = ""; }
+        }, 4000);
+      } else {
+        _mf.classList.add("show");
+        setTimeout(() => _mf.classList.remove("show"), 2800);
+      }
     }
     if (App.S.cfg && App.S.cfg.sound) playSynthBell();
     App.vib([200, 80, 200, 80, 300]);

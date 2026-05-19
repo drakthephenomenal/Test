@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="app-version" content="57">
+<meta name="app-version" content="58">
 <script>
 // ── Force-reload if SW is serving a stale cached page ──
 // This runs before anything else. If the page's version stamp doesn't
 // match what the SW last cached, we do a hard reload to get the fresh page.
 (function(){
-  var PAGE_VERSION = 57;
+  var PAGE_VERSION = 58;
   try {
     var stored = parseInt(sessionStorage.getItem('_pv') || '0');
     if (stored && stored < PAGE_VERSION) {
@@ -25,15 +25,49 @@
   } catch(e) {}
 })();
 </script>
+<script>
+// ── v80 PWA UNSTICK ──
+// One-time cleanup for installed PWAs that were stuck on the v55 service
+// worker (which had cached an old index.html / style.css without the
+// Gaudiya card + #hkPersist absolute-positioning rules — causing the
+// toggle to lose styling and the Mahamantra to render side-by-side in
+// the tap area). Runs once per device, then never again.
+(function(){
+  try {
+    var KEY = '_unstick_v80_done';
+    if (localStorage.getItem(KEY)) return;
+    var isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+    if (!isStandalone) { localStorage.setItem(KEY, '1'); return; }
+    if (!('serviceWorker' in navigator) || !('caches' in window)) {
+      localStorage.setItem(KEY, '1'); return;
+    }
+    localStorage.setItem(KEY, '1');
+    Promise.all([
+      caches.keys().then(function(ks){
+        return Promise.all(ks.map(function(k){ return caches.delete(k); }));
+      }),
+      navigator.serviceWorker.getRegistrations().then(function(regs){
+        return Promise.all(regs.map(function(r){ return r.unregister(); }));
+      })
+    ]).then(function(){
+      var u = new URL(window.location.href);
+      u.searchParams.set('_unstick', '80');
+      window.location.replace(u.toString());
+    });
+  } catch(e) {}
+})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Radha Jap">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#060D1F">
-<link rel="manifest" href="./manifest.json?v=55">
-<link rel="apple-touch-icon" href="./icon-192.png?v=55">
-<link rel="icon" href="./icon-192.png?v=55">
+<link rel="manifest" href="./manifest.json?v=80">
+<link rel="apple-touch-icon" href="./icon-192.png?v=80">
+<link rel="icon" href="./icon-192.png?v=80">
 <title>Radha Naam Jap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,9 +75,9 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-<link rel="stylesheet" href="./style.css?v=55">
+<link rel="stylesheet" href="./style.css?v=80">
 <!-- ═══════════════════════════════════════════════════════
-     CRITICAL INLINE CSS — v56
+     CRITICAL INLINE CSS — v80
      These styles are inlined so they are ALWAYS fresh,
      even if style.css is served from an old PWA cache.
      Covers: Gaudiya/ISKCON card, HK jap display, toggle.
@@ -230,7 +264,7 @@ body.gaudiya-mode .gbt-label-on{opacity:1;color:#001a2a;}
     })();
     </script>
     <img class="ls-img" id="guruImg" src="./guru.jpg" alt="Shri Radha Rani" style="position:relative;z-index:10;box-shadow:0 0 40px 15px rgba(255,215,0,0.4),0 0 80px 30px rgba(255,215,0,0.2);">
-    <img id="appIconImg" style="display:none" src="./icon-192.png?v=55" alt="App Icon"/>
+    <img id="appIconImg" style="display:none" src="./icon-192.png?v=80" alt="App Icon"/>
   </div>
   <div class="ls-title">राधे राधे</div>
   <div class="ls-sub">Jai Shri Radha</div>
@@ -1406,9 +1440,9 @@ body.gaudiya-mode .gbt-label-on{opacity:1;color:#001a2a;}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
-    <script src="./stotrams.js?v=55"></script>
-    <script src="./panchangData.js?v=55"></script>
-    <script src="./app.js?v=55"></script>
+    <script src="./stotrams.js?v=80"></script>
+    <script src="./panchangData.js?v=80"></script>
+    <script src="./app.js?v=80"></script>
 
   </body>
 </html>

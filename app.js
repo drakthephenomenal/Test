@@ -8454,6 +8454,153 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+// ═══════════════════════════════════════════════════════
+// PWA INSTALL PROMPT — Show banner to new users
+// ═══════════════════════════════════════════════════════
+(function () {
+  // Don't show if already running as installed PWA
+  const isStandalone =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.navigator.standalone === true;
+  if (isStandalone) return;
+
+  // Don't show if user dismissed within last 7 days
+  const DISMISS_KEY = 'pwa_install_dismissed';
+  const dismissed = localStorage.getItem(DISMISS_KEY);
+  if (dismissed && Date.now() - parseInt(dismissed) < 7 * 24 * 60 * 60 * 1000) return;
+
+  let deferredPrompt = null;
+
+  function createInstallBanner() {
+    if (document.getElementById('pwa-install-banner')) return;
+
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+    const banner = document.createElement('div');
+    banner.id = 'pwa-install-banner';
+    banner.style.cssText = [
+      'position:fixed',
+      'bottom:80px',
+      'left:50%',
+      'transform:translateX(-50%)',
+      'width:min(calc(100vw - 32px), 360px)',
+      'background:linear-gradient(135deg,rgba(10,20,55,0.97),rgba(20,10,50,0.97))',
+      'border:1px solid rgba(255,200,80,0.35)',
+      'border-radius:18px',
+      'padding:16px 18px',
+      'z-index:9999',
+      'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
+      'font-family:Inter,sans-serif',
+      'backdrop-filter:blur(16px)',
+      'animation:pwaSlideUp 0.4s cubic-bezier(0.22,1,0.36,1)',
+    ].join(';');
+
+    // Inject keyframe animation once
+    if (!document.getElementById('pwa-anim-style')) {
+      const s = document.createElement('style');
+      s.id = 'pwa-anim-style';
+      s.textContent = `
+        @keyframes pwaSlideUp {
+          from { opacity:0; transform:translateX(-50%) translateY(24px); }
+          to   { opacity:1; transform:translateX(-50%) translateY(0); }
+        }
+      `;
+      document.head.appendChild(s);
+    }
+
+    if (isIOS) {
+      banner.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          <img src="./icon-192.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0" />
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:700;color:#FFD700;margin-bottom:4px">🪷 Radha Naam Jap</div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.82);line-height:1.5">
+              Add to Home Screen for the full app experience!<br>
+              Tap <b style="color:#FFD700">Share</b> 
+              <span style="font-size:16px">⬆</span> 
+              then <b style="color:#FFD700">"Add to Home Screen"</b>
+            </div>
+          </div>
+          <button id="pwa-dismiss" style="background:none;border:none;color:rgba(255,255,255,0.4);font-size:20px;cursor:pointer;padding:0;line-height:1;flex-shrink:0">✕</button>
+        </div>
+      `;
+    } else {
+      banner.innerHTML = `
+        <div style="display:flex;align-items:center;gap:12px">
+          <img src="./icon-192.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0" />
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:700;color:#FFD700;margin-bottom:2px">🪷 Radha Naam Jap</div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.75)">Install the app for quick access!</div>
+          </div>
+          <button id="pwa-dismiss" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:20px;cursor:pointer;padding:0 4px;line-height:1;flex-shrink:0">✕</button>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:12px">
+          <button id="pwa-install-btn" style="flex:1;background:linear-gradient(135deg,#FFD700,#FFA500);color:#1a0a00;font-weight:700;font-size:13px;border:none;border-radius:10px;padding:9px 0;cursor:pointer;font-family:Inter,sans-serif">
+            📲 Install App
+          </button>
+          <button id="pwa-later-btn" style="flex:1;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.65);font-size:13px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:9px 0;cursor:pointer;font-family:Inter,sans-serif">
+            Maybe Later
+          </button>
+        </div>
+      `;
+    }
+
+    document.body.appendChild(banner);
+
+    // Dismiss button
+    document.getElementById('pwa-dismiss').addEventListener('click', () => {
+      localStorage.setItem(DISMISS_KEY, Date.now().toString());
+      banner.style.animation = 'none';
+      banner.style.opacity = '0';
+      banner.style.transform = 'translateX(-50%) translateY(16px)';
+      banner.style.transition = 'opacity 0.3s,transform 0.3s';
+      setTimeout(() => banner.remove(), 350);
+    });
+
+    if (!isIOS) {
+      // Install button triggers native prompt
+      document.getElementById('pwa-install-btn').addEventListener('click', async () => {
+        banner.remove();
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          deferredPrompt = null;
+          if (outcome === 'accepted') {
+            toast('🙏 App installed! Jai Radhe!');
+          }
+        }
+      });
+      // "Maybe Later" = dismiss for 7 days
+      document.getElementById('pwa-later-btn').addEventListener('click', () => {
+        localStorage.setItem(DISMISS_KEY, Date.now().toString());
+        banner.remove();
+      });
+    }
+  }
+
+  // Android/Chrome: capture the native install event
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault(); // Stop browser mini-bar
+    deferredPrompt = e;
+    // Show banner after a short delay so page loads first
+    setTimeout(createInstallBanner, 3000);
+  });
+
+  // iOS Safari: no beforeinstallprompt — show instructions banner instead
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isSafari = /safari/i.test(navigator.userAgent) && !/chrome/i.test(navigator.userAgent);
+  if (isIOS && isSafari) {
+    setTimeout(createInstallBanner, 3500);
+  }
+
+  // If already installed, mark so we never show again
+  window.addEventListener('appinstalled', () => {
+    localStorage.setItem(DISMISS_KEY, (Date.now() + 365 * 24 * 60 * 60 * 1000).toString());
+    const b = document.getElementById('pwa-install-banner');
+    if (b) b.remove();
+  });
+})();
+
 // ══════════════════════════════════════════════M��════════
 // GURUDEV PHOTO FALLBACK — beautiful canvas placeholder
 // if base64 is truncated/missing

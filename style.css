@@ -1035,9 +1035,15 @@ body.gaudiya-mode .lp-time{display:flex!important;}
 .lp-time-val{font-family:'EB Garamond',serif;font-size:16px;color:#6DB8FF;line-height:1;}
 .lp-time-lbl{font-size:8px;color:var(--td);letter-spacing:1.5px;text-transform:uppercase;margin-top:2px;}
 
-/* ══════════════════════════════════════════════════
-   GAUDIYO / ISKCON MODE — Large Switch Card
-══════════════════════════════════════════════════ */
+.gaudiya-lang-row{
+  display:none;
+  align-items:center;justify-content:space-between;
+  margin-top:16px;padding-top:14px;
+  border-top:1px solid rgba(109,184,255,0.2);
+  gap:12px;
+}
+body.gaudiya-mode .gaudiya-lang-row{display:flex!important;}
+
 .gaudiya-switch-card{
   cursor:pointer;
   border:1px solid rgba(109,184,255,0.22)!important;

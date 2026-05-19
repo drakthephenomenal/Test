@@ -3581,12 +3581,13 @@ function renderVelocityTracker() {
 function renderMilestonesTab() {
   const el = document.getElementById("msContent");
   if (!el) return;
-  const hist = App.S.history || {};
-  const histRV = App.S.historyRV || {};
+  const isGaudiya = App.S.gaudiyaMode || false;
+  const hist = isGaudiya ? (App.S.historyHK || {}) : (App.S.history || {});
+  const histRV = isGaudiya ? {} : (App.S.historyRV || {});
   const rawTot =
     Object.values(hist).reduce((a, b) => a + b, 0) +
     Object.values(histRV).reduce((a, b) => a + b, 0);
-  const deduct = App.S.nameJapDeduct || 0;
+  const deduct = isGaudiya ? (App.S.nameJapDeductHK || 0) : (App.S.nameJapDeduct || 0);
   const total = Math.max(0, rawTot - deduct);
   const lang = window._msLang || "hi";
 
@@ -7498,9 +7499,13 @@ function renderCal() {
       String(mo + 1).padStart(2, "0") +
       "-" +
       String(d).padStart(2, "0");
-    const cnt = (App.S.history[key] || 0) + (App.S.historyRV[key] || 0),
-      timeSec =
-        (App.S.timerHistory[key] || 0) + (App.S.timerHistoryRV[key] || 0),
+    const isGaudiyaCal = App.S.gaudiyaMode || false;
+    const cnt = isGaudiyaCal
+      ? (App.S.historyHK[key] || 0)
+      : (App.S.history[key] || 0) + (App.S.historyRV[key] || 0),
+      timeSec = isGaudiyaCal
+        ? (App.S.timerHistoryHK[key] || 0)
+        : (App.S.timerHistory[key] || 0) + (App.S.timerHistoryRV[key] || 0),
       time28Sec = App.S.timer28History[key] || 0;
     const occ = App.S.occasions && App.S.occasions[key];
     const c = document.createElement("div");
@@ -7697,26 +7702,33 @@ function showDay(key, cnt, timeSec, time28Sec) {
     yr;
 
   // Stats — detailed breakdown
-  const radhaCount = App.S.history[key] || 0;
-  const rvCount = App.S.historyRV[key] || 0;
-  const radhaTime = App.S.timerHistory[key] || 0;
-  const rvTime = App.S.timerHistoryRV[key] || 0;
+  const isGaudiyaDay = App.S.gaudiyaMode || false;
+  const radhaCount = isGaudiyaDay ? 0 : (App.S.history[key] || 0);
+  const rvCount = isGaudiyaDay ? 0 : (App.S.historyRV[key] || 0);
+  const hkCount = isGaudiyaDay ? (App.S.historyHK[key] || 0) : 0;
+  const radhaTime = isGaudiyaDay ? 0 : (App.S.timerHistory[key] || 0);
+  const rvTime = isGaudiyaDay ? 0 : (App.S.timerHistoryRV[key] || 0);
+  const hkTime = isGaudiyaDay ? (App.S.timerHistoryHK[key] || 0) : 0;
   const n28Count = App.S.h28[key] || 0;
   const n28TimeSec = App.S.timer28History[key] || 0;
   const n28Cycles = Math.floor(n28Count / 28);
   const radhaMalas = Math.floor(radhaCount / ms);
   const rvMalas = Math.floor(rvCount / ms);
-  const totalCount = radhaCount + rvCount;
+  const hkMalas = Math.floor(hkCount / ms);
+  const totalCount = isGaudiyaDay ? hkCount : (radhaCount + rvCount);
   const totalMalas = Math.floor(totalCount / ms);
+  const totalTimeSec = isGaudiyaDay ? hkTime : (radhaTime + rvTime + n28TimeSec);
 
-  document.getElementById("cdmoRadhaJap").textContent =
-    radhaCount > 0 ? radhaCount + " jap · " + radhaMalas + " malas" : "—";
-  document.getElementById("cdmoRvJap").textContent =
-    rvCount > 0 ? rvCount + " jap · " + rvMalas + " malas" : "—";
-  document.getElementById("cdmoRadhaTime").textContent =
-    radhaTime > 0 ? App.fmtTime(radhaTime) : "—";
-  document.getElementById("cdmoRvTime").textContent =
-    rvTime > 0 ? App.fmtTime(rvTime) : "—";
+  document.getElementById("cdmoRadhaJap").textContent = isGaudiyaDay
+    ? (hkCount > 0 ? hkCount + " jap · " + hkMalas + " malas" : "—")
+    : (radhaCount > 0 ? radhaCount + " jap · " + radhaMalas + " malas" : "—");
+  document.getElementById("cdmoRvJap").textContent = isGaudiyaDay
+    ? "—"
+    : (rvCount > 0 ? rvCount + " jap · " + rvMalas + " malas" : "—");
+  document.getElementById("cdmoRadhaTime").textContent = isGaudiyaDay
+    ? (hkTime > 0 ? App.fmtTime(hkTime) : "—")
+    : (radhaTime > 0 ? App.fmtTime(radhaTime) : "—");
+  document.getElementById("cdmoRvTime").textContent = isGaudiyaDay ? "—" : (rvTime > 0 ? App.fmtTime(rvTime) : "—");
   document.getElementById("cdmo28Names").textContent =
     n28Count > 0 ? n28Count + " jap · " + n28Cycles + " cycles" : "—";
   const el28 = document.getElementById("cdmoTime28");
@@ -7729,11 +7741,10 @@ function showDay(key, cnt, timeSec, time28Sec) {
   }
   document.getElementById("cdmoTotalCount").textContent =
     totalCount > 0 ? totalCount + " jap (" + totalMalas + " malas)" : "—";
-  const totalTimeSec = radhaTime + rvTime + n28TimeSec;
   document.getElementById("cdmoTotalTime").textContent =
     totalTimeSec > 0 ? App.fmtTime(totalTimeSec) : "—";
-  const combinedDt = (App.S.dt || 0) + (App.S.dtRV || 0);
-  const pct = combinedDt > 0 ? Math.round((cnt / combinedDt) * 100) + "%" : "—";
+  const combinedDt = isGaudiyaDay ? (App.S.dtHK || 0) : ((App.S.dt || 0) + (App.S.dtRV || 0));
+  const pct = combinedDt > 0 ? Math.round((totalCount / combinedDt) * 100) + "%" : "—";
   document.getElementById("cdmoPct").textContent = pct;
 
   // Occasion

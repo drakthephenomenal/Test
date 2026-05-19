@@ -578,10 +578,10 @@
     <div class="sg-body open" id="sgStats">
       <div class="sg" style="margin-bottom:8px">
         <!-- Row 1 -->
-        <div class="sb"><div class="sv2" id="sTod">0</div><div class="sl">Today</div><div class="ss" id="sTodM">0 malas</div></div>
-        <div class="sb"><div class="sv2" id="sWk">0</div><div class="sl">This Week</div><div class="ss" id="sWkM">0 malas</div></div>
+        <div class="sb non-gaudiya-stat"><div class="sv2" id="sTod">0</div><div class="sl">Today</div><div class="ss" id="sTodM">0 malas</div></div>
+        <div class="sb non-gaudiya-stat"><div class="sv2" id="sWk">0</div><div class="sl">This Week</div><div class="ss" id="sWkM">0 malas</div></div>
         <!-- Row 2 -->
-        <div class="sb"><div class="sv2" id="sMo">0</div><div class="sl">This Month</div><div class="ss" id="sMoM">0 malas</div></div>
+        <div class="sb non-gaudiya-stat"><div class="sv2" id="sMo">0</div><div class="sl">This Month</div><div class="ss" id="sMoM">0 malas</div></div>
         <div class="sb non-gaudiya-stat"><div class="sv2" id="sTot">0</div><div class="sl">Total Jap (Radha + RV)</div><div class="ss" id="sTotM">0 malas</div></div>
         <!-- Row 3: Radha count + Radha time -->
         <div class="sb non-gaudiya-stat" id="sbRadhaCount" style="background:rgba(255,215,0,0.05);border-color:rgba(255,215,0,0.18)"><div class="sv2" style="color:var(--gold)" id="sRadhaTot">0</div><div class="sl" style="color:var(--gold)">राधा Lifetime</div><div class="ss" id="sRadhaTotM">0 malas</div><div class="ss" id="sRadhaTotF" style="color:var(--gold);opacity:0.75;font-size:10px;margin-top:2px">0</div></div>
@@ -993,6 +993,14 @@
         <span class="gbt-label-on">ON</span>
       </div>
     </div>
+    <!-- Language toggle — visible only when Gaudiya mode is ON -->
+    <div class="gaudiya-lang-row hk-only-stat" onclick="event.stopPropagation()">
+      <div>
+        <label style="color:#6DB8FF;font-size:13px;font-weight:600;">Mahamantra Language</label>
+        <div class="sub">Display <span id="hkLangLabel">Hindi</span> · toggle for Bangla (মহামন্ত্র)</div>
+      </div>
+      <div class="tg" id="tgHkLang" onclick="event.stopPropagation(); tgs('hkLang')"></div>
+    </div>
   </div>
 
   <!-- TARGETS -->
@@ -1129,14 +1137,6 @@
     <div class="sr">
       <div><label>Bell Sound</label><div class="sub">Bell plays after completing a mala</div></div>
       <div class="tg on" id="tgSnd" onclick="tgs('sound')"></div>
-    </div>
-
-    <div class="sr hk-only-stat" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(109,184,255,0.12)">
-      <div>
-        <label style="color:#6DB8FF">🪷 Mahamantra Language</label>
-        <div class="sub">Display <span id="hkLangLabel">Hindi</span> · toggle for Bangla (মহামন্ত্র)</div>
-      </div>
-      <div class="tg" id="tgHkLang" onclick="tgs('hkLang')"></div>
     </div>
     <button onclick="testSound()" style="padding:7px 14px;border-radius:20px;border:1px solid rgba(74,144,226,0.3);background:rgba(74,144,226,0.12);color:var(--a2);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;margin-top:6px">🔔 Test Bell</button>
   </div>

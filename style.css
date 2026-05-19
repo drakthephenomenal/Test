@@ -907,21 +907,24 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 
 /* ── Hare Krishna Mahamantra persistent tap display ── */
 #hkPersist{
-  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
   pointer-events:none;z-index:10;
   font-family:'Tiro Devanagari Hindi','Hind Siliguri',serif;
-  font-size:clamp(13px,3.8vw,20px);line-height:1.8;text-align:center;
+  font-size:clamp(15px,4.5vw,24px);line-height:1.5;text-align:center;
   padding:16px;letter-spacing:1px;
-  opacity:0;transition:opacity 0.18s ease;
+  opacity:0;transform:perspective(800px) rotateY(90deg);transform-origin:left center;
+  transition:opacity 0.28s ease, transform 0.32s cubic-bezier(.4,.0,.2,1);
 }
-#hkPersist.hk-visible{opacity:1;}
-#hkPersist.hk-flash{opacity:0;transition:opacity 0.13s ease;}
+#hkPersist.hk-visible{opacity:1;transform:perspective(800px) rotateY(0deg);}
+#hkPersist.hk-flip-out{opacity:0;transform:perspective(800px) rotateY(-90deg);transform-origin:right center;transition:opacity 0.18s ease, transform 0.22s cubic-bezier(.4,.0,.2,1);}
+#hkPersist > div{display:block;width:100%;}
 
 /* ── Gaudiya Mode: hide non-HK stat rows / nav ── */
 .non-gaudiya-stat{transition:opacity 0.2s;}
 body.gaudiya-mode .non-gaudiya-stat{display:none!important;}
-.hk-only-stat{display:none;}
-body.gaudiya-mode .hk-only-stat{display:block!important;}
+.hk-only-stat{display:none!important;}
+body.gaudiya-mode .hk-only-stat{display:flex!important;}
+body.gaudiya-mode .sb.hk-only-stat{display:block!important;}
 #nav28{transition:opacity 0.2s;}
 body.gaudiya-mode #nav28{display:none!important;}
 
@@ -929,3 +932,10 @@ body.gaudiya-mode #nav28{display:none!important;}
 .hist-hk-col{display:none;}
 body.gaudiya-mode .hist-hk-col{display:table-cell!important;}
 body.gaudiya-mode .hist-radha-col{display:none!important;}
+
+/* Gaudiya-mode dropdown filtering: only show Mahamantra when ON; hide it when OFF */
+body:not(.gaudiya-mode) #naamOptHK { display: none !important; }
+body.gaudiya-mode #naamOptRadha,
+body.gaudiya-mode #naamOptRV { display: none !important; }
+/* Settings: HK targets block visible only in Gaudiya mode */
+body:not(.gaudiya-mode) .hk-only-block { display: none !important; }

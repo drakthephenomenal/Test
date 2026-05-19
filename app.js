@@ -1478,6 +1478,9 @@ function switchJapMode(mode) {
       optHK.querySelector(".ns-check").textContent = "✓";
     }
     const lang = App.S.hkLang || "hi";
+    // Update dropdown label based on language
+    const naamHKLabel = document.getElementById("naamHKLabel");
+    if (naamHKLabel) naamHKLabel.textContent = lang === "bn" ? "হরে কৃষ্ণ মহামন্ত্র" : "हरे कृष्ण महामंत्र";
     const word = lang === "bn" ? "মহামন্ত্র" : "महामंत्र";
     titleEl.innerHTML =
       '<span style="font-size:clamp(22px,6vw,34px);line-height:1.1;color:#6DB8FF;font-family:\'Tiro Devanagari Hindi\',\'Hind Siliguri\',serif">' +
@@ -1705,6 +1708,9 @@ function tgs(k) {
         : tgH.classList.remove("on");
     const lblH = document.getElementById("hkLangLabel");
     if (lblH) lblH.textContent = App.S.hkLang === "bn" ? "Bangla" : "Hindi";
+    // Update dropdown label in Jap page
+    const naamHKLbl = document.getElementById("naamHKLabel");
+    if (naamHKLbl) naamHKLbl.textContent = App.S.hkLang === "bn" ? "হরে কৃষ্ণ মহামন্ত্র" : "हरे कृष्ण महामंत्र";
     // Update hkPersist text immediately if visible
     const hkEl = document.getElementById("hkPersist");
     if (hkEl && hkEl.classList.contains("hk-visible")) {

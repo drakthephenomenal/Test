@@ -1,9 +1,9 @@
 // ═══════════════════════════════════════════════════════
 // Radha Naam Jap — Service Worker
-// v77: Fixed cache-busting for installed (standalone) PWA
+// v79: Inlined critical CSS in index.html — Gaudiya card always fresh
 //      panchangData.js now always fetched fresh from network
 // ═══════════════════════════════════════════════════════
-const CACHE = 'radha-jap-v77';
+const CACHE = 'radha-jap-v79';
 
 // These files are ALWAYS fetched fresh from the network (network-first, no-cache).
 // Any content update in these files will be immediately visible even in installed PWA.
@@ -17,14 +17,14 @@ const ALWAYS_FRESH = [
 
 const PRECACHE = [
   './index.html',
-  './style.css',
-  './stotrams.js',
-  './app.js',
-  './panchangData.js',
+  './style.css?v=55',
+  './stotrams.js?v=55',
+  './app.js?v=55',
+  './panchangData.js?v=55',
   './guru.jpg',
-  './icon-192.png',
+  './icon-192.png?v=55',
   './icon-512.png',
-  './manifest.json',
+  './manifest.json?v=55',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
@@ -73,9 +73,7 @@ self.addEventListener('fetch', e => {
   const filename = url.pathname.split('/').pop();
 
   // ── Network-first for all core app files ──
-  // KEY FIX: every app file always tries network first with no-cache,
-  // so Gaudiya/ISKCON mode updates, panchang data, stotrams etc.
-  // are always fresh — even in the installed (standalone) PWA.
+  // Matches with or without ?v= query strings.
   if (
     e.request.mode === 'navigate' ||
     url.pathname.endsWith('/') ||

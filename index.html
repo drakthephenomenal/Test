@@ -6,13 +6,13 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="app-version" content="55">
+<meta name="app-version" content="57">
 <script>
 // ── Force-reload if SW is serving a stale cached page ──
 // This runs before anything else. If the page's version stamp doesn't
 // match what the SW last cached, we do a hard reload to get the fresh page.
 (function(){
-  var PAGE_VERSION = 55;
+  var PAGE_VERSION = 57;
   try {
     var stored = parseInt(sessionStorage.getItem('_pv') || '0');
     if (stored && stored < PAGE_VERSION) {
@@ -31,9 +31,9 @@
 <meta name="apple-mobile-web-app-title" content="Radha Jap">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#060D1F">
-<link rel="manifest" href="./manifest.json">
-<link rel="apple-touch-icon" href="./icon-192.png">
-<link rel="icon" href="./icon-192.png">
+<link rel="manifest" href="./manifest.json?v=55">
+<link rel="apple-touch-icon" href="./icon-192.png?v=55">
+<link rel="icon" href="./icon-192.png?v=55">
 <title>Radha Naam Jap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +41,107 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-<link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="./style.css?v=55">
+<!-- ═══════════════════════════════════════════════════════
+     CRITICAL INLINE CSS — v56
+     These styles are inlined so they are ALWAYS fresh,
+     even if style.css is served from an old PWA cache.
+     Covers: Gaudiya/ISKCON card, HK jap display, toggle.
+     ═══════════════════════════════════════════════════════ -->
+<style>
+/* ── HK Jap Persistent Display ── */
+#hkPersist{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:8px;
+  pointer-events:none;z-index:10;
+  font-family:'Tiro Devanagari Hindi','Hind Siliguri',serif;
+  font-size:clamp(22px,6.5vw,38px);line-height:1.55;text-align:center;
+  padding:16px;letter-spacing:1px;
+  opacity:0;transition:opacity 0.22s ease;
+}
+#hkPersist.hk-visible{opacity:1;}
+#hkPersist > div{display:block;width:100%;}
+.hk-float-name{
+  position:absolute;pointer-events:none;z-index:11;
+  animation:hkRise 2.2s ease-out forwards;
+  font-family:'Tiro Devanagari Hindi','Hind Siliguri',serif;
+  font-size:clamp(22px,6.5vw,38px);line-height:1.55;text-align:center;
+  left:50%;transform:translateX(-50%);top:50%;margin-top:-80px;
+  letter-spacing:1px;white-space:nowrap;
+}
+.hk-float-name div{display:block;}
+#hkMalaComplete{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:10px;
+  pointer-events:none;z-index:12;
+  font-family:'Tiro Devanagari Hindi','Hind Siliguri',serif;
+  font-size:clamp(16px,4.5vw,26px);line-height:1.6;text-align:center;
+  padding:16px;letter-spacing:0.5px;
+  opacity:0;transition:opacity 0.4s ease;
+  color:#FFD700;text-shadow:0 0 30px rgba(255,215,0,0.9);
+}
+#hkMalaComplete.hkmc-visible{opacity:1;}
+#hkMalaComplete > div{display:block;width:100%;}
+@keyframes hkRise{
+  0%{opacity:0.95;transform:translateX(-50%) translateY(0) scale(1);}
+  20%{opacity:1;transform:translateX(-50%) translateY(-40px) scale(1.08);}
+  100%{opacity:0;transform:translateX(-50%) translateY(-220px) scale(0.88);}
+}
+/* ── Gaudiya mode visibility ── */
+.non-gaudiya-stat{transition:opacity 0.2s;}
+body.gaudiya-mode .non-gaudiya-stat{display:none!important;}
+.hk-only-stat{display:none!important;}
+body.gaudiya-mode .hk-only-stat{display:flex!important;}
+body.gaudiya-mode .sb.hk-only-stat{display:block!important;}
+#nav28{transition:opacity 0.2s;}
+body.gaudiya-mode #nav28{display:none!important;}
+body.gaudiya-mode .gaudiya-plain-stat{font-size:14px;padding:2px 0;}
+body.gaudiya-mode .gaudiya-plain-stat .cdmo-stat-val{font-size:22px;}
+/* ── Gaudiya Switch Card ── */
+.gaudiya-switch-card{
+  cursor:pointer;
+  border:1px solid rgba(109,184,255,0.22)!important;
+  background:linear-gradient(135deg,rgba(109,184,255,0.07),rgba(109,184,255,0.03))!important;
+  transition:border-color 0.3s,background 0.3s,box-shadow 0.3s;
+  user-select:none;-webkit-user-select:none;
+}
+.gaudiya-switch-card:active{transform:scale(0.99);}
+body.gaudiya-mode .gaudiya-switch-card{
+  border-color:rgba(109,184,255,0.5)!important;
+  background:linear-gradient(135deg,rgba(109,184,255,0.14),rgba(109,184,255,0.06))!important;
+  box-shadow:0 0 24px rgba(109,184,255,0.15)!important;
+}
+.gaudiya-switch-top{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;}
+.gaudiya-switch-lotus{font-size:32px;line-height:1;flex-shrink:0;margin-top:2px;}
+.gaudiya-switch-title{font-size:16px;font-weight:700;color:#6DB8FF;letter-spacing:0.5px;margin-bottom:5px;}
+.gaudiya-switch-sub{font-size:12px;color:rgba(255,255,255,0.55);line-height:1.45;}
+/* ── Big Track Toggle ── */
+.gaudiya-big-toggle{display:flex;justify-content:center;}
+.gbt-track{
+  position:relative;width:200px;height:48px;
+  background:rgba(255,255,255,0.07);border-radius:24px;
+  border:1px solid rgba(255,255,255,0.12);overflow:hidden;
+  transition:background 0.35s;display:flex;align-items:center;
+}
+body.gaudiya-mode .gbt-track{background:rgba(109,184,255,0.25);border-color:rgba(109,184,255,0.4);}
+.gbt-thumb{
+  position:absolute;left:4px;width:92px;height:40px;
+  background:rgba(255,255,255,0.18);border-radius:20px;
+  transition:left 0.35s cubic-bezier(.4,1.4,.6,1);
+  box-shadow:0 2px 8px rgba(0,0,0,0.3);
+}
+body.gaudiya-mode .gbt-thumb{left:102px;background:#6DB8FF;box-shadow:0 2px 16px rgba(109,184,255,0.5);}
+.gbt-label-off,.gbt-label-on{
+  position:absolute;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+  transition:opacity 0.3s;pointer-events:none;
+}
+.gbt-label-off{left:0;width:100px;text-align:center;color:rgba(255,255,255,0.4);}
+.gbt-label-on{right:0;width:100px;text-align:center;color:#6DB8FF;opacity:0.3;}
+body.gaudiya-mode .gbt-label-off{opacity:0.25;}
+body.gaudiya-mode .gbt-label-on{opacity:1;color:#001a2a;}
+/* ── Language toggle (inside Gaudiya card) ── */
+.hk-lang-row{display:flex;align-items:center;justify-content:space-between;padding-top:14px;margin-top:14px;border-top:1px solid rgba(255,255,255,0.08);}
+</style>
 </head>
 <body>
 <!-- LOADING -->
@@ -130,7 +230,7 @@
     })();
     </script>
     <img class="ls-img" id="guruImg" src="./guru.jpg" alt="Shri Radha Rani" style="position:relative;z-index:10;box-shadow:0 0 40px 15px rgba(255,215,0,0.4),0 0 80px 30px rgba(255,215,0,0.2);">
-    <img id="appIconImg" style="display:none" src="./icon-192.png" alt="App Icon"/>
+    <img id="appIconImg" style="display:none" src="./icon-192.png?v=55" alt="App Icon"/>
   </div>
   <div class="ls-title">राधे राधे</div>
   <div class="ls-sub">Jai Shri Radha</div>
@@ -1306,9 +1406,9 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
-    <script src="./stotrams.js"></script>
-    <script src="./panchangData.js"></script>
-    <script src="./app.js"></script>
+    <script src="./stotrams.js?v=55"></script>
+    <script src="./panchangData.js?v=55"></script>
+    <script src="./app.js?v=55"></script>
 
   </body>
 </html>

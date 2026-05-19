@@ -681,7 +681,7 @@ const App = {
   malaOk() {
     const f = document.getElementById("mf");
     const isHKmala = this.S.japMode === "hk";
-    // For HK mode: show Chaitanya verse instead of RV
+    // For HK mode: show Chaitanya verse overlay until next tap
     if (isHKmala) {
       const lang = this.S.hkLang || "hi";
       const line1 = lang === "bn"
@@ -690,19 +690,7 @@ const App = {
       const line2 = lang === "bn"
         ? "শ্রীঅদ্বৈত গদাধর শ্রীবাসাদি গৌরভক্তবৃন্দ।"
         : "श्री अद्वैत गदाधर श्रीवासादि गौर भक्त वृन्द॥";
-      const l1el = f.querySelector(".mf-line1");
-      const l2el = f.querySelector(".mf-line2");
-      const _orig1 = l1el ? l1el.textContent : "";
-      const _orig2 = l2el ? l2el.textContent : "";
-      if (l1el) { l1el.textContent = line1; l1el.style.fontSize = "clamp(14px,3.8vw,22px)"; }
-      if (l2el) { l2el.textContent = line2; l2el.style.fontSize = "clamp(12px,3.2vw,18px)"; l2el.style.fontFamily = "'Tiro Devanagari Hindi','Hind Siliguri',serif"; l2el.style.color = "var(--gold)"; }
-      f.classList.add("show-long");
-      setTimeout(() => {
-        f.classList.remove("show-long");
-        // Restore original content
-        if (l1el) { l1el.textContent = _orig1; l1el.style.fontSize = ""; }
-        if (l2el) { l2el.textContent = _orig2; l2el.style.fontSize = ""; l2el.style.fontFamily = ""; l2el.style.color = ""; }
-      }, 4000);
+      showHKMalaComplete(line1, line2);
     } else {
       f.classList.add("show");
       setTimeout(() => f.classList.remove("show"), 2800);
@@ -1161,59 +1149,80 @@ function spawnRV(e, zone) {
   setTimeout(() => el.remove(), 2400);
 }
 
-// HK Mahamantra — stays in place, alternates gold/blue on each tap
+// HK Mahamantra — appears centered, rises upward, 7 cycling colors
 const HK_TEXT =
   "हरे कृष्ण हरे कृष्ण\nकृष्ण कृष्ण हरे हरे।\nहरे राम हरे राम\nराम राम हरे हरे॥";
 const HK_TEXT_BN =
   "হরে কৃষ্ণ হরে কৃষ্ণ\nকৃষ্ণ কৃষ্ণ হরে হরে।\nহরে রাম হরে রাম\nরাম রাম হরে হরে॥";
-const HK_COLORS = ["#FFD700", "#6DB8FF"];
-const HK_SHADOWS = [
-  "0 0 30px rgba(255,215,0,0.9)",
-  "0 0 30px rgba(109,184,255,0.9)",
+const HK_COLORS = [
+  "#FFD700", // gold
+  "#6DB8FF", // blue
+  "#FF6B9D", // pink
+  "#7CFC00", // green
+  "#FF8C42", // orange
+  "#DA70D6", // orchid
+  "#00CED1", // teal
+];
+const HK_SHADOWS_MAP = [
+  "0 0 30px rgba(255,215,0,0.85)",
+  "0 0 30px rgba(109,184,255,0.85)",
+  "0 0 30px rgba(255,107,157,0.85)",
+  "0 0 30px rgba(124,252,0,0.85)",
+  "0 0 30px rgba(255,140,66,0.85)",
+  "0 0 30px rgba(218,112,214,0.85)",
+  "0 0 30px rgba(0,206,209,0.85)",
 ];
 let _hkColorIdx = 0;
+let _hkMalaBlocked = false; // blocks taps until user taps after mala complete
+
 function spawnHK() {
+  // If mala-complete overlay is showing, first tap dismisses it and starts new mala
+  if (_hkMalaBlocked) {
+    _hkMalaBlocked = false;
+    const mc = document.getElementById("hkMalaComplete");
+    if (mc) mc.classList.remove("hkmc-visible");
+    return;
+  }
   const el = document.getElementById("hkPersist");
   if (!el) return;
   const lang = App.S.hkLang || "hi";
   const text = lang === "bn" ? HK_TEXT_BN : HK_TEXT;
-  // Floating animation like 28 names — colour alternates, text rises and fades
+  const color = HK_COLORS[_hkColorIdx % 7];
+  const shadow = HK_SHADOWS_MAP[_hkColorIdx % 7];
+  _hkColorIdx++;
+
+  // Spawn floating rise-up copy from center
   const zone = document.getElementById("tz");
   if (zone) {
     const floatEl = document.createElement("div");
     floatEl.className = "hk-float-name";
-    floatEl.innerHTML = text.split("\n")
-      .map((l) => "<div>" + l + "</div>")
-      .join("");
-    floatEl.style.color = HK_COLORS[_hkColorIdx % 2];
-    floatEl.style.textShadow = HK_SHADOWS[_hkColorIdx % 2];
+    floatEl.innerHTML = text.split("\n").map((l) => "<div>" + l + "</div>").join("");
+    floatEl.style.color = color;
+    floatEl.style.textShadow = shadow;
     zone.appendChild(floatEl);
-    setTimeout(() => floatEl.remove(), 2400);
+    setTimeout(() => floatEl.remove(), 2200);
   }
-  // Also update persistent display
-  const paint = () => {
-    el.innerHTML = text.split("\n")
-      .map((l) => "<div>" + l + "</div>")
-      .join("");
-    el.style.color = HK_COLORS[_hkColorIdx % 2];
-    el.style.textShadow = HK_SHADOWS[_hkColorIdx % 2];
-    _hkColorIdx++;
-  };
+
+  // Update persistent centered display (just fade in, no slide)
+  el.innerHTML = text.split("\n").map((l) => "<div>" + l + "</div>").join("");
+  el.style.color = color;
+  el.style.textShadow = shadow;
   if (!el.classList.contains("hk-visible")) {
-    paint();
-    el.classList.remove("hk-flip-out");
-    void el.offsetWidth;
     el.classList.add("hk-visible");
-  } else {
-    el.classList.remove("hk-visible");
-    el.classList.add("hk-flip-out");
-    setTimeout(() => {
-      paint();
-      el.classList.remove("hk-flip-out");
-      void el.offsetWidth;
-      el.classList.add("hk-visible");
-    }, 200);
   }
+}
+
+function showHKMalaComplete(line1, line2) {
+  _hkMalaBlocked = true;
+  // Hide the persistent mahamantra text
+  const el = document.getElementById("hkPersist");
+  if (el) el.classList.remove("hk-visible");
+  // Show Jay Sri Krishna Chaitanya overlay
+  const mc = document.getElementById("hkMalaComplete");
+  if (!mc) return;
+  mc.innerHTML = "<div>" + line1 + "</div><div>" + line2 + "</div>";
+  mc.classList.add("hkmc-visible");
+  // No auto-dismiss — stays until user taps
 }
 
 // Prevent double-tap zoom
@@ -1462,6 +1471,9 @@ function switchJapMode(mode) {
     }
   });
   if (mode === "rv") {
+    _hkMalaBlocked = false;
+    const _mcClr = document.getElementById("hkMalaComplete");
+    if (_mcClr) _mcClr.classList.remove("hkmc-visible");
     if (optRV) {
       optRV.classList.add("active");
       optRV.querySelector(".ns-check").textContent = "✓";
@@ -1477,6 +1489,10 @@ function switchJapMode(mode) {
       optHK.classList.add("active");
       optHK.querySelector(".ns-check").textContent = "✓";
     }
+    // Reset mala-complete block when switching into HK mode
+    _hkMalaBlocked = false;
+    const mc = document.getElementById("hkMalaComplete");
+    if (mc) mc.classList.remove("hkmc-visible");
     const lang = App.S.hkLang || "hi";
     // Update dropdown label based on language
     const naamHKLabel = document.getElementById("naamHKLabel");

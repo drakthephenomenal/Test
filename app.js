@@ -3813,6 +3813,32 @@ function setMsLang(lang) {
   document.getElementById("msLangHi").classList.toggle("active", lang === "hi");
   document.getElementById("msLangBn").classList.toggle("active", lang === "bn");
   renderMilestonesTab();
+  // Auto-sync Mahamantra language toggle when Bengali is selected
+  if (lang === "bn" && App && App.S && App.S.hkLang !== "bn") {
+    App.S.hkLang = "bn";
+    const tgH = document.getElementById("tgHkLang");
+    if (tgH) tgH.classList.add("on");
+    const lblH = document.getElementById("hkLangLabel");
+    if (lblH) lblH.textContent = "Bangla";
+    const hkEl = document.getElementById("hkPersist");
+    if (hkEl && hkEl.classList.contains("hk-visible")) {
+      hkEl.innerHTML = HK_TEXT_BN.split("\n").map((l) => "<div>" + l + "</div>").join("");
+    }
+    if (App.S.japMode === "hk") switchJapMode("hk");
+    App.save();
+  } else if (lang === "hi" && App && App.S && App.S.hkLang !== "hi") {
+    App.S.hkLang = "hi";
+    const tgH = document.getElementById("tgHkLang");
+    if (tgH) tgH.classList.remove("on");
+    const lblH = document.getElementById("hkLangLabel");
+    if (lblH) lblH.textContent = "Hindi";
+    const hkEl = document.getElementById("hkPersist");
+    if (hkEl && hkEl.classList.contains("hk-visible")) {
+      hkEl.innerHTML = HK_TEXT.split("\n").map((l) => "<div>" + l + "</div>").join("");
+    }
+    if (App.S.japMode === "hk") switchJapMode("hk");
+    App.save();
+  }
 }
 
 function toggleMsDesc(id, btn) {

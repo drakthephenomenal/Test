@@ -1,15 +1,11 @@
 // ═══════════════════════════════════════════════════════
 // Radha Naam Jap — Service Worker
-// v81: PWA staleness fix — installed apps were stuck on v55 caches
-//      causing Gaudiya/ISKCON toggle to lose styling and Mahamantra
-//      floaters to render side-by-side. On activate we now nuke EVERY
-//      old cache (any name) and force-navigate all clients so the
-//      browser refetches index.html + style.css + app.js from network.
+// v82: Fixed Gaudiya/ISKCON toggle (tgs gaudiyaMode handler) and
+//      HK jap mode selector (switchJapMode 'hk' branch + initJapModeUI).
 // ═══════════════════════════════════════════════════════
-const CACHE = 'radha-jap-v81';
+const CACHE = 'radha-jap-v82';
 
 // These files are ALWAYS fetched fresh from the network (network-first, no-cache).
-// Any content update in these files will be immediately visible even in installed PWA.
 const ALWAYS_FRESH = [
   'index.html',
   'app.js',
@@ -20,14 +16,14 @@ const ALWAYS_FRESH = [
 
 const PRECACHE = [
   './index.html',
-  './style.css?v=80',
-  './stotrams.js?v=80',
-  './app.js?v=80',
-  './panchangData.js?v=80',
+  './style.css?v=82',
+  './stotrams.js?v=82',
+  './app.js?v=82',
+  './panchangData.js?v=82',
   './guru.jpg',
-  './icon-192.png?v=80',
+  './icon-192.png?v=82',
   './icon-512.png',
-  './manifest.json?v=80',
+  './manifest.json?v=82',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
@@ -57,30 +53,19 @@ self.addEventListener('install', e => {
 });
 
 // ── Activate ──
-// CRITICAL: nuke EVERY cache (not just != CACHE) so stuck PWA users on old
-// pre-v81 SW shake loose the stale style.css?v=55 / old index.html that
-// were poisoning their layout.
+// Nuke EVERY old cache so stuck PWA users get the fresh app.js fix.
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
-    // 1. Delete every cache except the current one
     const keys = await caches.keys();
     await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
-
-    // 2. Take control of all open clients
     await self.clients.claim();
-
-    // 3. Force every open client (installed PWA windows) to navigate again.
-    //    A real navigation is the only way to evict the stale top-level
-    //    response that an old SW handed them. Adds a cache-bust query so
-    //    any HTTP-cached copy is bypassed too.
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const c of clients) {
       try {
         const u = new URL(c.url);
-        u.searchParams.set('_swv', '81');
+        u.searchParams.set('_swv', '82');
         await c.navigate(u.toString());
       } catch (_) {
-        // fall back to message-based reload
         c.postMessage({ type: 'SW_UPDATED', version: CACHE });
       }
     }
@@ -95,8 +80,7 @@ self.addEventListener('fetch', e => {
 
   const filename = url.pathname.split('/').pop();
 
-  // ── Network-first for all core app files ──
-  // Matches with or without ?v= query strings.
+  // Network-first for all core app files
   if (
     e.request.mode === 'navigate' ||
     url.pathname.endsWith('/') ||
@@ -119,7 +103,7 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // ── Cache-first for static assets (icons, images, fonts, CDN) ──
+  // Cache-first for static assets (icons, images, fonts, CDN)
   e.respondWith(
     caches.match(e.request).then(cached => {
       const net = fetch(e.request).then(resp => {

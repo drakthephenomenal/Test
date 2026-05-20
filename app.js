@@ -2628,40 +2628,6 @@ function uStats() {
   if (sHKM) sHKM.textContent = Math.floor(hkLifetime / ms) + " malas";
   const sHKF = document.getElementById("sHKTotF");
   if (sHKF) sHKF.textContent = fmtCount(hkLifetime) + " jap";
-
-  // ── Lotus Petals: populate new Gaudiya-mode stat elements ──
-  const _lp = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  _lp("lpHKTot", hkLifetime.toLocaleString("en-IN"));
-  _lp("lpHKTotM", Math.floor(hkLifetime / ms) + " malas");
-  _lp("lpHKTotF", fmtCount(hkLifetime) + " jap");
-  // Today/Week/Month counts
-  const hkTodCount = App.S.historyHK[App.S.tk] || 0;
-  const hkWkCount = wk.reduce((s, k) => s + (App.S.historyHK[k] || 0), 0);
-  const hkMoCount = Object.entries(App.S.historyHK || {})
-    .filter(([k]) => k.startsWith(mp)).reduce((s, [, v]) => s + v, 0);
-  _lp("lpHKTod", hkTodCount.toLocaleString("en-IN"));
-  _lp("lpHKTodM", Math.floor(hkTodCount / ms) + " malas");
-  _lp("lpHKWk", hkWkCount.toLocaleString("en-IN"));
-  _lp("lpHKWkM", Math.floor(hkWkCount / ms) + " malas");
-  _lp("lpHKMo", hkMoCount.toLocaleString("en-IN"));
-  _lp("lpHKMoM", Math.floor(hkMoCount / ms) + " malas");
-  // Time for Lotus Petals tri-col subs
-  const _lpTimeSub = (id, sec) => {
-    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s2 = sec % 60;
-    _lp(id, (h > 0 ? h + "h " : "") + m + "m " + String(s2).padStart(2,"0") + "s");
-  };
-  const hkTH2 = App.S.timerHistoryHK || {};
-  const isHKMode2 = App.S.japMode === "hk";
-  const liveHK2 = App.timerRunning && isHKMode2 ? Math.max(0, App.timerSeconds - App.timerSavedSeconds) : 0;
-  const hkTodT = (hkTH2[App.S.tk] || 0) + liveHK2;
-  const hkWkT = wk.reduce((s, k) => s + (hkTH2[k] || 0), 0) + liveHK2;
-  const hkMoT = Object.entries(hkTH2).filter(([k]) => k.startsWith(mp)).reduce((s, [, v]) => s + v, 0) + liveHK2;
-  const hkLtT = Object.values(hkTH2).reduce((s, v) => s + v, 0) + liveHK2;
-  _lpTimeSub("lpHKTodT", hkTodT);
-  _lpTimeSub("lpHKWkT", hkWkT);
-  _lpTimeSub("lpHKMoT", hkMoT);
-  _lpTimeSub("lpHKTimeTod", hkTodT); _lpTimeSub("lpHKTimeWk", hkWkT); _lpTimeSub("lpHKTimeMo", hkMoT); _lpTimeSub("lpHKTimeLt", hkLtT);
-
   // Combined Lifetime Jap (Radha + RV + 28 names)
   const ltJapAll = radhaLifetime + rvLifetime + n28Lifetime;
   const sLtJA = document.getElementById("sLtJapAll");
@@ -3581,13 +3547,12 @@ function renderVelocityTracker() {
 function renderMilestonesTab() {
   const el = document.getElementById("msContent");
   if (!el) return;
-  const isGaudiya = App.S.gaudiyaMode || false;
-  const hist = isGaudiya ? (App.S.historyHK || {}) : (App.S.history || {});
-  const histRV = isGaudiya ? {} : (App.S.historyRV || {});
+  const hist = App.S.history || {};
+  const histRV = App.S.historyRV || {};
   const rawTot =
     Object.values(hist).reduce((a, b) => a + b, 0) +
     Object.values(histRV).reduce((a, b) => a + b, 0);
-  const deduct = isGaudiya ? (App.S.nameJapDeductHK || 0) : (App.S.nameJapDeduct || 0);
+  const deduct = App.S.nameJapDeduct || 0;
   const total = Math.max(0, rawTot - deduct);
   const lang = window._msLang || "hi";
 
@@ -3661,41 +3626,7 @@ function renderMilestonesTab() {
 
   let out = "";
 
-  // ─── EARLY MALA MILESTONES (for new practitioners) ───
-  const MALA_MS = [
-    { malas: 1,    label: "First Mala",       icon: "🌱", desc: "The journey begins" },
-    { malas: 7,    label: "7 Malas",          icon: "🪷", desc: "One week of daily sadhana" },
-    { malas: 10,   label: "10 Malas",         icon: "📿", desc: "First decade" },
-    { malas: 16,   label: "16 Rounds",        icon: "🙏", desc: "ISKCON daily vow — 16 rounds" },
-    { malas: 25,   label: "25 Malas",         icon: "✨", desc: "Silver milestone" },
-    { malas: 64,   label: "64 Rounds",        icon: "🌸", desc: "Classical Gaudiya recommendation" },
-    { malas: 100,  label: "100 Malas",        icon: "🏆", desc: "First century" },
-    { malas: 108,  label: "108 Malas",        icon: "👑", desc: "Sacred 108 — one full cycle" },
-    { malas: 216,  label: "216 Malas",        icon: "🌟", desc: "Double 108" },
-    { malas: 500,  label: "500 Malas",        icon: "💎", desc: "500 malas — deep practice" },
-    { malas: 1000, label: "1000 Malas",       icon: "🔱", desc: "One thousand malas" },
-  ];
-  const ms_size = App.S.ms || 108;
-  const totalMalasMs = Math.floor(total / ms_size);
-
-  out += '<div class="ms-phase-title">🌱 Mala Milestones</div>';
-  out += '<div class="ms-phase-sub">YOUR FIRST STEPS — MALA BY MALA</div>';
-  out += '<div class="ms-lakh-grid">';
-  MALA_MS.forEach((m) => {
-    const targetJap = m.malas * ms_size;
-    const achieved = total >= targetJap;
-    const pct = Math.min(100, (total / targetJap) * 100);
-    out += '<div class="ms-lakh-card' + (achieved ? " achieved" : "") +
-      "\" onclick=\"openMsDetail('lakh'," + targetJap + "," + pct.toFixed(1) + "," + achieved + ')\">';
-    out += '<div class="ms-lakh-label">' + m.icon + " " + (achieved ? "✓ " : "") + m.label + "</div>";
-    out += '<div class="ms-lakh-pct">' + (achieved ? "✓" : pct.toFixed(1) + "%") + "</div>";
-    out += '<div class="ms-progress-wrap"><div class="ms-progress-fill ' +
-      (achieved ? "gold" : "bronze") + '" style="width:' + pct + '%"></div></div>';
-    out += "</div>";
-  });
-  out += "</div>";
-  out += '<div class="ms-section-sep"></div>';
-
+  // ─── LAKH MILESTONES ───
   out += '<div class="ms-phase-title">📿 Lakh Milestones</div>';
   out += '<div class="ms-phase-sub">10K → 1 CRORE JOURNEY</div>';
 
@@ -7533,13 +7464,9 @@ function renderCal() {
       String(mo + 1).padStart(2, "0") +
       "-" +
       String(d).padStart(2, "0");
-    const isGaudiyaCal = App.S.gaudiyaMode || false;
-    const cnt = isGaudiyaCal
-      ? (App.S.historyHK[key] || 0)
-      : (App.S.history[key] || 0) + (App.S.historyRV[key] || 0),
-      timeSec = isGaudiyaCal
-        ? (App.S.timerHistoryHK[key] || 0)
-        : (App.S.timerHistory[key] || 0) + (App.S.timerHistoryRV[key] || 0),
+    const cnt = (App.S.history[key] || 0) + (App.S.historyRV[key] || 0),
+      timeSec =
+        (App.S.timerHistory[key] || 0) + (App.S.timerHistoryRV[key] || 0),
       time28Sec = App.S.timer28History[key] || 0;
     const occ = App.S.occasions && App.S.occasions[key];
     const c = document.createElement("div");
@@ -7736,30 +7663,18 @@ function showDay(key, cnt, timeSec, time28Sec) {
     yr;
 
   // Stats — detailed breakdown
-  const isGaudiyaDay = App.S.gaudiyaMode || false;
-  const radhaCount = isGaudiyaDay ? 0 : (App.S.history[key] || 0);
-  const rvCount = isGaudiyaDay ? 0 : (App.S.historyRV[key] || 0);
-  const hkCount = isGaudiyaDay ? (App.S.historyHK[key] || 0) : 0;
-  const radhaTime = isGaudiyaDay ? 0 : (App.S.timerHistory[key] || 0);
-  const rvTime = isGaudiyaDay ? 0 : (App.S.timerHistoryRV[key] || 0);
-  const hkTime = isGaudiyaDay ? (App.S.timerHistoryHK[key] || 0) : 0;
+  const radhaCount = App.S.history[key] || 0;
+  const rvCount = App.S.historyRV[key] || 0;
+  const radhaTime = App.S.timerHistory[key] || 0;
+  const rvTime = App.S.timerHistoryRV[key] || 0;
   const n28Count = App.S.h28[key] || 0;
   const n28TimeSec = App.S.timer28History[key] || 0;
   const n28Cycles = Math.floor(n28Count / 28);
   const radhaMalas = Math.floor(radhaCount / ms);
   const rvMalas = Math.floor(rvCount / ms);
-  const hkMalas = Math.floor(hkCount / ms);
-  const totalCount = isGaudiyaDay ? hkCount : (radhaCount + rvCount);
+  const totalCount = radhaCount + rvCount;
   const totalMalas = Math.floor(totalCount / ms);
-  const totalTimeSec = isGaudiyaDay ? hkTime : (radhaTime + rvTime + n28TimeSec);
 
-  // Populate dedicated HK fields
-  const elHkJap = document.getElementById("cdmoHkJap");
-  if (elHkJap) elHkJap.textContent = hkCount > 0 ? hkCount + " jap · " + hkMalas + " malas" : "—";
-  const elHkTime = document.getElementById("cdmoHkTime");
-  if (elHkTime) elHkTime.textContent = hkTime > 0 ? App.fmtTime(hkTime) : "—";
-
-  // Populate Radha/RV fields (always reset so stale data doesn't show)
   document.getElementById("cdmoRadhaJap").textContent =
     radhaCount > 0 ? radhaCount + " jap · " + radhaMalas + " malas" : "—";
   document.getElementById("cdmoRvJap").textContent =
@@ -7780,15 +7695,11 @@ function showDay(key, cnt, timeSec, time28Sec) {
   }
   document.getElementById("cdmoTotalCount").textContent =
     totalCount > 0 ? totalCount + " jap (" + totalMalas + " malas)" : "—";
+  const totalTimeSec = radhaTime + rvTime + n28TimeSec;
   document.getElementById("cdmoTotalTime").textContent =
     totalTimeSec > 0 ? App.fmtTime(totalTimeSec) : "—";
-  // HK totals (for Gaudiya mode dedicated rows)
-  const elHkTot = document.getElementById("cdmoHkTotalCount");
-  if (elHkTot) elHkTot.textContent = hkCount > 0 ? hkCount + " jap (" + hkMalas + " malas)" : "—";
-  const elHkTotT = document.getElementById("cdmoHkTotalTime");
-  if (elHkTotT) elHkTotT.textContent = hkTime > 0 ? App.fmtTime(hkTime) : "—";
-  const combinedDt = isGaudiyaDay ? (App.S.dtHK || 0) : ((App.S.dt || 0) + (App.S.dtRV || 0));
-  const pct = combinedDt > 0 ? Math.round((totalCount / combinedDt) * 100) + "%" : "—";
+  const combinedDt = (App.S.dt || 0) + (App.S.dtRV || 0);
+  const pct = combinedDt > 0 ? Math.round((cnt / combinedDt) * 100) + "%" : "—";
   document.getElementById("cdmoPct").textContent = pct;
 
   // Occasion
@@ -8428,191 +8339,31 @@ if ("serviceWorker" in navigator) {
       .register("./sw.js", { scope: "./" })
       .then((r) => {
         console.log("SW registered:", r.scope);
-
-        // If there is already a waiting SW (installed PWA reopened), activate it now
-        if (r.waiting) r.waiting.postMessage({ type: "SKIP_WAITING" });
-
+        // When a new SW takes over, reload the page to get fresh files
         r.addEventListener("updatefound", () => {
           const newWorker = r.installing;
           if (!newWorker) return;
           newWorker.addEventListener("statechange", () => {
-            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-              // New SW ready — skip waiting so it takes over immediately
-              newWorker.postMessage({ type: "SKIP_WAITING" });
-            }
             if (newWorker.state === "activated") {
-              console.log("[SW] New SW activated — hard reloading");
-              window.location.reload(true);
+              console.log(
+                "[SW] New SW activated — reloading for fresh content",
+              );
+              window.location.reload();
             }
           });
         });
       })
       .catch((e) => console.warn("SW registration failed:", e.message));
 
-    // SW_UPDATED message from service worker (covers installed PWA path)
+    // Also listen for SW_UPDATED message from the service worker
     navigator.serviceWorker.addEventListener("message", (e) => {
       if (e.data && e.data.type === "SW_UPDATED") {
-        console.log("[SW] SW_UPDATED received, hard reloading…", e.data.version);
-        window.location.reload(true);
+        console.log("[SW] Received SW_UPDATED, reloading…", e.data.version);
+        window.location.reload();
       }
     });
-
-    // Periodic update check — installed PWAs never navigate, so SW never auto-checks.
-    // Every 60s we manually trigger a check so updates are caught quickly.
-    setInterval(() => {
-      navigator.serviceWorker.getRegistration().then(reg => {
-        if (reg) reg.update().catch(() => {});
-      });
-    }, 60000);
   });
 }
-
-// ═══════════════════════════════════════════════════════
-// PWA INSTALL PROMPT — Show banner to new users
-// ═══════════════════════════════════════════════════════
-(function () {
-  // Don't show if already running as installed PWA
-  const isStandalone =
-    window.matchMedia('(display-mode: standalone)').matches ||
-    window.navigator.standalone === true;
-  if (isStandalone) return;
-
-  // Don't show if user dismissed within last 7 days
-  const DISMISS_KEY = 'pwa_install_dismissed';
-  const dismissed = localStorage.getItem(DISMISS_KEY);
-  if (dismissed && Date.now() - parseInt(dismissed) < 7 * 24 * 60 * 60 * 1000) return;
-
-  let deferredPrompt = null;
-
-  function createInstallBanner() {
-    if (document.getElementById('pwa-install-banner')) return;
-
-    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-
-    const banner = document.createElement('div');
-    banner.id = 'pwa-install-banner';
-    banner.style.cssText = [
-      'position:fixed',
-      'bottom:80px',
-      'left:50%',
-      'transform:translateX(-50%)',
-      'width:min(calc(100vw - 32px), 360px)',
-      'background:linear-gradient(135deg,rgba(10,20,55,0.97),rgba(20,10,50,0.97))',
-      'border:1px solid rgba(255,200,80,0.35)',
-      'border-radius:18px',
-      'padding:16px 18px',
-      'z-index:9999',
-      'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
-      'font-family:Inter,sans-serif',
-      'backdrop-filter:blur(16px)',
-      'animation:pwaSlideUp 0.4s cubic-bezier(0.22,1,0.36,1)',
-    ].join(';');
-
-    // Inject keyframe animation once
-    if (!document.getElementById('pwa-anim-style')) {
-      const s = document.createElement('style');
-      s.id = 'pwa-anim-style';
-      s.textContent = `
-        @keyframes pwaSlideUp {
-          from { opacity:0; transform:translateX(-50%) translateY(24px); }
-          to   { opacity:1; transform:translateX(-50%) translateY(0); }
-        }
-      `;
-      document.head.appendChild(s);
-    }
-
-    if (isIOS) {
-      banner.innerHTML = `
-        <div style="display:flex;align-items:flex-start;gap:12px">
-          <img src="./icon-192.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0" />
-          <div style="flex:1">
-            <div style="font-size:14px;font-weight:700;color:#FFD700;margin-bottom:4px">🪷 Radha Naam Jap</div>
-            <div style="font-size:12px;color:rgba(255,255,255,0.82);line-height:1.5">
-              Add to Home Screen for the full app experience!<br>
-              Tap <b style="color:#FFD700">Share</b> 
-              <span style="font-size:16px">⬆</span> 
-              then <b style="color:#FFD700">"Add to Home Screen"</b>
-            </div>
-          </div>
-          <button id="pwa-dismiss" style="background:none;border:none;color:rgba(255,255,255,0.4);font-size:20px;cursor:pointer;padding:0;line-height:1;flex-shrink:0">✕</button>
-        </div>
-      `;
-    } else {
-      banner.innerHTML = `
-        <div style="display:flex;align-items:center;gap:12px">
-          <img src="./icon-192.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0" />
-          <div style="flex:1">
-            <div style="font-size:14px;font-weight:700;color:#FFD700;margin-bottom:2px">🪷 Radha Naam Jap</div>
-            <div style="font-size:12px;color:rgba(255,255,255,0.75)">Install the app for quick access!</div>
-          </div>
-          <button id="pwa-dismiss" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:20px;cursor:pointer;padding:0 4px;line-height:1;flex-shrink:0">✕</button>
-        </div>
-        <div style="display:flex;gap:10px;margin-top:12px">
-          <button id="pwa-install-btn" style="flex:1;background:linear-gradient(135deg,#FFD700,#FFA500);color:#1a0a00;font-weight:700;font-size:13px;border:none;border-radius:10px;padding:9px 0;cursor:pointer;font-family:Inter,sans-serif">
-            📲 Install App
-          </button>
-          <button id="pwa-later-btn" style="flex:1;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.65);font-size:13px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:9px 0;cursor:pointer;font-family:Inter,sans-serif">
-            Maybe Later
-          </button>
-        </div>
-      `;
-    }
-
-    document.body.appendChild(banner);
-
-    // Dismiss button
-    document.getElementById('pwa-dismiss').addEventListener('click', () => {
-      localStorage.setItem(DISMISS_KEY, Date.now().toString());
-      banner.style.animation = 'none';
-      banner.style.opacity = '0';
-      banner.style.transform = 'translateX(-50%) translateY(16px)';
-      banner.style.transition = 'opacity 0.3s,transform 0.3s';
-      setTimeout(() => banner.remove(), 350);
-    });
-
-    if (!isIOS) {
-      // Install button triggers native prompt
-      document.getElementById('pwa-install-btn').addEventListener('click', async () => {
-        banner.remove();
-        if (deferredPrompt) {
-          deferredPrompt.prompt();
-          const { outcome } = await deferredPrompt.userChoice;
-          deferredPrompt = null;
-          if (outcome === 'accepted') {
-            toast('🙏 App installed! Jai Radhe!');
-          }
-        }
-      });
-      // "Maybe Later" = dismiss for 7 days
-      document.getElementById('pwa-later-btn').addEventListener('click', () => {
-        localStorage.setItem(DISMISS_KEY, Date.now().toString());
-        banner.remove();
-      });
-    }
-  }
-
-  // Android/Chrome: capture the native install event
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault(); // Stop browser mini-bar
-    deferredPrompt = e;
-    // Show banner after a short delay so page loads first
-    setTimeout(createInstallBanner, 3000);
-  });
-
-  // iOS Safari: no beforeinstallprompt — show instructions banner instead
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const isSafari = /safari/i.test(navigator.userAgent) && !/chrome/i.test(navigator.userAgent);
-  if (isIOS && isSafari) {
-    setTimeout(createInstallBanner, 3500);
-  }
-
-  // If already installed, mark so we never show again
-  window.addEventListener('appinstalled', () => {
-    localStorage.setItem(DISMISS_KEY, (Date.now() + 365 * 24 * 60 * 60 * 1000).toString());
-    const b = document.getElementById('pwa-install-banner');
-    if (b) b.remove();
-  });
-})();
 
 // ══════════════════════════════════════════════M��════════
 // GURUDEV PHOTO FALLBACK — beautiful canvas placeholder

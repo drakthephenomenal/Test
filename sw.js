@@ -1,30 +1,19 @@
 // ═══════════════════════════════════════════════════════
 // Radha Naam Jap — Service Worker
-// v79: Inlined critical CSS in index.html — Gaudiya card always fresh
-//      panchangData.js now always fetched fresh from network
+// v64: Removed Google Drive backup system
 // ═══════════════════════════════════════════════════════
-const CACHE = 'radha-jap-v79';
-
-// These files are ALWAYS fetched fresh from the network (network-first, no-cache).
-// Any content update in these files will be immediately visible even in installed PWA.
-const ALWAYS_FRESH = [
-  'index.html',
-  'app.js',
-  'style.css',
-  'stotrams.js',
-  'panchangData.js',
-];
+const CACHE = 'radha-jap-v75';
 
 const PRECACHE = [
   './index.html',
-  './style.css?v=55',
-  './stotrams.js?v=55',
-  './app.js?v=55',
-  './panchangData.js?v=55',
+  './style.css',
+  './stotrams.js',
+  './app.js',
+  './panchangData.js',
   './guru.jpg',
-  './icon-192.png?v=55',
+  './icon-192.png',
   './icon-512.png',
-  './manifest.json?v=55',
+  './manifest.json',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
@@ -70,33 +59,30 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (BYPASS.some(h => url.href.includes(h))) return;
 
-  const filename = url.pathname.split('/').pop();
-
-  // ── Network-first for all core app files ──
-  // Matches with or without ?v= query strings.
-  if (
-    e.request.mode === 'navigate' ||
-    url.pathname.endsWith('/') ||
-    ALWAYS_FRESH.some(f => filename === f)
-  ) {
+  if (url.pathname.endsWith('index.html') || url.pathname.endsWith('/') || e.request.mode === 'navigate') {
     e.respondWith(
       fetch(e.request, { cache: 'no-cache' })
         .then(resp => {
-          if (resp && resp.status === 200) {
-            caches.open(CACHE).then(c => c.put(e.request, resp.clone()));
-          }
+          if (resp && resp.status === 200) caches.open(CACHE).then(c => c.put(e.request, resp.clone()));
           return resp;
         })
-        .catch(() =>
-          caches.match(e.request).then(cached =>
-            cached || caches.match('./index.html')
-          )
-        )
+        .catch(() => caches.match('./index.html'))
     );
     return;
   }
 
-  // ── Cache-first for static assets (icons, images, fonts, CDN) ──
+  if (url.pathname.endsWith('app.js') || url.pathname.endsWith('style.css') || url.pathname.endsWith('stotrams.js')) {
+    e.respondWith(
+      fetch(e.request, { cache: 'no-cache' })
+        .then(resp => {
+          if (resp && resp.status === 200) caches.open(CACHE).then(c => c.put(e.request, resp.clone()));
+          return resp;
+        })
+        .catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
   e.respondWith(
     caches.match(e.request).then(cached => {
       const net = fetch(e.request).then(resp => {

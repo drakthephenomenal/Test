@@ -1,10 +1,12 @@
 // ═══════════════════════════════════════════════════════
 // Radha Naam Jap — Service Worker
-// v83: Fixed Gaudiya/ISKCON toggle visibility in PWA homescreen mode
-//      and Radha option hidden when Gaudiya ON (CSS + applyGaudiyaMode helper)
+// v79: Inlined critical CSS in index.html — Gaudiya card always fresh
+//      panchangData.js now always fetched fresh from network
 // ═══════════════════════════════════════════════════════
-const CACHE = 'radha-jap-v83';
+const CACHE = 'radha-jap-v79';
 
+// These files are ALWAYS fetched fresh from the network (network-first, no-cache).
+// Any content update in these files will be immediately visible even in installed PWA.
 const ALWAYS_FRESH = [
   'index.html',
   'app.js',
@@ -15,14 +17,14 @@ const ALWAYS_FRESH = [
 
 const PRECACHE = [
   './index.html',
-  './style.css?v=83',
-  './stotrams.js?v=83',
-  './app.js?v=83',
-  './panchangData.js?v=83',
+  './style.css?v=55',
+  './stotrams.js?v=55',
+  './app.js?v=55',
+  './panchangData.js?v=55',
   './guru.jpg',
-  './icon-192.png?v=83',
+  './icon-192.png?v=55',
   './icon-512.png',
-  './manifest.json?v=83',
+  './manifest.json?v=55',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
@@ -41,6 +43,7 @@ const BYPASS = [
   'accounts.google.com',
 ];
 
+// ── Install ──
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(
@@ -50,29 +53,27 @@ self.addEventListener('install', e => {
   );
 });
 
+// ── Activate ──
 self.addEventListener('activate', e => {
-  e.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
-    await self.clients.claim();
-    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const c of clients) {
-      try {
-        const u = new URL(c.url);
-        u.searchParams.set('_swv', '83');
-        await c.navigate(u.toString());
-      } catch (_) {
-        c.postMessage({ type: 'SW_UPDATED', version: CACHE });
-      }
-    }
-  })());
+  e.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
+      .then(clients => clients.forEach(c => c.postMessage({ type: 'SW_UPDATED', version: CACHE })))
+  );
 });
 
+// ── Fetch ──
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (BYPASS.some(h => url.href.includes(h))) return;
+
   const filename = url.pathname.split('/').pop();
+
+  // ── Network-first for all core app files ──
+  // Matches with or without ?v= query strings.
   if (
     e.request.mode === 'navigate' ||
     url.pathname.endsWith('/') ||
@@ -81,16 +82,21 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       fetch(e.request, { cache: 'no-cache' })
         .then(resp => {
-          if (resp && resp.status === 200)
+          if (resp && resp.status === 200) {
             caches.open(CACHE).then(c => c.put(e.request, resp.clone()));
+          }
           return resp;
         })
         .catch(() =>
-          caches.match(e.request).then(cached => cached || caches.match('./index.html'))
+          caches.match(e.request).then(cached =>
+            cached || caches.match('./index.html')
+          )
         )
     );
     return;
   }
+
+  // ── Cache-first for static assets (icons, images, fonts, CDN) ──
   e.respondWith(
     caches.match(e.request).then(cached => {
       const net = fetch(e.request).then(resp => {
@@ -103,6 +109,7 @@ self.addEventListener('fetch', e => {
   );
 });
 
+// ── Messages from the page ──
 self.addEventListener('message', e => {
   if (e.data && e.data.type === 'SHOW_NOTIFICATION') {
     e.waitUntil(
@@ -115,9 +122,13 @@ self.addEventListener('message', e => {
       })
     );
   }
-  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+
+  if (e.data && e.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
+// ── Notification tap ──
 self.addEventListener('notificationclick', e => {
   e.notification.close();
   e.waitUntil(

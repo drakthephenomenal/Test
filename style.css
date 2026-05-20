@@ -142,7 +142,6 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
   pointer-events:none;opacity:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;
   border-radius:18px;}
 .mf.show{animation:mc 3s ease-out forwards;}
-.mf.show-long{animation:mc 4s ease-out forwards;}
 .mf-line1{font-family:'Tiro Devanagari Hindi',serif;font-size:clamp(28px,8vw,44px);color:var(--gold);
   letter-spacing:2px;text-shadow:0 0 20px rgba(255,215,0,0.9),0 0 40px rgba(255,215,0,0.5);line-height:1.3;}
 .mf-line2{font-family:'Cinzel Decorative',serif;font-size:clamp(13px,3.5vw,19px);color:var(--a2);
@@ -673,6 +672,12 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .naam-sel-opt:hover{background:rgba(74,144,226,0.12);}
 .naam-sel-opt.active{background:rgba(255,215,0,0.1);color:var(--gold);border:1px solid rgba(255,215,0,0.25);}
 .naam-sel-opt .ns-check{font-size:14px;min-width:18px;}
+/* Hide Radha option when Gaudiya/ISKCON mode is ON */
+body.gaudiya-mode #naamOptRadha{display:none!important;}
+/* Hide HK option when Gaudiya mode is OFF */
+#naamOptHK{display:none!important;}
+body.gaudiya-mode #naamOptHK{display:flex!important;}
+
 /* Two-line floating naam for RV mode */
 .fn-rv{position:absolute;pointer-events:none;z-index:10;animation:fu 2.4s ease-out forwards;
   display:flex;flex-direction:column;align-items:center;line-height:1.15;}
@@ -905,199 +910,3 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 .bc-pc-insight{font-size:10px;color:rgba(255,255,255,.45);margin-top:5px;font-style:italic;}
 .bc-pc-note{font-size:10px;color:var(--td);opacity:.6;}
 .bc-pc-empty{font-size:11px;color:var(--td);opacity:.6;text-align:center;padding:10px 0;}
-
-/* ── Hare Krishna Mahamantra persistent tap display ── */
-#hkPersist{
-  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
-  pointer-events:none;z-index:10;
-  font-family:'Tiro Devanagari Hindi','Hind Siliguri',serif;
-  font-size:clamp(22px,6.5vw,38px);line-height:1.55;text-align:center;
-  padding:16px;letter-spacing:1px;
-  opacity:0;
-  transition:opacity 0.22s ease;
-}
-#hkPersist.hk-visible{opacity:1;}
-#hkPersist > div{display:block;width:100%;}
-
-/* HK floating name animation — rises upward from center */
-.hk-float-name{position:absolute;pointer-events:none;z-index:11;animation:hkRise 2.2s ease-out forwards;
-  font-family:'Tiro Devanagari Hindi','Hind Siliguri',serif;
-  font-size:clamp(22px,6.5vw,38px);line-height:1.55;text-align:center;
-  left:50%;transform:translateX(-50%);top:50%;margin-top:-80px;letter-spacing:1px;white-space:nowrap;}
-.hk-float-name div{display:block;}
-
-/* Jay Sri Krishna Chaitanya overlay on mala complete */
-#hkMalaComplete{
-  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
-  pointer-events:none;z-index:12;
-  font-family:'Tiro Devanagari Hindi','Hind Siliguri',serif;
-  font-size:clamp(16px,4.5vw,26px);line-height:1.6;text-align:center;
-  padding:16px;letter-spacing:0.5px;
-  opacity:0;transition:opacity 0.4s ease;
-  color:#FFD700;text-shadow:0 0 30px rgba(255,215,0,0.9);
-}
-#hkMalaComplete.hkmc-visible{opacity:1;}
-#hkMalaComplete > div{display:block;width:100%;}
-
-@keyframes hkRise{
-  0%{opacity:0.95;transform:translateX(-50%) translateY(0) scale(1);}
-  20%{opacity:1;transform:translateX(-50%) translateY(-40px) scale(1.08);}
-  100%{opacity:0;transform:translateX(-50%) translateY(-220px) scale(0.88);}
-}
-
-/* ── Gaudiya Mode: hide non-HK stat rows / nav ── */
-.non-gaudiya-stat{transition:opacity 0.2s;}
-body.gaudiya-mode .non-gaudiya-stat{display:none!important;}
-.hk-only-stat{display:none!important;}
-body.gaudiya-mode .hk-only-stat{display:flex!important;}
-body.gaudiya-mode .sb.hk-only-stat{display:block!important;}
-#nav28{transition:opacity 0.2s;}
-body.gaudiya-mode #nav28{display:none!important;}
-
-/* Gaudiya mode: plain stat rows (Total Count/Time) — no button look */
-body.gaudiya-mode .gaudiya-plain-stat{font-size:14px;color:var(--tl);padding:2px 0;}
-body.gaudiya-mode .gaudiya-plain-stat .cdmo-stat-val{font-size:22px;}
-
-/* Hide RV settings section in Gaudiya mode */
-body.gaudiya-mode .non-gaudiya-setting{display:none!important;}
-
-/* ── Gaudiya Mode: history table column visibility ── */
-.hist-hk-col{display:none;}
-body.gaudiya-mode .hist-hk-col{display:table-cell!important;}
-body.gaudiya-mode .hist-radha-col{display:none!important;}
-
-/* Gaudiya-mode dropdown filtering: only show Mahamantra when ON; hide it when OFF */
-body:not(.gaudiya-mode) #naamOptHK { display: none !important; }
-body.gaudiya-mode #naamOptRadha,
-body.gaudiya-mode #naamOptRV { display: none !important; }
-/* Settings: HK targets block visible only in Gaudiya mode */
-body:not(.gaudiya-mode) .hk-only-block { display: none !important; }
-
-/* ══════════════════════════════════════════════════
-   LOTUS PETALS — Gaudiya Mode Stats Redesign
-══════════════════════════════════════════════════ */
-
-/* Hero Lifetime box — full-width */
-.lp-hero{
-  display:none;
-  grid-column:span 2;
-  background:linear-gradient(145deg,rgba(109,184,255,0.10),rgba(109,184,255,0.04));
-  border:1px solid rgba(109,184,255,0.28);
-  border-radius:18px;
-  padding:22px 16px 18px;
-  text-align:center;
-  position:relative;
-  overflow:hidden;
-}
-.lp-hero::before{
-  content:'';position:absolute;inset:0;
-  background:radial-gradient(ellipse 60% 80% at 50% 0%,rgba(109,184,255,0.12),transparent);
-  pointer-events:none;
-}
-body.gaudiya-mode .lp-hero{display:block!important;}
-.lp-hero-label{font-size:9px;color:#6DB8FF;letter-spacing:3px;text-transform:uppercase;margin-bottom:8px;opacity:0.7;}
-.lp-hero-num{font-family:'EB Garamond',serif;font-size:72px;line-height:1;color:#FFD700;text-shadow:0 0 30px rgba(255,215,0,0.35);font-weight:600;}
-.lp-hero-sub{font-size:12px;color:rgba(109,184,255,0.75);margin-top:8px;letter-spacing:0.5px;}
-
-/* 3-column Today/Week/Month row */
-.lp-tri{
-  display:none;
-  grid-column:span 2;
-  background:rgba(109,184,255,0.04);
-  border:1px solid rgba(109,184,255,0.18);
-  border-radius:16px;
-  padding:14px 10px;
-  gap:0;
-}
-body.gaudiya-mode .lp-tri{display:grid!important;grid-template-columns:1fr 1fr 1fr;}
-.lp-col{text-align:center;padding:4px 0;}
-.lp-col+.lp-col{border-left:1px solid rgba(109,184,255,0.12);}
-.lp-col-label{font-size:8px;color:rgba(109,184,255,0.55);letter-spacing:2px;text-transform:uppercase;margin-bottom:5px;}
-.lp-col-num{font-family:'EB Garamond',serif;font-size:34px;color:#6DB8FF;line-height:1;}
-.lp-col-sub{font-size:9px;color:rgba(255,255,255,0.35);margin-top:4px;line-height:1.4;}
-
-/* Jap Time strip */
-.lp-time{
-  display:none;
-  grid-column:span 2;
-  background:rgba(109,184,255,0.04);
-  border:1px solid rgba(109,184,255,0.14);
-  border-radius:14px;
-  padding:12px 14px;
-  align-items:center;
-  gap:12px;
-  flex-direction:row;
-}
-body.gaudiya-mode .lp-time{display:flex!important;}
-.lp-time-icon{font-size:9px;color:#6DB8FF;letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap;opacity:0.7;width:56px;flex-shrink:0;}
-.lp-time-cols{display:flex;flex:1;justify-content:space-around;}
-.lp-time-col{text-align:center;}
-.lp-time-val{font-family:'EB Garamond',serif;font-size:16px;color:#6DB8FF;line-height:1;}
-.lp-time-lbl{font-size:8px;color:var(--td);letter-spacing:1.5px;text-transform:uppercase;margin-top:2px;}
-
-.gaudiya-lang-row{
-  display:none;
-  align-items:center;justify-content:space-between;
-  margin-top:16px;padding-top:14px;
-  border-top:1px solid rgba(109,184,255,0.2);
-  gap:12px;
-}
-body.gaudiya-mode .gaudiya-lang-row{display:flex!important;}
-
-.gaudiya-switch-card{
-  cursor:pointer;
-  border:1px solid rgba(109,184,255,0.22)!important;
-  background:linear-gradient(135deg,rgba(109,184,255,0.07),rgba(109,184,255,0.03))!important;
-  transition:border-color 0.3s,background 0.3s,box-shadow 0.3s;
-  user-select:none;-webkit-user-select:none;
-}
-.gaudiya-switch-card:active{transform:scale(0.99);}
-body.gaudiya-mode .gaudiya-switch-card{
-  border-color:rgba(109,184,255,0.5)!important;
-  background:linear-gradient(135deg,rgba(109,184,255,0.14),rgba(109,184,255,0.06))!important;
-  box-shadow:0 0 24px rgba(109,184,255,0.15)!important;
-}
-.gaudiya-switch-top{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;}
-.gaudiya-switch-lotus{font-size:32px;line-height:1;flex-shrink:0;margin-top:2px;}
-.gaudiya-switch-title{font-size:16px;font-weight:700;color:#6DB8FF;letter-spacing:0.5px;margin-bottom:5px;}
-.gaudiya-switch-sub{font-size:12px;color:var(--td);line-height:1.45;}
-
-/* Big track toggle */
-.gaudiya-big-toggle{display:flex;justify-content:center;}
-.gbt-track{
-  position:relative;
-  width:200px;height:48px;
-  background:rgba(255,255,255,0.07);
-  border-radius:24px;
-  border:1px solid rgba(255,255,255,0.12);
-  overflow:hidden;
-  transition:background 0.35s;
-  display:flex;align-items:center;
-}
-body.gaudiya-mode .gbt-track{
-  background:rgba(109,184,255,0.25);
-  border-color:rgba(109,184,255,0.4);
-}
-.gbt-thumb{
-  position:absolute;
-  left:4px;
-  width:92px;height:40px;
-  background:rgba(255,255,255,0.18);
-  border-radius:20px;
-  transition:left 0.35s cubic-bezier(.4,1.4,.6,1);
-  box-shadow:0 2px 8px rgba(0,0,0,0.3);
-}
-body.gaudiya-mode .gbt-thumb{
-  left:102px;
-  background:#6DB8FF;
-  box-shadow:0 2px 16px rgba(109,184,255,0.5);
-}
-.gbt-label-off,.gbt-label-on{
-  position:absolute;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
-  transition:opacity 0.3s;pointer-events:none;
-}
-.gbt-label-off{left:0;width:100px;text-align:center;color:rgba(255,255,255,0.4);}
-.gbt-label-on{right:0;width:100px;text-align:center;color:#6DB8FF;opacity:0.3;}
-body.gaudiya-mode .gbt-label-off{opacity:0.25;}
-body.gaudiya-mode .gbt-label-on{opacity:1;color:#001a2a;}
-

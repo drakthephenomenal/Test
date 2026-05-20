@@ -928,16 +928,12 @@ function syncTargetMalaToJap(prefix) {
   if (dispEl) dispEl.textContent = malas;
 }
 
-// ── Init jap mode UI on page load ──
+// ── Init jap mode UI and Gaudiya mode on page load ──
 function initJapModeUI() {
-  // Restore saved jap mode (radha / rv / hk)
+  // Restore Gaudiya mode class + toggle visual first
+  applyGaudiyaMode(!!App.S.cfg.gaudiyaMode);
+  // Restore saved jap mode
   if (App.S.japMode === 'rv' || App.S.japMode === 'hk') switchJapMode(App.S.japMode);
-  // Restore Gaudiya mode body class and toggle visual
-  if (App.S.cfg && App.S.cfg.gaudiyaMode) {
-    document.body.classList.add('gaudiya-mode');
-    const el = document.getElementById('tgGaudiya');
-    if (el) el.classList.add('active');
-  }
   // Populate RV target inputs
   const dtRVIn = document.getElementById('dtRVIn');
   if (dtRVIn && App.S.dtRV) dtRVIn.value = App.S.dtRV;
@@ -975,12 +971,11 @@ function switchJapMode(mode) {
   dd.classList.remove('show');
   btn.classList.remove('open');
   document.removeEventListener('click', closeNaamSelOutside);
-  // Update UI
+  // Update UI — clear all, then mark active
   const optR  = document.getElementById('naamOptRadha');
   const optRV = document.getElementById('naamOptRV');
   const optHK = document.getElementById('naamOptHK');
   const titleEl = document.getElementById('rnTitle');
-  // Clear all options first
   [optR, optRV, optHK].forEach(o => { if (o) { o.classList.remove('active'); o.querySelector('.ns-check').textContent = ''; } });
   if (mode === 'rv') {
     optRV.classList.add('active'); optRV.querySelector('.ns-check').textContent = '✓';
@@ -991,7 +986,7 @@ function switchJapMode(mode) {
     titleEl.innerHTML = '<span style="font-size:clamp(16px,4.5vw,24px);line-height:1.1">हरे कृष्ण महामंत्र</span>';
     titleEl.style.textAlign = 'center';
   } else {
-    optR.classList.add('active'); optR.querySelector('.ns-check').textContent = '✓';
+    if (optR) { optR.classList.add('active'); optR.querySelector('.ns-check').textContent = '✓'; }
     titleEl.textContent = 'राधा';
     titleEl.style.textAlign = '';
   }
@@ -1048,6 +1043,8 @@ function sv(id, btn) {
   else { App.flush28TimeToHistory(); }
   if (id === 'vms') { renderMilestonesTab(); }
   if (id === 'vset') {
+    // Always re-sync Gaudiya toggle visual when Settings opens
+    applyGaudiyaMode(!!App.S.cfg.gaudiyaMode);
     const ms = App.S.ms || 108;
     if (App.S.dt) document.getElementById('dtIn').value = App.S.dt;
     if (App.S.lt) document.getElementById('ltIn').value = App.S.lt;
@@ -1101,20 +1098,24 @@ function svm() {
   App.S.ms = parseInt(document.getElementById('msIn').value) || 108;
   App.save(); App.ua(); fbDebouncedPush();  toast('Mala size saved! 📿');
 }
+// ── Apply / remove Gaudiya mode body class + toggle visual ──
+function applyGaudiyaMode(on) {
+  document.body.classList.toggle('gaudiya-mode', on);
+  const el = document.getElementById('tgGaudiya');
+  if (el) el.classList.toggle('active', on);
+  // Sync the dropdown: if turning ON and mode is radha, switch to hk
+  if (on && (!App.S.japMode || App.S.japMode === 'radha')) switchJapMode('hk');
+}
+
 function tgs(k) {
   App.S.cfg[k] = !App.S.cfg[k];
   if (k === 'gaudiyaMode') {
-    const on = !!App.S.cfg.gaudiyaMode;
-    document.body.classList.toggle('gaudiya-mode', on);
-    const el = document.getElementById('tgGaudiya');
-    if (el) el.classList.toggle('active', on);
+    applyGaudiyaMode(!!App.S.cfg.gaudiyaMode);
     // If turning OFF and current jap mode is HK, revert to radha
-    if (!on && App.S.japMode === 'hk') switchJapMode('radha');
+    if (!App.S.cfg.gaudiyaMode && App.S.japMode === 'hk') switchJapMode('radha');
   } else {
     const m = { vib: 'tgVib', sound: 'tgSnd', hkLang: 'tgHkLang' };
-    if (m[k]) {
-      App.S.cfg[k] ? document.getElementById(m[k]).classList.add('on') : document.getElementById(m[k]).classList.remove('on');
-    }
+    if (m[k]) App.S.cfg[k] ? document.getElementById(m[k]).classList.add('on') : document.getElementById(m[k]).classList.remove('on');
   }
   App.save(); fbDebouncedPush();
 }

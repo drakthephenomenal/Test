@@ -241,6 +241,11 @@
           <div class="naam-sel-opt" id="naamOptRam" onclick="switchJapMode('ram')">
             <span class="ns-check"></span> <span id="naamOptRamLabel">राम विजय मंत्र</span>
           </div>
+          <div class="naam-sel-divider"></div>
+          <div id="naamSelCustomList"></div>
+          <div class="naam-sel-opt naam-sel-opt--add" onclick="openCustomJapPanel()">
+            <span class="ns-check"></span> <span>🙏 + My Custom Jap / Naam</span>
+          </div>
         </div>
       </div>
       <div class="rn" id="rnTitle">राधा</div>
@@ -2785,5 +2790,72 @@ function vpSwitchTab(tab) {
 
 <!-- Vedic Panchanga engine (moved to ./vedic-panchanga/panchanga.js) -->
 <script defer src="./vedic-panchanga/panchanga.js?v=159"></script>
+
+<!-- ── Custom Japs / Naam: list + add panel ── -->
+<div id="cjPanel" class="cj-panel" style="display:none">
+  <div class="cj-panel-inner">
+    <div class="cj-panel-head">
+      <h3 style="margin:0">🙏 My Custom Japs / Naam</h3>
+      <button class="cj-close" onclick="closeCustomJapPanel()">✕</button>
+    </div>
+    <div class="cj-form">
+      <input id="cjTitleIn" type="text" placeholder="Title (e.g. Yugal Mantra)" maxlength="60" class="fb-email-input" style="margin-bottom:8px">
+      <textarea id="cjTextIn" placeholder="Mantra / Naam text" rows="2" class="fb-email-input" style="margin-bottom:8px;resize:vertical"></textarea>
+      <div style="display:flex;gap:16px;margin-bottom:10px;font-size:13px">
+        <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="cjAnim" value="radha" checked> 🌸 Radha-type</label>
+        <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="cjAnim" value="hk"> 🪈 HK-type</label>
+      </div>
+      <button class="pb" onclick="addCustomJap()">+ Add Custom Jap</button>
+    </div>
+    <div id="cjList" class="cj-list"></div>
+  </div>
+</div>
+
+<!-- ── Custom Jap: full-screen tap counter ── -->
+<div id="cjCounterScreen" class="cj-anim-radha" style="display:none">
+  <button class="cj-close cj-counter-close" onclick="closeCustomJapCounter()">✕</button>
+  <div id="cjCounterTitle" class="cj-counter-title"></div>
+  <div id="cjCounterMantra" class="cj-counter-mantra"></div>
+  <div class="cj-tap-area" onclick="tapCustomJap()">
+    <div id="cjCounterCount" class="cj-counter-count">0</div>
+    <div class="cj-tap-hint">Tap to count</div>
+  </div>
+</div>
+
+<style>
+.cj-panel { position:fixed; inset:0; z-index:9000; background:rgba(0,0,0,0.6); display:flex; align-items:flex-end; justify-content:center; }
+.cj-panel-inner { background:#1a1420; width:100%; max-width:480px; max-height:85vh; overflow-y:auto; border-radius:18px 18px 0 0; padding:18px; }
+.cj-panel-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.cj-close { background:rgba(255,255,255,0.08); border:none; color:#fff; width:32px; height:32px; border-radius:50%; font-size:16px; cursor:pointer; }
+.cj-list { margin-top:12px; display:flex; flex-direction:column; gap:8px; }
+.cj-row { display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.05); border-radius:12px; padding:10px 12px; }
+.cj-row-main { flex:1; cursor:pointer; }
+.cj-row-title { font-size:14px; color:#fff; }
+.cj-row-count { font-size:11px; color:rgba(255,255,255,0.55); margin-top:2px; }
+.cj-row-del { background:none; border:none; color:rgba(255,120,120,0.8); font-size:16px; cursor:pointer; padding:4px 8px; }
+.naam-sel-divider { height:1px; background:rgba(255,255,255,0.1); margin:6px 10px; }
+.naam-sel-opt--add { opacity:0.9; }
+
+#cjCounterScreen { position:fixed; inset:0; z-index:9500; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; text-align:center; padding:24px; }
+.cj-counter-close { position:absolute; top:20px; right:20px; }
+.cj-counter-title { font-size:20px; font-weight:600; }
+.cj-counter-mantra { font-size:16px; max-width:320px; line-height:1.5; opacity:0.9; }
+.cj-tap-area { display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; user-select:none; }
+.cj-counter-count { font-size:56px; font-weight:700; transition:transform .15s ease; }
+.cj-tap-hint { font-size:12px; opacity:0.6; }
+
+/* Radha-type: soft pink/gold pulsing glow, matching the app's Radha theme */
+.cj-anim-radha { background:radial-gradient(circle at 50% 40%, rgba(255,105,180,0.25), rgba(20,10,20,0.97) 70%); color:#ffd7ec; }
+.cj-anim-radha .cj-counter-count { color:#ffd700; text-shadow:0 0 18px rgba(255,105,180,0.65); }
+.cj-anim-radha.cj-pulse .cj-counter-count { transform:scale(1.18); text-shadow:0 0 32px rgba(255,105,180,0.95); }
+
+/* HK-type: scrolling mantra banner + golden pulse, echoing the Ramanandi
+   persistent HK-style animation elsewhere in the app -- kept independent. */
+.cj-anim-hk { background:radial-gradient(circle at 50% 40%, rgba(255,180,0,0.22), rgba(15,10,5,0.97) 70%); color:#ffe9b3; overflow:hidden; }
+.cj-anim-hk .cj-counter-mantra { white-space:nowrap; overflow:hidden; max-width:100%; animation:cjMarquee 9s linear infinite; }
+.cj-anim-hk .cj-counter-count { color:#ffb347; text-shadow:0 0 18px rgba(255,180,0,0.65); }
+.cj-anim-hk.cj-pulse .cj-counter-count { transform:scale(1.18); text-shadow:0 0 32px rgba(255,180,0,0.95); }
+@keyframes cjMarquee { 0% { transform:translateX(100%); } 100% { transform:translateX(-100%); } }
+</style>
 </body>
 </html>

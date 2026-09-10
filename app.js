@@ -676,6 +676,7 @@ const App = {
     stotrams: {},
     brahma: {},
     customSt: [],
+    customJaps: [],
     timerHistory: {},
     timer28History: {},
     sankalpas: [],
@@ -1483,12 +1484,19 @@ const App = {
       Object.values(this.S.historyKaam || {}).reduce((a, b) => a + b, 0) -
         (this.S.nameJapDeductKaam || 0),
     );
+    // Custom (user-created) japs/naam -- each entry's own lifetime tap count,
+    // summed in as requested so they count toward the combined target too.
+    const customTotal = (this.S.customJaps || []).reduce(
+      (a, j) => a + (j.count || 0),
+      0,
+    );
     return {
       radha: radhaTotal,
       rv: rvTotal,
       kv: kvTotal,
       kaam: kaamTotal,
-      total: radhaTotal + rvTotal + kvTotal + kaamTotal,
+      custom: customTotal,
+      total: radhaTotal + rvTotal + kvTotal + kaamTotal + customTotal,
     };
   },
 
@@ -3694,6 +3702,7 @@ function toggleNaamSel() {
   const btn = document.getElementById("naamSelBtn");
   dd.classList.toggle("show");
   btn.classList.toggle("open");
+  if (dd.classList.contains("show")) renderCustomJapDropdown();
   // Close on outside click
   if (dd.classList.contains("show")) {
     setTimeout(() => {
@@ -8063,6 +8072,7 @@ function _buildBackupPayload() {
     stotrams: App.S.stotrams || {},
     brahma: App.S.brahma || {},
     customSt: App.S.customSt || [],
+    customJaps: App.S.customJaps || [],
     sankalpas: App.S.sankalpas || [],
     occasions: App.S.occasions || {},
     ms: App.S.ms || 108,
@@ -8253,6 +8263,7 @@ function importAllData(input) {
       App.S.stotrams = data.stotrams || {};
       App.S.brahma = data.brahma || {};
       App.S.customSt = data.customSt || [];
+      App.S.customJaps = data.customJaps || [];
       App.S.sankalpas = data.sankalpas || [];
       App.S.occasions = data.occasions || {};
       App.S.ms = data.ms || 108;
@@ -9583,6 +9594,7 @@ function fbInit() {
             stotrams: {},
             brahma: {},
             customSt: [],
+            customJaps: [],
             timerHistory: {},
             timer28History: {},
             sankalpas: [],
@@ -9799,6 +9811,7 @@ function fbInit() {
             stotrams: {},
             brahma: {},
             customSt: [],
+            customJaps: [],
             timerHistory: {},
             timer28History: {},
             sankalpas: [],
@@ -10976,7 +10989,7 @@ async function fbSignOut() {
   App.S = {
     tk: App.getTk(), ms: 108, dt: 0, lt: 0,
     cfg: { vib: true, sound: true, soundType: "shankya" },
-    history: {}, h28: {}, stotrams: {}, brahma: {}, customSt: [],
+    history: {}, h28: {}, stotrams: {}, brahma: {}, customSt: [], customJaps: [],
     timerHistory: {}, timer28History: {}, sankalpas: [], dedications: [], occasions: {},
     syncBaseline: {}, syncBaseline28: {}, syncBaselineTimer: {}, syncBaselineTimer28: {},
     migrationV2Done: false, japMode: "radha",
@@ -11041,6 +11054,7 @@ async function fbPushToUid(targetUid, fullReplace) {
     stotrams: App.S.stotrams || {},
     brahma: App.S.brahma || {},
     customSt: App.S.customSt || [],
+    customJaps: App.S.customJaps || [],
     timerHistory: App.S.timerHistory || {},
     timer28History: App.S.timer28History || {},
     sankalpas: App.S.sankalpas || [],
@@ -11156,6 +11170,7 @@ async function fbPushFull() {
     stotrams: App.S.stotrams || {},
     brahma: App.S.brahma || {},
     customSt: App.S.customSt || [],
+    customJaps: App.S.customJaps || [],
     timerHistory: App.S.timerHistory || {},
     timer28History: App.S.timer28History || {},
     sankalpas: App.S.sankalpas || [],
@@ -11335,6 +11350,8 @@ function fbApplyRemote(d) {
   if ("brahma" in d) App.S.brahma = JSON.parse(JSON.stringify(d.brahma || {}));
   if ("customSt" in d)
     App.S.customSt = JSON.parse(JSON.stringify(d.customSt || []));
+  if ("customJaps" in d)
+    App.S.customJaps = JSON.parse(JSON.stringify(d.customJaps || []));
   if ("sankalpas" in d)
     App.S.sankalpas = JSON.parse(JSON.stringify(d.sankalpas || []));
   if ("occasions" in d)
@@ -14303,6 +14320,148 @@ function delSt(id) {
   renderSt();
   toast("Removed");
 }
+
+// ── Custom Japs / Naam ──────────────────────────────────────────────
+// User-created jap entries (e.g. a Sampraday-specific Yugal Mantra):
+// own title + mantra/naam text, own tap counter, choice of animation
+// style. Listed inside the same Sampraday selection dropdown as the
+// built-in modes, but kept as a self-contained layer (own counter, own
+// animation) rather than plugging into the existing japMode system --
+// so it can't disturb the built-in Radha / RV / KV / HK / SS /
+// Ramanandi tap-and-animation logic.
+let _cjActiveId = null;
+
+function renderCustomJapDropdown() {
+  const list = document.getElementById("naamSelCustomList");
+  if (!list) return;
+  const items = App.S.customJaps || [];
+  list.innerHTML = items
+    .map(
+      (j) => `
+    <div class="naam-sel-opt" onclick="openCustomJapCounter('${j.id}')">
+      <span class="ns-check"></span> <span>${j.animation === "hk" ? "🪈" : "🌸"} ${_escHtml(j.title)}</span>
+    </div>`,
+    )
+    .join("");
+}
+
+function openCustomJapPanel() {
+  const dd = document.getElementById("naamSelDd");
+  if (dd) dd.classList.remove("show");
+  const el = document.getElementById("cjPanel");
+  if (!el) return;
+  el.style.display = "flex";
+  renderCustomJapManageList();
+}
+function closeCustomJapPanel() {
+  const el = document.getElementById("cjPanel");
+  if (el) el.style.display = "none";
+}
+
+function addCustomJap() {
+  const titleEl = document.getElementById("cjTitleIn");
+  const textEl = document.getElementById("cjTextIn");
+  const animEl = document.querySelector('input[name="cjAnim"]:checked');
+  const title = (titleEl.value || "").trim();
+  const text = (textEl.value || "").trim();
+  if (!title) {
+    toast("Please enter a title");
+    return;
+  }
+  if (!text) {
+    toast("Please enter the mantra / naam text");
+    return;
+  }
+  const anim = animEl ? animEl.value : "radha";
+  const id = "cj_" + Date.now();
+  if (!App.S.customJaps) App.S.customJaps = [];
+  App.S.customJaps.push({ id, title, text, animation: anim, count: 0 });
+  App.save();
+  fbDebouncedPush();
+  titleEl.value = "";
+  textEl.value = "";
+  renderCustomJapManageList();
+  renderCustomJapDropdown();
+  toast("Custom jap added! 🙏");
+}
+
+function delCustomJap(id) {
+  if (!window.confirm("Remove this custom jap? Its tap count will no longer count toward your Lifetime Target.")) return;
+  App.S.customJaps = (App.S.customJaps || []).filter((x) => x.id !== id);
+  App.save();
+  fbDebouncedPush();
+  renderCustomJapManageList();
+  renderCustomJapDropdown();
+  toast("Removed");
+}
+
+function renderCustomJapManageList() {
+  const list = document.getElementById("cjList");
+  if (!list) return;
+  const items = App.S.customJaps || [];
+  if (!items.length) {
+    list.innerHTML = '<div style="opacity:.6;font-size:12px;text-align:center;padding:10px">No custom japs yet. Add one above.</div>';
+    return;
+  }
+  list.innerHTML = items
+    .map(
+      (j) => `
+    <div class="cj-row">
+      <div class="cj-row-main" onclick="openCustomJapCounter('${j.id}')">
+        <div class="cj-row-title">${j.animation === "hk" ? "🪈" : "🌸"} ${_escHtml(j.title)}</div>
+        <div class="cj-row-count">${(j.count || 0).toLocaleString("en-IN")} japs</div>
+      </div>
+      <button class="cj-row-del" onclick="delCustomJap('${j.id}')">✕</button>
+    </div>`,
+    )
+    .join("");
+}
+
+function _escHtml(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function openCustomJapCounter(id) {
+  const j = (App.S.customJaps || []).find((x) => x.id === id);
+  if (!j) return;
+  _cjActiveId = id;
+  const dd = document.getElementById("naamSelDd");
+  if (dd) dd.classList.remove("show");
+  closeCustomJapPanel();
+  const screen = document.getElementById("cjCounterScreen");
+  screen.className = "cj-anim-" + (j.animation === "hk" ? "hk" : "radha");
+  screen.style.display = "flex";
+  document.getElementById("cjCounterTitle").textContent = j.title;
+  document.getElementById("cjCounterMantra").textContent = j.text;
+  document.getElementById("cjCounterCount").textContent = (j.count || 0).toLocaleString("en-IN");
+}
+
+function closeCustomJapCounter() {
+  const screen = document.getElementById("cjCounterScreen");
+  if (screen) screen.style.display = "none";
+  _cjActiveId = null;
+}
+
+function tapCustomJap() {
+  const j = (App.S.customJaps || []).find((x) => x.id === _cjActiveId);
+  if (!j) return;
+  j.count = (j.count || 0) + 1;
+  const ms = App.S.ms || 108;
+  const malaComplete = j.count % ms === 0;
+  App.vib(malaComplete ? [200, 80, 200, 80, 300] : [10]);
+  document.getElementById("cjCounterCount").textContent = j.count.toLocaleString("en-IN");
+  const screen = document.getElementById("cjCounterScreen");
+  if (screen) {
+    screen.classList.add("cj-pulse");
+    setTimeout(() => screen.classList.remove("cj-pulse"), malaComplete ? 700 : 180);
+  }
+  if (malaComplete) toast("🙏 Mala complete!");
+  App.save();
+  fbDebouncedPush();
+}
+
 
 // _ADHIK_MAAS_WINDOWS, _getAdhikMaasWindow, isAdhikMaasDate
 // defined in panchangData.js (loaded before app.js)

@@ -1,0 +1,27 @@
+{
+  "appId": "app.vercel.radharadharadha.capacitor",
+  "appName": "Radha Naam Jap",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_notify",
+      "iconColor": "#E56B1F"
+    },
+    "FirebaseAuthentication": {
+      "skipNativeAuth": false,
+      "providers": ["google.com"]
+    },
+    "BackgroundRunner": {
+      "label": "app.vercel.radharadharadha.capacitor.bgsync",
+      "src": "background/runner.js",
+      "event": "periodicSync",
+      "repeat": true,
+      "interval": 15,
+      "autoStart": true
+    }
+  }
+}

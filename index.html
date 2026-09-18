@@ -8,12 +8,12 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="app-version" content="125">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Radha Jap">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#060D1F">
+<meta name="theme-color" content="#070A1C">
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./icon-192.png">
 <link rel="icon" href="./icon-192.png">
@@ -28,7 +28,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <link rel="stylesheet" href="./style.css?v=130">
   <link rel="stylesheet" href="./style-stotram.css?v=125">
-  <link rel="stylesheet" href="./vedic-panchanga/panchanga.css?v=155">
+  <link rel="stylesheet" href="./vedic-panchanga/panchanga.css?v=160">
 <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js"></script>
 </head>
 <body>
@@ -177,7 +177,7 @@
   </button>
   <button class="nb" onclick="sv('vst',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-    Stotram
+    S&V
   </button>
   <button class="nb" onclick="sv('vb',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -186,7 +186,7 @@
 
   <button class="nb" onclick="sv('vms',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3c-1.5 2-4 4-6 4.5C7 10 9.5 12 12 12c2.5 0 5-2 6-4.5C16 8 13.5 5 12 3z"/><path d="M12 12c-2 2.5-5 4-7 4.5C6.5 19 9 21 12 21s5.5-2 7-4.5C17 16 14 14.5 12 12z"/><path d="M12 3v18"/><path d="M8 21c0-2 1.5-3.5 4-5"/><path d="M16 21c0-2-1.5-3.5-4-5"/></svg>
-    Milestones
+    N&M
   </button>
   <button class="nb" onclick="sv('vs',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
@@ -240,11 +240,6 @@
           </div>
           <div class="naam-sel-opt" id="naamOptRam" onclick="switchJapMode('ram')">
             <span class="ns-check"></span> <span id="naamOptRamLabel">राम विजय मंत्र</span>
-          </div>
-          <div class="naam-sel-divider"></div>
-          <div id="naamSelCustomList"></div>
-          <div class="naam-sel-opt naam-sel-opt--add" onclick="openCustomJapPanel()">
-            <span class="ns-check"></span> <span>🙏 + My Custom Jap / Naam</span>
           </div>
         </div>
       </div>
@@ -327,9 +322,34 @@
       </div>
     </div>
   </div>
+  <!-- First-tap tutorial hint — appears inline, once, the first time the
+       person actually taps the counter (see App.ht in app.js). Not a
+       redirect or a blocking modal: it sits quietly above the tap zone,
+       doesn't interrupt counting, and is dismissible either way. -->
+  <div id="firstTapTutorialHint" style="display:none;margin:0 14px 10px;padding:9px 12px;border-radius:10px;background:rgba(255,80,80,0.1);border:1px solid rgba(255,80,80,0.3);align-items:center;gap:10px;cursor:pointer;" onclick="_firstTapHintWatch()">
+    <span id="firstTapHintIcon" style="width:20px;height:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+      <img src="https://cdn.simpleicons.org/youtube" alt="" width="20" height="20" data-fallback="▶️" onerror="favvidIconFallback(this)" style="display:block;border-radius:4px;flex-shrink:0">
+    </span>
+    <div style="flex:1;font-size:11.5px;color:#ff9d9d;line-height:1.35;">New here? Tap to watch a quick App Tutorial 🙏</div>
+    <span onclick="event.stopPropagation();_firstTapHintDismiss()" style="font-size:17px;color:rgba(255,255,255,0.45);padding:2px 6px;line-height:1;">✕</span>
+  </div>
   <div class="tzr">
     <div class="tz" id="tz" style="border-radius:18px;" aria-label="Tap to chant Radha Naam" role="button" tabindex="0" ontouchstart="App.ht(event)" onmousedown="App.ht(event)">
       <button id="japPhotoSettingsBtn" class="jap-photo-settings-btn" type="button" aria-label="Adjust photo size &amp; position" title="Adjust photo size &amp; position" onclick="togglePhotoEditMode(event)" ontouchstart="event.stopPropagation()" onmousedown="event.stopPropagation()">⚙️</button>
+      <button id="japTextSettingsBtn" class="jap-text-settings-btn" type="button" aria-label="Adjust jap text size" title="Adjust jap text size" onclick="toggleJapTextSettingsPanel(event)" ontouchstart="event.stopPropagation()" onmousedown="event.stopPropagation()">⚙️</button>
+      <div class="jap-text-settings-panel" id="japTextSettingsPanel" onclick="event.stopPropagation()" ontouchstart="event.stopPropagation()" onmousedown="event.stopPropagation()">
+        <div class="jtsp-title">Jap Text</div>
+        <div class="jtsp-row">
+          <span class="jtsp-lbl">Text Size</span>
+          <div class="jtsp-ctrl">
+            <button type="button" onclick="adjustJapTextPref('scale',-1)">−</button>
+            <span class="jtsp-val" id="japTextScaleVal">100%</span>
+            <button type="button" onclick="adjustJapTextPref('scale',1)">+</button>
+          </div>
+        </div>
+        <button type="button" class="jtsp-reset" onclick="resetJapTextPrefs()">Reset to Default</button>
+      </div>
+      <div class="jap-text-demo" id="japTextDemo"></div>
       <img class="rv-wm" id="bgRadhaVallabh" src="./radha-vallabh.png" alt="" aria-hidden="true" draggable="false" loading="lazy" decoding="async" onerror="this.style.display='none'">
       <img class="hitju-wm" id="bgHitju" src="./hitju-maharaj.png" alt="" aria-hidden="true" draggable="false" loading="lazy" decoding="async" onerror="this.style.display='none'">
       <img class="gurudev-wm" id="bgGurudev" src="./gurudev.png" alt="" aria-hidden="true" draggable="false" loading="lazy" decoding="async" onerror="this.style.display='none'">
@@ -650,8 +670,8 @@
 
 <!-- STOTRAM VIEW -->
 <div class="view" id="vst">
-  <div class="vt">Stotram Tracker</div>
-  <div class="asf">
+  <div class="vt" id="stTrackerTitle">Stotram and Videos</div>
+  <div class="asf" id="stAddForm">
     <!-- Header — always visible, tap to toggle -->
     <div class="asf-header" onclick="toggleAsfForm()">
       <h3>➕ Add Your Stotram</h3>
@@ -671,7 +691,7 @@
 
 <!-- BRAHMACHARYA VIEW -->
 <div class="view" id="vb">
-  <div class="vt">📅 B&C · Vedic Panchanga</div>
+  <div class="vt">📅 Brahmacharya and Calendar</div>
 
   <!-- B&C Sub-tabs: Calendar | Panchanga -->
   <div id="vp-subtab-bar" style="display:flex;gap:8px;padding:0 14px 12px;justify-content:center">
@@ -845,10 +865,10 @@
 
 <!-- MILESTONES VIEW — dedicated tab -->
 <div class="view" id="vms">
-  <div class="vt">🪷 Milestones</div>
+  <div class="vt">🪷 Naam Jap Mahima and Milestones</div>
   <div class="ms-toggle-wrap">
-    <button class="ms-toggle-btn active" id="msLangHi" onclick="setMsLang('hi')">हिंग्लिश</button>
-    <button class="ms-toggle-btn" id="msLangBn" onclick="setMsLang('bn')">বাংলা</button>
+    <button class="ms-toggle-btn" id="msLangHi" onclick="setMsLang('hi')">हिंग्लिश</button>
+    <button class="ms-toggle-btn active" id="msLangBn" onclick="setMsLang('bn')">বাংলা</button>
   </div>
   <div class="ms-sadhana-bar">
     <label>🙏 Journey Start:</label>
@@ -868,19 +888,19 @@
   <div class="vt">Jap Summary</div>
 
   <!-- Dedications — offer a portion of lifetime jap to a purpose/person -->
-  <div class="sg-wrap" style="background:rgba(255,105,180,0.05);border:1px solid rgba(255,105,180,0.18);">
+  <div class="sg-wrap" style="background:rgba(245,209,122,0.05);border:1px solid rgba(245,209,122,0.18);">
     <div class="sg-header" onclick="toggleCs('sgDedic','sgDedicChev')">
-      <span style="color:#FF8FC7">🙏 Gift Your Jap</span>
-      <span class="sg-chevron" id="sgDedicChev" style="color:#FF8FC7">▾</span>
+      <span style="color:var(--gold)">🙏 Gift Your Jap</span>
+      <span class="sg-chevron" id="sgDedicChev" style="color:var(--gold)">▾</span>
     </div>
     <div class="sg-body" id="sgDedic">
       <div style="padding:2px 4px 4px;">
         <div style="font-size:11px;color:var(--td);margin-bottom:6px;line-height:1.5;">Gift a portion of your lifetime jap (or a stotram) to someone or a purpose. Jap amounts are deducted from that jap's lifetime total.</div>
-        <div style="font-size:11px;color:#FF8FC7;background:rgba(255,143,199,0.08);border:1px solid rgba(255,143,199,0.25);border-radius:10px;padding:8px 10px;margin-bottom:10px;line-height:1.5;">Give your jap to your Gurudev and pray to Him so that Gurudev utilizes that properly for your desired things.</div>
+        <div style="font-size:11px;color:var(--gold);background:rgba(245,209,122,0.08);border:1px solid rgba(245,209,122,0.25);border-radius:10px;padding:8px 10px;margin-bottom:10px;line-height:1.5;">Give your jap to your Gurudev and pray to Him so that Gurudev utilizes that properly for your desired things.</div>
 
-        <div style="font-size:9px;color:rgba(255,143,199,0.7);letter-spacing:1px;text-transform:uppercase;font-weight:700;margin-bottom:6px;">Give from (tap to select one or more)</div>
+        <div style="font-size:9px;color:rgba(245,209,122,0.7);letter-spacing:1px;text-transform:uppercase;font-weight:700;margin-bottom:6px;">Give from (tap to select one or more)</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
-          <div class="ded-type-pill active" data-type="radha" onclick="toggleDedicationType('radha', this)" style="border-color:rgba(245,200,66,0.45);background:rgba(245,200,66,0.08);">
+          <div class="ded-type-pill" data-type="radha" onclick="toggleDedicationType('radha', this)" style="border-color:rgba(245,200,66,0.45);background:rgba(245,200,66,0.08);">
             <div style="font-size:11px;font-weight:700;color:#f5c842;">Radha</div>
           </div>
           <div class="ded-type-pill" data-type="rv" onclick="toggleDedicationType('rv', this)" style="border-color:rgba(94,234,212,0.45);background:rgba(94,234,212,0.06);">
@@ -898,8 +918,8 @@
           <div class="ded-type-pill" data-type="ram" onclick="toggleDedicationType('ram', this)" style="border-color:rgba(255,153,51,0.45);background:rgba(255,153,51,0.06);">
             <div style="font-size:11px;font-weight:700;color:#FF9933;">Ram</div>
           </div>
-          <div class="ded-type-pill" data-type="kaam" onclick="toggleDedicationType('kaam', this)" style="border-color:rgba(255,107,157,0.45);background:rgba(255,107,157,0.06);">
-            <div style="font-size:11px;font-weight:700;color:#FF6B9D;">Kaam</div>
+          <div class="ded-type-pill" data-type="kaam" onclick="toggleDedicationType('kaam', this)" style="border-color:rgba(124,143,224,0.45);background:rgba(124,143,224,0.06);">
+            <div style="font-size:11px;font-weight:700;color:#B8C4F5;">Kaam</div>
           </div>
         </div>
 
@@ -907,12 +927,12 @@
         <div id="dedTypePanels" style="margin-bottom:8px;"></div>
 
         <!-- Manual Stotram gift — name + count entered by hand, tracked separately from jap -->
-        <div style="font-size:9px;color:rgba(255,143,199,0.7);letter-spacing:1px;text-transform:uppercase;font-weight:700;margin:14px 0 6px;">🌸 Gift a Stotram (optional — enter name &amp; count)</div>
+        <div style="font-size:9px;color:rgba(245,209,122,0.7);letter-spacing:1px;text-transform:uppercase;font-weight:700;margin:14px 0 6px;">🌸 Gift a Stotram (optional — enter name &amp; count)</div>
         <div style="display:flex;gap:8px;margin-bottom:8px;">
           <input type="text" class="fi" id="dedStNameIn" placeholder="Stotram name" style="flex:2;">
           <input type="number" class="fi" id="dedStCountIn" placeholder="Count" min="1" style="flex:1;">
         </div>
-        <button class="pb" style="background:rgba(255,143,199,0.12);border:1px solid rgba(255,143,199,0.35);color:#FF8FC7;font-size:12px;padding:8px;margin-bottom:4px;" onclick="addDedStotram()">+ Add Stotram</button>
+        <button class="pb" style="background:rgba(245,209,122,0.12);border:1px solid rgba(245,209,122,0.35);color:var(--gold);font-size:12px;padding:8px;margin-bottom:4px;" onclick="addDedStotram()">+ Add Stotram</button>
         <div id="dedStotramList" style="margin-top:6px;display:flex;flex-direction:column;gap:6px;"></div>
 
         <div class="fr" style="margin-top:12px;"><input type="text" class="fi" id="dedPurposeIn" placeholder="Purpose / name (e.g. For Maa's health)" maxlength="60"></div>
@@ -922,7 +942,7 @@
         <!-- Preview of what's about to be gifted, shown before committing -->
         <div id="dedSummaryBar" style="font-size:12px;color:var(--tl);line-height:1.7;margin-bottom:10px;"></div>
 
-        <button class="pb deduct" style="background:linear-gradient(135deg,rgba(255,105,180,0.35),rgba(180,50,120,0.28));" onclick="addDedication()">🙏 Dedicate</button>
+        <button class="pb deduct" style="background:linear-gradient(135deg,rgba(245,209,122,0.35),rgba(124,143,224,0.28));" onclick="addDedication()">🙏 Dedicate</button>
 
         <div id="dedTotalsBar" style="margin-top:12px;font-size:11px;color:var(--td);"></div>
         <div id="dedList" style="margin-top:8px;display:flex;flex-direction:column;gap:8px;"></div>
@@ -933,9 +953,9 @@
   <!-- PERMANENT Gift Record — separate, append-only ledger. Every gift made
        above is also written here immediately (not on the debounced cloud
        push), so it survives even if the app is closed right after gifting. -->
-  <div class="sg-wrap" style="background:rgba(255,105,180,0.05);border:1px solid rgba(255,105,180,0.18);margin-top:10px;">
+  <div class="sg-wrap" style="background:rgba(245,209,122,0.05);border:1px solid rgba(245,209,122,0.18);margin-top:10px;">
     <div style="padding:10px 12px;">
-      <div style="font-size:11px;color:#FF8FC7;letter-spacing:1px;text-transform:uppercase;font-weight:700;margin-bottom:6px;">🎁 Permanent Gift Record</div>
+      <div style="font-size:11px;color:var(--gold);letter-spacing:1px;text-transform:uppercase;font-weight:700;margin-bottom:6px;">🎁 Permanent Gift Record</div>
       <div style="font-size:10px;color:var(--td);margin-bottom:8px;">A durable, append-only log of every gift — kept separately so an entry can never be silently dropped by sync.</div>
       <div id="permGiftList" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
@@ -1507,6 +1527,7 @@
   <!-- Period Tabs -->
   <div class="lb-tabs" id="lbTabs">
     <button class="lb-tab active" id="lbTabToday" onclick="lbSwitchPeriod('today')">Today</button>
+    <button class="lb-tab" id="lbTabYesterday" onclick="lbSwitchPeriod('yesterday')">Yesterday</button>
     <button class="lb-tab" id="lbTabWeek" onclick="lbSwitchPeriod('week')">This week</button>
     <button class="lb-tab" id="lbTabMonth" onclick="lbSwitchPeriod('month')">This month</button>
     <button class="lb-tab" id="lbTabAlltime" onclick="lbSwitchPeriod('alltime')">Lifetime</button>
@@ -1559,9 +1580,10 @@
     <div style="max-width:340px;width:100%;background:#0b1030;border:1px solid rgba(255,215,0,0.35);border-radius:14px;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,0.5);">
       <div style="font-size:15px;font-weight:700;color:#FFD700;margin-bottom:10px;">⚠️ Save your data first</div>
       <div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.5;margin-bottom:16px;">
-        Please tap <b>📥 Export All Data</b> under <b>Local Backup &amp; Restore</b> (further down in Settings) to save a safety copy first.<br><br>
+        Please tap <b>📥 Export All Data</b> below (or under <b>Local Backup &amp; Restore</b> further down in Settings) to save a safety copy first.<br><br>
         Continuing will clear the app's local cached data and reload.
       </div>
+      <button type="button" onclick="exportAllData()" style="width:100%;margin-bottom:12px;padding:10px 12px;border-radius:9px;background:linear-gradient(135deg,rgba(126,200,255,0.28),rgba(126,200,255,0.14));color:#7ec8ff;border:1px solid rgba(126,200,255,0.45);font-size:13px;font-weight:700;cursor:pointer;">📥 Export All Data (JSON)</button>
       <div style="display:flex;gap:10px;">
         <button type="button" onclick="_dismissNativeCacheWarning()" style="flex:1;padding:10px 12px;border-radius:9px;background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.2);font-size:13px;font-weight:700;cursor:pointer;">Cancel</button>
         <button type="button" onclick="_confirmNativeCacheRefreshProceed()" style="flex:1;padding:10px 12px;border-radius:9px;background:linear-gradient(135deg,rgba(255,215,0,0.35),rgba(255,180,0,0.25));color:#FFD700;border:1px solid rgba(255,215,0,0.5);font-size:13px;font-weight:700;cursor:pointer;">Refresh Anyway</button>
@@ -1576,9 +1598,10 @@
     <div style="max-width:340px;width:100%;background:#0b1030;border:1px solid rgba(255,215,0,0.35);border-radius:14px;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,0.5);">
       <div style="font-size:15px;font-weight:700;color:#FFD700;margin-bottom:10px;">⚠️ Save your data first</div>
       <div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.5;margin-bottom:16px;">
-        Please tap <b>📥 Export All Data</b> under <b>Local Backup &amp; Restore</b> (further down in Settings) to save a safety copy first.<br><br>
+        Please tap <b>📥 Export All Data</b> below (or under <b>Local Backup &amp; Restore</b> further down in Settings) to save a safety copy first.<br><br>
         Signing out clears this device's local data.
       </div>
+      <button type="button" onclick="exportAllData()" style="width:100%;margin-bottom:12px;padding:10px 12px;border-radius:9px;background:linear-gradient(135deg,rgba(126,200,255,0.28),rgba(126,200,255,0.14));color:#7ec8ff;border:1px solid rgba(126,200,255,0.45);font-size:13px;font-weight:700;cursor:pointer;">📥 Export All Data (JSON)</button>
       <div style="display:flex;gap:10px;">
         <button type="button" onclick="_dismissSignOutWarning()" style="flex:1;padding:10px 12px;border-radius:9px;background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.2);font-size:13px;font-weight:700;cursor:pointer;">Cancel</button>
         <button type="button" onclick="_confirmSignOutProceed()" style="flex:1;padding:10px 12px;border-radius:9px;background:linear-gradient(135deg,rgba(255,107,107,0.35),rgba(220,60,60,0.25));color:#ff9d9d;border:1px solid rgba(255,107,107,0.5);font-size:13px;font-weight:700;cursor:pointer;">Sign Out Anyway</button>
@@ -1594,20 +1617,21 @@
     <div style="max-width:340px;width:100%;background:#0b1030;border:1px solid rgba(255,215,0,0.35);border-radius:14px;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,0.5);">
       <div style="font-size:15px;font-weight:700;color:#FFD700;margin-bottom:10px;">⚠️ Save your data first</div>
       <div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.5;margin-bottom:16px;">
-        Please tap <b>📥 Export All Data</b> under <b>Local Backup &amp; Restore</b> (further down in Settings) to save a safety copy first, just in case.<br><br>
+        Please tap <b>📥 Export All Data</b> below (or under <b>Local Backup &amp; Restore</b> further down in Settings) to save a safety copy first, just in case.<br><br>
         Continuing will clear the app's cached files and reload.
       </div>
+      <button type="button" onclick="exportAllData()" style="width:100%;margin-bottom:12px;padding:10px 12px;border-radius:9px;background:linear-gradient(135deg,rgba(126,200,255,0.28),rgba(126,200,255,0.14));color:#7ec8ff;border:1px solid rgba(126,200,255,0.45);font-size:13px;font-weight:700;cursor:pointer;">📥 Export All Data (JSON)</button>
       <div style="display:flex;gap:10px;">
         <button type="button" onclick="_dismissWebCacheWarning()" style="flex:1;padding:10px 12px;border-radius:9px;background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.2);font-size:13px;font-weight:700;cursor:pointer;">Cancel</button>
         <button type="button" onclick="_confirmWebCacheRefreshProceed()" style="flex:1;padding:10px 12px;border-radius:9px;background:linear-gradient(135deg,rgba(255,215,0,0.35),rgba(255,180,0,0.25));color:#FFD700;border:1px solid rgba(255,215,0,0.5);font-size:13px;font-weight:700;cursor:pointer;">Refresh Anyway</button>
       </div>
     </div>
   </div>
-  <div class="vt">Settings</div>
-
-  <!-- App Update — checks the latest GitHub Release, downloads the APK
-       via Capacitor Filesystem, then hands it to the system installer.
-       Kept at the very top so it's the first thing users see. -->
+  <div class="vt-row-settings">
+    <button class="ms-toggle-btn" id="setLangHi" onclick="setStotramLang('hi')">हिंदी</button>
+    <span class="vt" style="margin-bottom:0;">Settings</span>
+    <button class="ms-toggle-btn active" id="setLangBn" onclick="setStotramLang('bn')">বাংলা</button>
+  </div>
   <div class="sc" id="appUpdateCard" style="background:rgba(8,12,35,0.82);border:1px solid rgba(255,215,0,0.25);padding:14px 15px;cursor:pointer;transition:background .4s,border-color .4s;" onclick="checkAppUpdate()">
     <div style="display:flex;align-items:center;gap:12px;">
       <div style="font-size:20px;line-height:1;" id="appUpdateIcon">🔄</div>
@@ -1627,9 +1651,269 @@
     <!-- Only shown for PWA/TWA (web) — a clearly-labeled button in addition
          to the whole-card tap, so the refresh action isn't easy to miss. -->
     <button id="appUpdateWebRefreshBtn" type="button" style="display:none;margin-top:10px;width:100%;padding:9px 12px;border-radius:9px;background:linear-gradient(135deg,rgba(255,215,0,0.28),rgba(255,180,0,0.16));color:#FFD700;border:1px solid rgba(255,215,0,0.45);font-size:12px;font-weight:700;cursor:pointer;" onclick="event.stopPropagation(); checkAppUpdate();">🔄 Refresh Now</button>
-    <!-- Only shown inside the installed (native) app — clears Firestore's
-         local offline cache after an explicit export-first warning. -->
-    <button id="appUpdateNativeRefreshBtn" type="button" style="display:none;margin-top:10px;width:100%;padding:9px 12px;border-radius:9px;background:linear-gradient(135deg,rgba(255,215,0,0.28),rgba(255,180,0,0.16));color:#FFD700;border:1px solid rgba(255,215,0,0.45);font-size:12px;font-weight:700;cursor:pointer;" onclick="event.stopPropagation(); confirmNativeCacheRefresh();">🔄 Refresh Now (clears local cache)</button>
+    <!-- Native (Capacitor) only — shown via the same checkForUpdateAvailable()
+         JS that already toggled this id visible; the element itself was
+         missing until now. Separate from the whole-card tap (which checks
+         GitHub for a new APK release) — this clears/rebuilds Firestore's
+         local offline cache instead, behind the same "Save your data
+         first" warning (nativeCacheWarningModal) the web version uses. -->
+    <button id="appUpdateNativeRefreshBtn" type="button" style="display:none;margin-top:10px;width:100%;padding:9px 12px;border-radius:9px;background:linear-gradient(135deg,rgba(255,215,0,0.28),rgba(255,180,0,0.16));color:#FFD700;border:1px solid rgba(255,215,0,0.45);font-size:12px;font-weight:700;cursor:pointer;" onclick="event.stopPropagation(); confirmNativeCacheRefresh();">🔄 Refresh Now</button>
+  </div>
+
+  <!-- SINGLE SIGN-IN WITH GOOGLE / CLOUD SYNC & BACKUP — moved here, right
+       below the Update App card, so it's the first thing users see in
+       Settings. -->
+  <div class="sc" id="fbCard">
+    <h3>☁️ Cloud Sync &amp; Backup</h3>
+    <!-- Native/Capacitor apk only — shown via JS (checkForUpdateAvailable)
+         when running inside the installed app. Hidden by default so
+         PWA/TWA never shows this button here. -->
+    <button id="fbCardRefreshBtn" type="button" onclick="refreshAppFromBackupArea()" style="display:none;width:100%;margin-bottom:14px;padding:10px 12px;border-radius:9px;background:linear-gradient(135deg,rgba(255,215,0,0.28),rgba(255,180,0,0.16));color:#FFD700;border:1px solid rgba(255,215,0,0.45);font-size:12px;font-weight:700;cursor:pointer;">🔄 Refresh Now</button>
+    <div id="fbLoggedOut">
+      <p style="font-size:12px;color:var(--td);margin-bottom:14px">One sign-in handles real-time sync across all your devices.</p>
+      <button class="google-btn" onclick="fbSignInGoogle()">
+        <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        Sign in with Google
+      </button>
+      <!-- Zoho sign-in — hidden for now per request. To re-enable, remove
+           the two wrapper lines around this button (or change display:none
+           to display:block). -->
+      <div id="zohoSignInWrap" style="display:none">
+      <button class="zoho-btn" onclick="fbSignInZoho()">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#F7A81B" stroke-width="2"/><text x="12" y="16" text-anchor="middle" fill="#F7A81B" font-size="12" font-weight="bold" font-family="sans-serif">Z</text></svg>
+        Sign in with Zoho
+      </button>
+      </div>
+
+      <!-- PHONE / OTP SIGN-IN — hidden for now per request. To re-enable,
+           remove the two wrapper lines around this block (or change
+           display:none to display:block). -->
+      <div id="phoneSignInWrap" style="display:none">
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08)">
+        <div style="font-size:11px;color:var(--td);text-align:center;margin-bottom:8px;letter-spacing:1px;text-transform:uppercase">or use Phone number</div>
+        <div style="font-size:11px;color:var(--gold);text-align:left;margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.18);line-height:1.55">
+          Enter your number with country code (e.g. <b>+919876543210</b>). OTP comes by SMS; on Android it may also appear above your keyboard—tap that code or check your Messages/SMS inbox.
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <select id="fbPhoneCountry" class="fb-email-input" style="flex:0 0 80px;padding:10px 6px;margin-bottom:0">
+            <option value="+1">🇺🇸/🇨🇦 +1</option>
+            <option value="+44">🇬🇧 +44</option>
+            <option value="+91">🇮🇳 +91</option>
+            <option value="+61">🇦🇺 +61</option>
+            <option value="+971">🇦🇪 +971</option>
+            <option value="+880">🇧🇩 +880</option>
+            <option value="+977">🇳🇵 +977</option>
+            <option value="+92">🇵🇰 +92</option>
+            <option value="+65">🇸🇬 +65</option>
+            <option value="+60">🇲🇾 +60</option>
+            <option value="+94">🇱🇰 +94</option>
+            <option value="+27">🇿🇦 +27</option>
+            <option value="+254">🇰🇪 +254</option>
+            <option value="+234">🇳🇬 +234</option>
+            <option value="+20">🇪🇬 +20</option>
+            <option value="+33">🇫🇷 +33</option>
+            <option value="+49">🇩🇪 +49</option>
+            <option value="+39">🇮🇹 +39</option>
+            <option value="+34">🇪🇸 +34</option>
+            <option value="+7">🇷🇺/🇰🇿 +7</option>
+            <option value="+81">🇯🇵 +81</option>
+            <option value="+82">🇰🇷 +82</option>
+            <option value="+86">🇨🇳 +86</option>
+            <option value="+62">🇮🇩 +62</option>
+            <option value="+63">🇵🇭 +63</option>
+            <option value="+66">🇹🇭 +66</option>
+            <option value="+84">🇻🇳 +84</option>
+            <option value="+55">🇧🇷 +55</option>
+            <option value="+52">🇲🇽 +52</option>
+            <option value="+54">🇦🇷 +54</option>
+            <option value="+56">🇨🇱 +56</option>
+            <option value="+57">🇨🇴 +57</option>
+            <option value="+51">🇵🇪 +51</option>
+            <option value="+58">🇻🇪 +58</option>
+            <option value="+31">🇳🇱 +31</option>
+            <option value="+32">🇧🇪 +32</option>
+            <option value="+41">🇨🇭 +41</option>
+            <option value="+43">🇦🇹 +43</option>
+            <option value="+46">🇸🇪 +46</option>
+            <option value="+47">🇳🇴 +47</option>
+            <option value="+45">🇩🇰 +45</option>
+            <option value="+358">🇫🇮 +358</option>
+            <option value="+48">🇵🇱 +48</option>
+            <option value="+420">🇨🇿 +420</option>
+            <option value="+36">🇭🇺 +36</option>
+            <option value="+40">🇷🇴 +40</option>
+            <option value="+30">🇬🇷 +30</option>
+            <option value="+351">🇵🇹 +351</option>
+            <option value="+353">🇮🇪 +353</option>
+            <option value="+64">🇳🇿 +64</option>
+            <option value="+966">🇸🇦 +966</option>
+            <option value="+974">🇶🇦 +974</option>
+            <option value="+965">🇰🇼 +965</option>
+            <option value="+968">🇴🇲 +968</option>
+            <option value="+973">🇧🇭 +973</option>
+            <option value="+962">🇯🇴 +962</option>
+            <option value="+961">🇱🇧 +961</option>
+            <option value="+98">🇮🇷 +98</option>
+            <option value="+90">🇹🇷 +90</option>
+            <option value="+972">🇮🇱 +972</option>
+            <option value="+212">🇲🇦 +212</option>
+            <option value="+213">🇩🇿 +213</option>
+            <option value="+216">🇹🇳 +216</option>
+            <option value="+233">🇬🇭 +233</option>
+            <option value="+255">🇹🇿 +255</option>
+            <option value="+256">🇺🇬 +256</option>
+            <option value="+260">🇿🇲 +260</option>
+            <option value="+263">🇿🇼 +263</option>
+            <option value="+225">🇨🇮 +225</option>
+            <option value="+221">🇸🇳 +221</option>
+            <option value="+237">🇨🇲 +237</option>
+            <option value="+244">🇦🇴 +244</option>
+            <option value="+258">🇲🇿 +258</option>
+            <option value="+261">🇲🇬 +261</option>
+            <option value="+230">🇲🇺 +230</option>
+            <option value="+248">🇸🇨 +248</option>
+            <option value="+852">🇭🇰 +852</option>
+            <option value="+886">🇹🇼 +886</option>
+            <option value="+853">🇲🇴 +853</option>
+            <option value="+976">🇲🇳 +976</option>
+            <option value="+995">🇬🇪 +995</option>
+            <option value="+374">🇦🇲 +374</option>
+            <option value="+357">🇨🇾 +357</option>
+            <option value="+356">🇲🇹 +356</option>
+            <option value="+354">🇮🇸 +354</option>
+          </select>
+          <input type="tel" id="fbPhoneIn" class="fb-email-input" placeholder="" autocomplete="tel" style="flex:1;margin-bottom:0">
+        </div>
+        <div id="fbPhoneSendRow" style="display:flex;gap:8px">
+          <button id="fbPhoneSendBtn" onclick="fbSendPhoneOtp()" class="premium-btn">Send OTP</button>
+        </div>
+        <div style="text-align:center;margin-top:6px">
+          <button onclick="fbTogglePhonePasswordMode(true)" style="padding:4px;border:none;background:transparent;color:var(--a2);font-size:11px;cursor:pointer;font-family:Inter,sans-serif;text-decoration:underline">Have a password? Sign in with it instead</button>
+        </div>
+        <div id="fbPhonePassRow" style="display:none;margin-top:8px">
+          <input type="password" id="fbPhonePassIn" class="fb-email-input" placeholder="Password" autocomplete="current-password">
+          <div style="display:flex;gap:8px">
+            <button id="fbPhonePassSendBtn" onclick="fbSignInPhonePassword()" class="premium-btn">Sign in with Password</button>
+            <button onclick="fbTogglePhonePasswordMode(false)" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.18);background:transparent;color:var(--td);font-size:12px;font-weight:500;cursor:pointer;font-family:Inter,sans-serif">Use OTP</button>
+          </div>
+          <button onclick="fbPhoneForgotPassword()" style="width:100%;margin-top:6px;padding:6px;border-radius:8px;border:none;background:transparent;color:var(--td);font-size:11px;cursor:pointer;font-family:Inter,sans-serif;text-decoration:underline">Forgot password? Verify via OTP</button>
+        </div>
+        <div id="fbPhoneErr" style="font-size:11.5px;color:var(--red);margin-top:6px;text-align:center;word-break:break-word"></div>
+        <div id="fbOtpRow" style="display:none;margin-top:10px">
+          <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" id="fbOtpIn" class="fb-email-input" placeholder="Enter 6-digit OTP" autocomplete="one-time-code">
+          <div style="display:flex;gap:8px">
+            <button onclick="fbVerifyPhoneOtp()" class="premium-btn green">Verify & Sign In</button>
+            <button onclick="fbResetPhoneOtp()" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.18);background:transparent;color:var(--td);font-size:12px;font-weight:500;cursor:pointer;font-family:Inter,sans-serif">Cancel</button>
+          </div>
+          <button onclick="fbSendPhoneOtp(true)" style="width:100%;margin-top:6px;padding:6px;border-radius:8px;border:none;background:transparent;color:var(--td);font-size:11px;cursor:pointer;font-family:Inter,sans-serif;text-decoration:underline">Resend OTP</button>
+        </div>
+        <div style="font-size:9.5px;color:var(--td);opacity:.65;text-align:center;margin-top:6px;line-height:1.4">This site is protected by reCAPTCHA and the Google <a href="https://policies.google.com/privacy" target="_blank" style="color:inherit;text-decoration:underline">Privacy Policy</a> and <a href="https://policies.google.com/terms" target="_blank" style="color:inherit;text-decoration:underline">Terms of Service</a> apply.</div>
+        <!-- Firebase phone verification runs invisibly; keep the badge from covering bottom navigation. -->
+        <style>#fbRecaptchaContainer{position:absolute!important;left:-9999px!important;top:auto!important;width:1px!important;height:1px!important;overflow:hidden!important}.grecaptcha-badge{visibility:hidden!important;pointer-events:none!important}
+</style>
+        <div id="fbRecaptchaContainer" aria-hidden="true"></div>
+      </div>
+      </div>
+
+
+
+      <!-- EMAIL / PASSWORD SIGN-IN -->
+      <style>
+        .fb-email-input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.18);background:#1a1f3a !important;color:#fff !important;font-size:13px;font-family:Inter,sans-serif;margin-bottom:8px;box-sizing:border-box;color-scheme:dark;-webkit-text-fill-color:#fff;outline:none;height:auto;backdrop-filter:none}
+        .fb-email-input::placeholder{color:rgba(255,255,255,0.45)}
+        .fb-email-input:focus{border-color:rgba(74,144,226,0.6)}
+        .fb-email-input:-webkit-autofill,.fb-email-input:-webkit-autofill:hover,.fb-email-input:-webkit-autofill:focus{-webkit-text-fill-color:#fff !important;-webkit-box-shadow:0 0 0 1000px #1a1f3a inset !important;box-shadow:0 0 0 1000px #1a1f3a inset !important;caret-color:#fff;transition:background-color 9999s ease-in-out 0s}
+      </style>
+      <style>
+        .fb-email-section{margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08);background:transparent}
+        .fb-email-section summary{cursor:pointer;list-style:none;text-align:center;font-size:11px;color:var(--td);letter-spacing:1px;text-transform:uppercase}
+        .fb-email-section summary::-webkit-details-marker{display:none}
+        .fb-email-section summary::after{content:"▾";margin-left:6px;opacity:.7}
+        .fb-email-section[open] summary::after{content:"▴"}
+        .fb-email-tips{margin:10px 0;border-radius:10px;background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.18);overflow:hidden}
+        .fb-email-tips summary{cursor:pointer;list-style:none;padding:9px 12px;font-size:11.5px;font-weight:600;color:#ffd97a;text-align:center}
+        .fb-email-tips summary::-webkit-details-marker{display:none}
+        .fb-email-tips summary::after{content:"▾";float:right;opacity:.7}
+        .fb-email-tips[open] summary::after{content:"▴"}
+      </style>
+      <details class="fb-email-section">
+        <summary>or use Email</summary>
+        <div style="margin-top:10px">
+          <details class="fb-email-tips">
+            <summary>💡 Tips: using any email provider</summary>
+            <div style="padding:0 12px 10px;font-size:11.5px;color:var(--gold);text-align:left;line-height:1.6">
+              <div style="font-size:10.5px;color:var(--tl);opacity:.9;margin-bottom:8px;text-align:center">
+                Gmail, Outlook / Hotmail, Yahoo Mail, AOL Mail, Apple iCloud Mail,
+                Proton Mail, Tuta Mail, Mailfence, StartMail, Microsoft 365, Fastmail,
+                Zoho Mail — any working address works.
+              </div>
+              <div style="border-top:1px dashed rgba(255,215,0,0.2);padding-top:8px;margin-top:6px">
+                <b>🆕 New here? Create an account:</b>
+                <ol style="margin:4px 0 6px 18px;padding:0;font-size:11px;color:var(--tl);line-height:1.55">
+                  <li>Type your <b>email</b> and <b>any password</b> (min 6 characters — it does <b>not</b> have to be your real email password).</li>
+                  <li>Tap <b>Create Account</b>.</li>
+                  <li>Open your inbox and tap the <b>verification link</b> we send. <i>If you don't see it within a minute, check your Spam / Promotions / Junk folder.</i></li>
+                  <li>Come back here and tap <b>Sign In</b>.</li>
+                </ol>
+                <b>🔁 Already have an account?</b> Just enter your email + password and tap <b>Sign In</b>. After your first verification, future sign-ins <u>do not</u> require another confirmation email.
+              </div>
+            </div>
+          </details>
+          <input type="email" id="fbEmailIn" class="fb-email-input" placeholder="Email address" autocomplete="email">
+          <input type="password" id="fbPassIn" class="fb-email-input" placeholder="Password (min 6 chars)" autocomplete="current-password" style="margin-bottom:10px">
+          <div style="display:flex;gap:8px">
+            <button onclick="fbSignInEmail()" class="premium-btn">Sign In</button>
+            <button onclick="fbSignUpEmail()" class="premium-btn green">Create Account</button>
+          </div>
+          <button onclick="fbResetEmail()" style="width:100%;margin-top:8px;padding:6px;border-radius:8px;border:none;background:transparent;color:var(--td);font-size:11px;cursor:pointer;font-family:Inter,sans-serif;text-decoration:underline">Forgot password?</button>
+        </div>
+      </details>
+
+      <div id="fbErr" style="font-size:12px;color:var(--red);margin-top:6px;text-align:center"></div>
+    </div>
+    <div id="fbLoggedIn" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--bg),var(--a));display:flex;align-items:center;justify-content:center;font-size:16px">🙏</div>
+        <div>
+          <div style="font-size:13px;color:var(--tl);font-weight:500" id="fbUserEmail"></div>
+          <div style="font-size:11px;color:var(--green)">✓ Signed in · Sync active</div>
+        </div>
+      </div>
+      <div id="fbVerifyBanner" style="display:none;margin-bottom:12px;padding:10px 12px;border-radius:10px;background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.25);font-size:11.5px;color:var(--gold);line-height:1.5;text-align:center">
+        📧 Please verify your email — check your inbox (and Spam/Promotions folder).
+        <div id="fbVerifyBannerCountdown" style="margin-top:4px;font-size:10.5px;opacity:.85;font-weight:600"></div>
+        <button onclick="fbResendVerificationEmail()" style="display:block;margin:8px auto 0;padding:6px 14px;border-radius:8px;border:1px solid rgba(255,215,0,0.35);background:rgba(255,215,0,0.12);color:#ffd97a;font-size:11px;cursor:pointer;font-family:Inter,sans-serif">Resend verification email</button>
+      </div>
+      <div style="text-align:center;margin-bottom:12px">
+        <span class="sync-pill" id="syncPill"><span class="sync-dot"></span><span id="syncPillText">Ready</span></span>
+      </div>
+      <!-- Shown only while signed in — sync has nothing to do without an
+           account. Manual "Sync Now" for when a sync gets stacked/stuck
+           (dropped listener, a backoff timer still counting down from an
+           earlier failure, etc.) and doesn't resume on its own even with
+           good internet. Shown on every platform (unlike Refresh Now
+           above, which is native-only) since this can happen on web too.
+           Does not change any sync logic — it just clears whatever local
+           timers are currently stacked and re-runs the existing sync
+           functions right now. See forceManualSyncNow() in app.js. -->
+      <button id="fbManualSyncBtn" type="button" onclick="forceManualSyncNow()" style="width:100%;margin-bottom:10px;padding:10px 12px;border-radius:9px;background:linear-gradient(135deg,rgba(255,215,0,0.28),rgba(255,180,0,0.16));color:#FFD700;border:1px solid rgba(255,215,0,0.45);font-size:12px;font-weight:700;cursor:pointer;">Sync failed? Press here to manually Sync</button>
+      <button id="fbChangePassBtn" onclick="fbChangePasswordFromSettings()" class="premium-btn" style="margin-bottom:10px">🔑 Change Password</button>
+      <button onclick="confirmSignOutWithBackupWarning()" class="premium-btn red">Sign Out</button>
+    </div>
+  </div>
+
+  <!-- Tutorial video — a single developer-provided link (icon-only, no raw
+       URL shown on screen); tapping opens it on YouTube. Shown on every
+       platform, right below Cloud Sync & Backup above. -->
+  <div class="sc" style="background:rgba(8,12,35,0.82);border:1px solid rgba(255,80,80,0.25);padding:14px 15px;cursor:pointer;" onclick="openExternalLink('https://youtu.be/IsrueqcsHL4?si=Nqn9io_MJCsrNi4Z')">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span id="tutorialVideoIcon" style="width:22px;height:22px;flex-shrink:0;display:flex;align-items:center;justify-content:center;"></span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:700;color:#ff6b6b;line-height:1.2;">App Tutorial Video</div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:3px;">Tap to watch on YouTube</div>
+      </div>
+      <div style="color:rgba(255,107,107,0.5);font-size:16px;">›</div>
+    </div>
   </div>
 
   <!-- Manual APK link — developer-provided fallback download, stored in
@@ -1639,11 +1923,15 @@
        developer sees an editable field + Save button instead. -->
   <div class="sc" id="manualApkCard" style="background:rgba(8,12,35,0.82);border:1px solid rgba(126,200,255,0.25);padding:14px 15px;">
     <div id="manualApkRow" style="display:flex;align-items:center;gap:12px;cursor:pointer;">
-      <div style="font-size:20px;line-height:1;">📎</div>
+      <div style="font-size:20px;line-height:1;">📥</div>
       <div style="flex:1;min-width:0;">
         <div id="manualApkTitle" style="font-size:13px;font-weight:700;color:#7ec8ff;line-height:1.2;">Download APK file</div>
         <div id="manualApkStatus" style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:3px;">Checking…</div>
       </div>
+      <!-- Developer-only edit affordance — toggles the edit panel below
+           without triggering the row's own download tap. Everyone else
+           sees the exact same collapsed row as a plain download link. -->
+      <div id="manualApkEditIcon" style="display:none;align-items:center;justify-content:center;color:rgba(126,200,255,0.7);font-size:15px;cursor:pointer;padding:4px;flex-shrink:0;" onclick="event.stopPropagation(); toggleManualApkEdit();">✏️</div>
       <div style="color:rgba(126,200,255,0.5);font-size:16px;">›</div>
     </div>
     <div id="manualApkEditWrap" style="display:none;margin-top:10px;">
@@ -1912,263 +2200,6 @@
     </div>
   </div>
 
-  <!-- SINGLE SIGN-IN WITH GOOGLE -->
-  <div class="sc" id="fbCard">
-    <h3>☁️ Cloud Sync &amp; Backup</h3>
-    <div id="fbLoggedOut">
-      <p style="font-size:12px;color:var(--td);margin-bottom:14px">One sign-in handles real-time sync across all your devices.</p>
-      <button class="google-btn" onclick="fbSignInGoogle()">
-        <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-        Sign in with Google
-      </button>
-      <!-- Zoho sign-in — hidden for now per request. To re-enable, remove
-           the two wrapper lines around this button (or change display:none
-           to display:block). -->
-      <div id="zohoSignInWrap" style="display:none">
-      <button class="zoho-btn" onclick="fbSignInZoho()">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#F7A81B" stroke-width="2"/><text x="12" y="16" text-anchor="middle" fill="#F7A81B" font-size="12" font-weight="bold" font-family="sans-serif">Z</text></svg>
-        Sign in with Zoho
-      </button>
-      </div>
-
-      <!-- PHONE / OTP SIGN-IN — hidden for now per request. To re-enable,
-           remove the two wrapper lines around this block (or change
-           display:none to display:block). -->
-      <div id="phoneSignInWrap" style="display:none">
-      <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08)">
-        <div style="font-size:11px;color:var(--td);text-align:center;margin-bottom:8px;letter-spacing:1px;text-transform:uppercase">or use Phone number</div>
-        <div style="font-size:11px;color:var(--gold);text-align:left;margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.18);line-height:1.55">
-          Enter your number with country code (e.g. <b>+919876543210</b>). OTP comes by SMS; on Android it may also appear above your keyboard—tap that code or check your Messages/SMS inbox.
-        </div>
-        <div style="display:flex;gap:6px;margin-bottom:8px">
-          <select id="fbPhoneCountry" class="fb-email-input" style="flex:0 0 80px;padding:10px 6px;margin-bottom:0">
-            <option value="+1">🇺🇸/🇨🇦 +1</option>
-            <option value="+44">🇬🇧 +44</option>
-            <option value="+91">🇮🇳 +91</option>
-            <option value="+61">🇦🇺 +61</option>
-            <option value="+971">🇦🇪 +971</option>
-            <option value="+880">🇧🇩 +880</option>
-            <option value="+977">🇳🇵 +977</option>
-            <option value="+92">🇵🇰 +92</option>
-            <option value="+65">🇸🇬 +65</option>
-            <option value="+60">🇲🇾 +60</option>
-            <option value="+94">🇱🇰 +94</option>
-            <option value="+27">🇿🇦 +27</option>
-            <option value="+254">🇰🇪 +254</option>
-            <option value="+234">🇳🇬 +234</option>
-            <option value="+20">🇪🇬 +20</option>
-            <option value="+33">🇫🇷 +33</option>
-            <option value="+49">🇩🇪 +49</option>
-            <option value="+39">🇮🇹 +39</option>
-            <option value="+34">🇪🇸 +34</option>
-            <option value="+7">🇷🇺/🇰🇿 +7</option>
-            <option value="+81">🇯🇵 +81</option>
-            <option value="+82">🇰🇷 +82</option>
-            <option value="+86">🇨🇳 +86</option>
-            <option value="+62">🇮🇩 +62</option>
-            <option value="+63">🇵🇭 +63</option>
-            <option value="+66">🇹🇭 +66</option>
-            <option value="+84">🇻🇳 +84</option>
-            <option value="+55">🇧🇷 +55</option>
-            <option value="+52">🇲🇽 +52</option>
-            <option value="+54">🇦🇷 +54</option>
-            <option value="+56">🇨🇱 +56</option>
-            <option value="+57">🇨🇴 +57</option>
-            <option value="+51">🇵🇪 +51</option>
-            <option value="+58">🇻🇪 +58</option>
-            <option value="+31">🇳🇱 +31</option>
-            <option value="+32">🇧🇪 +32</option>
-            <option value="+41">🇨🇭 +41</option>
-            <option value="+43">🇦🇹 +43</option>
-            <option value="+46">🇸🇪 +46</option>
-            <option value="+47">🇳🇴 +47</option>
-            <option value="+45">🇩🇰 +45</option>
-            <option value="+358">🇫🇮 +358</option>
-            <option value="+48">🇵🇱 +48</option>
-            <option value="+420">🇨🇿 +420</option>
-            <option value="+36">🇭🇺 +36</option>
-            <option value="+40">🇷🇴 +40</option>
-            <option value="+30">🇬🇷 +30</option>
-            <option value="+351">🇵🇹 +351</option>
-            <option value="+353">🇮🇪 +353</option>
-            <option value="+64">🇳🇿 +64</option>
-            <option value="+966">🇸🇦 +966</option>
-            <option value="+974">🇶🇦 +974</option>
-            <option value="+965">🇰🇼 +965</option>
-            <option value="+968">🇴🇲 +968</option>
-            <option value="+973">🇧🇭 +973</option>
-            <option value="+962">🇯🇴 +962</option>
-            <option value="+961">🇱🇧 +961</option>
-            <option value="+98">🇮🇷 +98</option>
-            <option value="+90">🇹🇷 +90</option>
-            <option value="+972">🇮🇱 +972</option>
-            <option value="+212">🇲🇦 +212</option>
-            <option value="+213">🇩🇿 +213</option>
-            <option value="+216">🇹🇳 +216</option>
-            <option value="+233">🇬🇭 +233</option>
-            <option value="+255">🇹🇿 +255</option>
-            <option value="+256">🇺🇬 +256</option>
-            <option value="+260">🇿🇲 +260</option>
-            <option value="+263">🇿🇼 +263</option>
-            <option value="+225">🇨🇮 +225</option>
-            <option value="+221">🇸🇳 +221</option>
-            <option value="+237">🇨🇲 +237</option>
-            <option value="+244">🇦🇴 +244</option>
-            <option value="+258">🇲🇿 +258</option>
-            <option value="+261">🇲🇬 +261</option>
-            <option value="+230">🇲🇺 +230</option>
-            <option value="+248">🇸🇨 +248</option>
-            <option value="+852">🇭🇰 +852</option>
-            <option value="+886">🇹🇼 +886</option>
-            <option value="+853">🇲🇴 +853</option>
-            <option value="+976">🇲🇳 +976</option>
-            <option value="+995">🇬🇪 +995</option>
-            <option value="+374">🇦🇲 +374</option>
-            <option value="+357">🇨🇾 +357</option>
-            <option value="+356">🇲🇹 +356</option>
-            <option value="+354">🇮🇸 +354</option>
-          </select>
-          <input type="tel" id="fbPhoneIn" class="fb-email-input" placeholder="" autocomplete="tel" style="flex:1;margin-bottom:0">
-        </div>
-        <div id="fbPhoneSendRow" style="display:flex;gap:8px">
-          <button id="fbPhoneSendBtn" onclick="fbSendPhoneOtp()" class="premium-btn">Send OTP</button>
-        </div>
-        <div style="text-align:center;margin-top:6px">
-          <button onclick="fbTogglePhonePasswordMode(true)" style="padding:4px;border:none;background:transparent;color:var(--a2);font-size:11px;cursor:pointer;font-family:Inter,sans-serif;text-decoration:underline">Have a password? Sign in with it instead</button>
-        </div>
-        <div id="fbPhonePassRow" style="display:none;margin-top:8px">
-          <input type="password" id="fbPhonePassIn" class="fb-email-input" placeholder="Password" autocomplete="current-password">
-          <div style="display:flex;gap:8px">
-            <button id="fbPhonePassSendBtn" onclick="fbSignInPhonePassword()" class="premium-btn">Sign in with Password</button>
-            <button onclick="fbTogglePhonePasswordMode(false)" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.18);background:transparent;color:var(--td);font-size:12px;font-weight:500;cursor:pointer;font-family:Inter,sans-serif">Use OTP</button>
-          </div>
-          <button onclick="fbPhoneForgotPassword()" style="width:100%;margin-top:6px;padding:6px;border-radius:8px;border:none;background:transparent;color:var(--td);font-size:11px;cursor:pointer;font-family:Inter,sans-serif;text-decoration:underline">Forgot password? Verify via OTP</button>
-        </div>
-        <div id="fbPhoneErr" style="font-size:11.5px;color:var(--red);margin-top:6px;text-align:center;word-break:break-word"></div>
-        <div id="fbOtpRow" style="display:none;margin-top:10px">
-          <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" id="fbOtpIn" class="fb-email-input" placeholder="Enter 6-digit OTP" autocomplete="one-time-code">
-          <div style="display:flex;gap:8px">
-            <button onclick="fbVerifyPhoneOtp()" class="premium-btn green">Verify & Sign In</button>
-            <button onclick="fbResetPhoneOtp()" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.18);background:transparent;color:var(--td);font-size:12px;font-weight:500;cursor:pointer;font-family:Inter,sans-serif">Cancel</button>
-          </div>
-          <button onclick="fbSendPhoneOtp(true)" style="width:100%;margin-top:6px;padding:6px;border-radius:8px;border:none;background:transparent;color:var(--td);font-size:11px;cursor:pointer;font-family:Inter,sans-serif;text-decoration:underline">Resend OTP</button>
-        </div>
-        <div style="font-size:9.5px;color:var(--td);opacity:.65;text-align:center;margin-top:6px;line-height:1.4">This site is protected by reCAPTCHA and the Google <a href="https://policies.google.com/privacy" target="_blank" style="color:inherit;text-decoration:underline">Privacy Policy</a> and <a href="https://policies.google.com/terms" target="_blank" style="color:inherit;text-decoration:underline">Terms of Service</a> apply.</div>
-        <!-- Firebase phone verification runs invisibly; keep the badge from covering bottom navigation. -->
-        <style>#fbRecaptchaContainer{position:absolute!important;left:-9999px!important;top:auto!important;width:1px!important;height:1px!important;overflow:hidden!important}.grecaptcha-badge{visibility:hidden!important;pointer-events:none!important}
-</style>
-        <div id="fbRecaptchaContainer" aria-hidden="true"></div>
-      </div>
-      </div>
-
-
-
-      <!-- EMAIL / PASSWORD SIGN-IN -->
-      <style>
-        .fb-email-input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.18);background:#1a1f3a !important;color:#fff !important;font-size:13px;font-family:Inter,sans-serif;margin-bottom:8px;box-sizing:border-box;color-scheme:dark;-webkit-text-fill-color:#fff;outline:none;height:auto;backdrop-filter:none}
-        .fb-email-input::placeholder{color:rgba(255,255,255,0.45)}
-        .fb-email-input:focus{border-color:rgba(74,144,226,0.6)}
-        .fb-email-input:-webkit-autofill,.fb-email-input:-webkit-autofill:hover,.fb-email-input:-webkit-autofill:focus{-webkit-text-fill-color:#fff !important;-webkit-box-shadow:0 0 0 1000px #1a1f3a inset !important;box-shadow:0 0 0 1000px #1a1f3a inset !important;caret-color:#fff;transition:background-color 9999s ease-in-out 0s}
-      </style>
-      <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08);background:transparent;height:auto">
-        <div style="font-size:11px;color:var(--td);text-align:center;margin-bottom:8px;letter-spacing:1px;text-transform:uppercase">or use Email</div>
-        <style>
-          .fb-email-tips{margin-bottom:10px;border-radius:10px;background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.18);overflow:hidden}
-          .fb-email-tips summary{cursor:pointer;list-style:none;padding:9px 12px;font-size:11.5px;font-weight:600;color:#ffd97a;text-align:center}
-          .fb-email-tips summary::-webkit-details-marker{display:none}
-          .fb-email-tips summary::after{content:"▾";float:right;opacity:.7}
-          .fb-email-tips[open] summary::after{content:"▴"}
-        </style>
-        <details class="fb-email-tips">
-          <summary>💡 Tips: using any email provider</summary>
-          <div style="padding:0 12px 10px;font-size:11.5px;color:var(--gold);text-align:left;line-height:1.6">
-            <div style="font-size:10.5px;color:var(--tl);opacity:.9;margin-bottom:8px;text-align:center">
-              Gmail, Outlook / Hotmail, Yahoo Mail, AOL Mail, Apple iCloud Mail,
-              Proton Mail, Tuta Mail, Mailfence, StartMail, Microsoft 365, Fastmail,
-              Zoho Mail — any working address works.
-            </div>
-            <div style="border-top:1px dashed rgba(255,215,0,0.2);padding-top:8px;margin-top:6px">
-              <b>🆕 New here? Create an account:</b>
-              <ol style="margin:4px 0 6px 18px;padding:0;font-size:11px;color:var(--tl);line-height:1.55">
-                <li>Type your <b>email</b> and <b>any password</b> (min 6 characters — it does <b>not</b> have to be your real email password).</li>
-                <li>Tap <b>Create Account</b>.</li>
-                <li>Open your inbox and tap the <b>verification link</b> we send. <i>If you don't see it within a minute, check your Spam / Promotions / Junk folder.</i></li>
-                <li>Come back here and tap <b>Sign In</b>.</li>
-              </ol>
-              <b>🔁 Already have an account?</b> Just enter your email + password and tap <b>Sign In</b>. After your first verification, future sign-ins <u>do not</u> require another confirmation email.
-            </div>
-          </div>
-        </details>
-        <input type="email" id="fbEmailIn" class="fb-email-input" placeholder="Email address" autocomplete="email">
-        <input type="password" id="fbPassIn" class="fb-email-input" placeholder="Password (min 6 chars)" autocomplete="current-password" style="margin-bottom:10px">
-        <div style="display:flex;gap:8px">
-          <button onclick="fbSignInEmail()" class="premium-btn">Sign In</button>
-          <button onclick="fbSignUpEmail()" class="premium-btn green">Create Account</button>
-        </div>
-        <button onclick="fbResetEmail()" style="width:100%;margin-top:8px;padding:6px;border-radius:8px;border:none;background:transparent;color:var(--td);font-size:11px;cursor:pointer;font-family:Inter,sans-serif;text-decoration:underline">Forgot password?</button>
-      </div>
-
-      <div id="fbErr" style="font-size:12px;color:var(--red);margin-top:6px;text-align:center"></div>
-    </div>
-    <div id="fbLoggedIn" style="display:none">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-        <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--bg),var(--a));display:flex;align-items:center;justify-content:center;font-size:16px">🙏</div>
-        <div>
-          <div style="font-size:13px;color:var(--tl);font-weight:500" id="fbUserEmail"></div>
-          <div style="font-size:11px;color:var(--green)">✓ Signed in · Sync active</div>
-        </div>
-      </div>
-      <div id="fbVerifyBanner" style="display:none;margin-bottom:12px;padding:10px 12px;border-radius:10px;background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.25);font-size:11.5px;color:var(--gold);line-height:1.5;text-align:center">
-        📧 Please verify your email — check your inbox (and Spam/Promotions folder).
-        <div id="fbVerifyBannerCountdown" style="margin-top:4px;font-size:10.5px;opacity:.85;font-weight:600"></div>
-        <button onclick="fbResendVerificationEmail()" style="display:block;margin:8px auto 0;padding:6px 14px;border-radius:8px;border:1px solid rgba(255,215,0,0.35);background:rgba(255,215,0,0.12);color:#ffd97a;font-size:11px;cursor:pointer;font-family:Inter,sans-serif">Resend verification email</button>
-      </div>
-      <div style="text-align:center;margin-bottom:12px">
-        <span class="sync-pill" id="syncPill"><span class="sync-dot"></span><span id="syncPillText">Ready</span></span>
-      </div>
-      <button id="fbChangePassBtn" onclick="fbChangePasswordFromSettings()" class="premium-btn" style="margin-bottom:10px">🔑 Change Password</button>
-      <button onclick="confirmSignOutWithBackupWarning()" class="premium-btn red">Sign Out</button>
-    </div>
-  </div>
-
-  <!-- BACKUP & RESTORE -->
-  <div class="sc">
-    <h3>💾 Local Backup &amp; Restore</h3>
-    <p style="font-size:12px;color:var(--td);margin-bottom:14px">Export all your data as a JSON file. Use to transfer to a new device.</p>
-    <button class="pb pb-export" onclick="exportAllData()" style="margin-bottom:10px">📥 Download All Jap Data to local Drive as json file</button>
-    <button class="pb pb-export" id="driveBackupNowBtn" onclick="driveBackupNow()" style="margin-bottom:6px">🗂️ Upload the json file to Google drive with Single tap</button>
-    <div style="font-size:10.5px;color:var(--td);text-align:center;margin:0 0 10px;opacity:.85;line-height:1.4">💡 Tip: saves a dated backup file directly to your own Google Drive. Requires Google sign-in.</div>
-    <button class="pb" onclick="shareBackup()" style="margin-bottom:10px;background:linear-gradient(135deg,rgba(255,215,0,0.35),rgba(255,180,0,0.25));color:var(--gold);border:1px solid rgba(255,215,0,0.4)">📤 Share Json File</button>
-    <label class="pb pb-restore" style="display:flex;align-items:center;justify-content:center;width:100%;cursor:pointer;box-sizing:border-box;background:linear-gradient(135deg,rgba(74,144,226,0.22),rgba(74,144,226,0.08));border:1px solid rgba(74,144,226,0.45);color:var(--a2);box-shadow:0 4px 14px rgba(74,144,226,0.15),inset 0 1px 0 rgba(255,255,255,0.06);letter-spacing:0.3px">
-      📤 Restore/ Upload a previously saved Backup Json file
-      <input type="file" id="restoreFileIn" accept=".json" style="display:none" onchange="importAllData(this)">
-    </label>
-    <div id="restoreStatus" style="font-size:12px;margin-top:8px;text-align:center;color:var(--green);min-height:18px"></div>
-  </div>
-
-  <!-- GOOGLE DRIVE BACKUP: header card no longer shown here — its description now
-       lives as a tip under the Upload button in Local Backup & Restore above.
-       This whole section stays in the DOM (display:none) purely so the hidden
-       Daily Auto-Backup toggle/time-input elements below keep their ids for JS. -->
-  <div class="sc" style="display:none">
-    <h3>🗂️ Google Drive Backup</h3>
-    <p style="font-size:12px;color:var(--td);margin-bottom:14px">Save a dated backup file directly to your own Google Drive. Requires Google sign-in.</p>
-    <div style="display:none">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0 2px;border-top:1px solid rgba(255,215,0,0.15)">
-        <div>
-          <div style="font-size:14px;color:var(--gold);font-weight:600">Daily Auto-Backup</div>
-          <div style="font-size:11px;color:var(--td);margin-top:2px">Backs up automatically once a day, even if the app is closed — at approximately the time you choose below (checked roughly hourly, so it may land within ~35 min of your target).</div>
-        </div>
-        <div class="tg" id="tgDriveBackupDaily" onclick="toggleDriveBackupDaily()"></div>
-      </div>
-      <div id="driveBackupTimeRow" style="display:none;align-items:center;justify-content:space-between;gap:12px;padding:10px 0 2px;">
-        <div style="font-size:12px;color:var(--td)">Backup time (device local)</div>
-        <input type="time" id="driveBackupTimeIn" onchange="saveDriveBackupTime(this)"
-          style="padding:8px 10px;border-radius:8px;border:1px solid rgba(255,215,0,0.3);background:#1a1f3a;color:#fff;font-size:13px;font-family:Inter,sans-serif;color-scheme:dark">
-      </div>
-    </div>
-  </div>
-
   <!-- 🙏 Radha / Radha Vallabh Jap Text Language 🙏 -->
   <div class="naam-only-block" id="japLangAnchor" style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,215,0,0.15)">
     <div style="font-size:9px;color:rgba(255,215,0,0.7);letter-spacing:2px;text-transform:uppercase;font-weight:700;margin-bottom:10px;">🙏 Jap Text Language</div>
@@ -2323,6 +2354,49 @@
         </label>
         <button class="photo-reset-btn" onclick="resetPhoto('gurudev')">↩ Default</button>
         <button class="photo-reset-btn" style="flex:0.7" onclick="selectRepoPhoto('gurudev', 0)">Blank</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BACKUP & RESTORE -->
+  <div class="sc">
+    <h3>💾 Local Backup &amp; Restore</h3>
+    <p style="font-size:12px;color:var(--td);margin-bottom:14px">Export all your data as a JSON file. Use to transfer to a new device.</p>
+    <button class="pb pb-export" onclick="exportAllData()" style="margin-bottom:10px">📥 Download All Jap Data to local Drive as json file</button>
+    <button class="pb pb-export" id="driveBackupNowBtn" onclick="driveBackupNow()" style="margin-bottom:6px;display:flex;align-items:center;justify-content:center;gap:8px;">
+      <span id="driveUploadIcon" style="width:20px;height:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+        <img src="https://cdn.simpleicons.org/googledrive" alt="" width="20" height="20" data-fallback="📁" onerror="favvidIconFallback(this)" style="display:block;flex-shrink:0">
+      </span>
+      Upload the json file to Google drive with Single tap
+    </button>
+    <div style="font-size:10.5px;color:var(--td);text-align:center;margin:0 0 10px;opacity:.85;line-height:1.4">💡 Tip: saves a dated backup file directly to your own Google Drive. Requires Google sign-in.</div>
+    <button class="pb" onclick="shareBackup()" style="margin-bottom:10px;background:linear-gradient(135deg,rgba(255,215,0,0.35),rgba(255,180,0,0.25));color:var(--gold);border:1px solid rgba(255,215,0,0.4)">📤 Share Json File</button>
+    <label class="pb pb-restore" style="display:flex;align-items:center;justify-content:center;width:100%;cursor:pointer;box-sizing:border-box;background:linear-gradient(135deg,rgba(74,144,226,0.22),rgba(74,144,226,0.08));border:1px solid rgba(74,144,226,0.45);color:var(--a2);box-shadow:0 4px 14px rgba(74,144,226,0.15),inset 0 1px 0 rgba(255,255,255,0.06);letter-spacing:0.3px">
+      📤 Restore/ Upload a previously saved Backup Json file
+      <input type="file" id="restoreFileIn" accept=".json" style="display:none" onchange="importAllData(this)">
+    </label>
+    <div id="restoreStatus" style="font-size:12px;margin-top:8px;text-align:center;color:var(--green);min-height:18px"></div>
+  </div>
+
+  <!-- GOOGLE DRIVE BACKUP: header card no longer shown here — its description now
+       lives as a tip under the Upload button in Local Backup & Restore above.
+       This whole section stays in the DOM (display:none) purely so the hidden
+       Daily Auto-Backup toggle/time-input elements below keep their ids for JS. -->
+  <div class="sc" style="display:none">
+    <h3>🗂️ Google Drive Backup</h3>
+    <p style="font-size:12px;color:var(--td);margin-bottom:14px">Save a dated backup file directly to your own Google Drive. Requires Google sign-in.</p>
+    <div style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0 2px;border-top:1px solid rgba(255,215,0,0.15)">
+        <div>
+          <div style="font-size:14px;color:var(--gold);font-weight:600">Daily Auto-Backup</div>
+          <div style="font-size:11px;color:var(--td);margin-top:2px">Backs up automatically once a day, even if the app is closed — at approximately the time you choose below (checked roughly hourly, so it may land within ~35 min of your target).</div>
+        </div>
+        <div class="tg" id="tgDriveBackupDaily" onclick="toggleDriveBackupDaily()"></div>
+      </div>
+      <div id="driveBackupTimeRow" style="display:none;align-items:center;justify-content:space-between;gap:12px;padding:10px 0 2px;">
+        <div style="font-size:12px;color:var(--td)">Backup time (device local)</div>
+        <input type="time" id="driveBackupTimeIn" onchange="saveDriveBackupTime(this)"
+          style="padding:8px 10px;border-radius:8px;border:1px solid rgba(255,215,0,0.3);background:#1a1f3a;color:#fff;font-size:13px;font-family:Inter,sans-serif;color-scheme:dark">
       </div>
     </div>
   </div>
@@ -2712,7 +2786,7 @@
     <!-- Gives tithi boundary accuracy matching ISKCON/Drik Panchang exactly -->
     <script src="./panchangData.js?v=117"></script>
     <script src="./stotrams.js?v=115"></script>
-    <script src="./app.js?v=145"></script>
+    <script src="./app.js?v=146"></script>
   
 <script>
 // ═══ B&C Sub-tab switcher ════════════════════════════════════
@@ -2789,73 +2863,6 @@ function vpSwitchTab(tab) {
 </script>
 
 <!-- Vedic Panchanga engine (moved to ./vedic-panchanga/panchanga.js) -->
-<script defer src="./vedic-panchanga/panchanga.js?v=159"></script>
-
-<!-- ── Custom Japs / Naam: list + add panel ── -->
-<div id="cjPanel" class="cj-panel" style="display:none">
-  <div class="cj-panel-inner">
-    <div class="cj-panel-head">
-      <h3 style="margin:0">🙏 My Custom Japs / Naam</h3>
-      <button class="cj-close" onclick="closeCustomJapPanel()">✕</button>
-    </div>
-    <div class="cj-form">
-      <input id="cjTitleIn" type="text" placeholder="Title (e.g. Yugal Mantra)" maxlength="60" class="fb-email-input" style="margin-bottom:8px">
-      <textarea id="cjTextIn" placeholder="Mantra / Naam text" rows="2" class="fb-email-input" style="margin-bottom:8px;resize:vertical"></textarea>
-      <div style="display:flex;gap:16px;margin-bottom:10px;font-size:13px">
-        <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="cjAnim" value="radha" checked> 🌸 Radha-type</label>
-        <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="cjAnim" value="hk"> 🪈 HK-type</label>
-      </div>
-      <button class="pb" onclick="addCustomJap()">+ Add Custom Jap</button>
-    </div>
-    <div id="cjList" class="cj-list"></div>
-  </div>
-</div>
-
-<!-- ── Custom Jap: full-screen tap counter ── -->
-<div id="cjCounterScreen" class="cj-anim-radha" style="display:none">
-  <button class="cj-close cj-counter-close" onclick="closeCustomJapCounter()">✕</button>
-  <div id="cjCounterTitle" class="cj-counter-title"></div>
-  <div id="cjCounterMantra" class="cj-counter-mantra"></div>
-  <div class="cj-tap-area" onclick="tapCustomJap()">
-    <div id="cjCounterCount" class="cj-counter-count">0</div>
-    <div class="cj-tap-hint">Tap to count</div>
-  </div>
-</div>
-
-<style>
-.cj-panel { position:fixed; inset:0; z-index:9000; background:rgba(0,0,0,0.6); display:flex; align-items:flex-end; justify-content:center; }
-.cj-panel-inner { background:#1a1420; width:100%; max-width:480px; max-height:85vh; overflow-y:auto; border-radius:18px 18px 0 0; padding:18px; }
-.cj-panel-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
-.cj-close { background:rgba(255,255,255,0.08); border:none; color:#fff; width:32px; height:32px; border-radius:50%; font-size:16px; cursor:pointer; }
-.cj-list { margin-top:12px; display:flex; flex-direction:column; gap:8px; }
-.cj-row { display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.05); border-radius:12px; padding:10px 12px; }
-.cj-row-main { flex:1; cursor:pointer; }
-.cj-row-title { font-size:14px; color:#fff; }
-.cj-row-count { font-size:11px; color:rgba(255,255,255,0.55); margin-top:2px; }
-.cj-row-del { background:none; border:none; color:rgba(255,120,120,0.8); font-size:16px; cursor:pointer; padding:4px 8px; }
-.naam-sel-divider { height:1px; background:rgba(255,255,255,0.1); margin:6px 10px; }
-.naam-sel-opt--add { opacity:0.9; }
-
-#cjCounterScreen { position:fixed; inset:0; z-index:9500; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; text-align:center; padding:24px; }
-.cj-counter-close { position:absolute; top:20px; right:20px; }
-.cj-counter-title { font-size:20px; font-weight:600; }
-.cj-counter-mantra { font-size:16px; max-width:320px; line-height:1.5; opacity:0.9; }
-.cj-tap-area { display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; user-select:none; }
-.cj-counter-count { font-size:56px; font-weight:700; transition:transform .15s ease; }
-.cj-tap-hint { font-size:12px; opacity:0.6; }
-
-/* Radha-type: soft pink/gold pulsing glow, matching the app's Radha theme */
-.cj-anim-radha { background:radial-gradient(circle at 50% 40%, rgba(255,105,180,0.25), rgba(20,10,20,0.97) 70%); color:#ffd7ec; }
-.cj-anim-radha .cj-counter-count { color:#ffd700; text-shadow:0 0 18px rgba(255,105,180,0.65); }
-.cj-anim-radha.cj-pulse .cj-counter-count { transform:scale(1.18); text-shadow:0 0 32px rgba(255,105,180,0.95); }
-
-/* HK-type: scrolling mantra banner + golden pulse, echoing the Ramanandi
-   persistent HK-style animation elsewhere in the app -- kept independent. */
-.cj-anim-hk { background:radial-gradient(circle at 50% 40%, rgba(255,180,0,0.22), rgba(15,10,5,0.97) 70%); color:#ffe9b3; overflow:hidden; }
-.cj-anim-hk .cj-counter-mantra { white-space:nowrap; overflow:hidden; max-width:100%; animation:cjMarquee 9s linear infinite; }
-.cj-anim-hk .cj-counter-count { color:#ffb347; text-shadow:0 0 18px rgba(255,180,0,0.65); }
-.cj-anim-hk.cj-pulse .cj-counter-count { transform:scale(1.18); text-shadow:0 0 32px rgba(255,180,0,0.95); }
-@keyframes cjMarquee { 0% { transform:translateX(100%); } 100% { transform:translateX(-100%); } }
-</style>
+<script defer src="./vedic-panchanga/panchanga.js?v=160"></script>
 </body>
 </html>

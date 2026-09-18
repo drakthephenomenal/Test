@@ -5,9 +5,21 @@
   --rose:#D94B7E;--rl:#F58AB0;
   --green:#39C997;--red:#E15A6B;
   --tl:#ECEEFB;--td:#8089B8;
+  /* Jap chanting text size multiplier — overridden live by the left-side
+     gear on the Jap tap screen (see applyJapTextPrefs in app.js). */
+  --jap-text-scale:1;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;text-size-adjust:100%;}
+/* Without an explicit background here, the <html> element defaults to
+   white. body already fills the viewport with the dark theme color via
+   100dvh, but on Android (Chrome/WebView) the dynamic viewport height can
+   round or settle a pixel or two short of the real viewport — e.g. while
+   the on-screen/gesture nav bar is accounted for — letting a thin sliver
+   of that default white <html> background peek through right at the
+   bottom edge, between the app's own bottom nav and the device's nav
+   buttons. Matching the theme color here means there's nothing white
+   left to show through even if that rounding happens. */
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;text-size-adjust:100%;background:var(--bd);}
 body{font-family:'Inter',sans-serif;background:var(--bd);color:var(--tl);min-height:100vh;min-height:100dvh;overflow-x:hidden;position:relative;width:100vw;max-width:100%;}
 body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:120vmax;height:120vmax;
   background:radial-gradient(circle at 50% 30%,rgba(34,85,204,0.18) 0%,transparent 50%),
@@ -57,8 +69,43 @@ body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%
 
 
 
-.view{display:none;height:100vh;height:100dvh;position:relative;z-index:1;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+.view{display:none;height:100vh;height:100dvh;position:relative;z-index:1;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  /* Reserve room for the device status bar (notch, Dynamic Island, and —
+     crucially — the iPad status bar, which sits at a different height than
+     iPhone's and was previously getting overlapped by in-app header rows
+     like .v28-header's Stats/Hindi/Wishes buttons). Mirrors the bottom
+     safe-area handling already done for .bnav below. Needs
+     viewport-fit=cover on the <meta name="viewport"> tag (already set) for
+     env(safe-area-inset-top) to return a non-zero value. */
+  padding-top:env(safe-area-inset-top,0px);
+}
 .view.active{display:flex;}
+/* A view's own stacking context normally sits at z-index:1, well below
+   .bnav (z-index:100) — fine, since .bnav should float over ordinary
+   page content. But full-screen modals opened INSIDE a view (e.g. the
+   Vedic Panchanga "Add Someone Else's Rashi Profile" calculator) use
+   position:fixed with a high z-index of their own (2000+); that z-index
+   only competes with siblings INSIDE this view's stacking context, so
+   .bnav still rendered on top of the whole view and clipped the bottom
+   of the modal (e.g. the "Save as Their Profile" button). Escalate the
+   view's stacking context above .bnav only while such a modal is open.
+   The same problem exists for every OTHER bottom-sheet-style modal in
+   the app (they all use align-items:flex-end, so their most important
+   content — usually a save/confirm button — sits right at the sheet's
+   bottom edge, exactly where .bnav would cover it): the generic photo
+   upload/crop modal (#mo, in Settings), the Brahmacharya break-confirm
+   sheet (#bcmo, in Settings), the B&C calendar's day-detail sheet
+   (#cdmo, in the B&C view — the same calendar this landscape pass
+   started from), and the Milestone detail sheet (#msDetailOverlay, in
+   Milestones). All of these are worse in landscape specifically, since
+   a short viewport leaves a bottom sheet's content little room to sit
+   anywhere BUT right against the bottom edge. */
+.view:has(.vp-cal-overlay.open),
+.view:has(.vp-others-overlay.open),
+.view:has(.mo.show),
+.view:has(.bcmo.show),
+.view:has(.cdmo.show),
+.view:has(.ms-detail-overlay.show){z-index:101;}
 #vj.active{position:fixed;inset:0;min-height:unset;height:100vh;height:100dvh;overflow:hidden;}
 /* Prevent the page itself from scrolling while the Jap view is active */
 html:has(#vj.active),body:has(#vj.active){overflow:hidden;height:100vh;height:100dvh;}
@@ -401,13 +448,33 @@ button.hpb.active{
 
 .ded-type-pill{padding:9px 6px;border-radius:11px;text-align:center;cursor:pointer;
   border:1.5px solid rgba(255,255,255,0.12);transition:all 0.2s;box-sizing:border-box;}
-.ded-type-pill.active{border-width:2px;box-shadow:0 0 12px rgba(255,255,255,0.08);}
+.ded-type-pill.active{border-width:1.5px;border-color:rgba(255,224,130,0.95) !important;
+  background:linear-gradient(145deg,#FFE9B0,#E8B94D) !important;
+  box-shadow:0 0 10px rgba(245,209,122,0.6),0 0 2px rgba(255,255,255,0.5),inset 0 1px 2px rgba(255,255,255,0.5) !important;}
+.ded-type-pill.active > div{color:#4a2f06 !important;text-shadow:0 1px 0 rgba(255,255,255,0.3);}
 
 /* CALENDAR */
 #vc{background:radial-gradient(ellipse at top,#061228 0%,var(--bd) 60%);padding:22px 12px 80px;overflow-y:auto;overflow-x:hidden;}
 .ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
 .cmy{font-family:'Cinzel Decorative',serif;font-size:13px;color:var(--a2);text-shadow:0 0 12px rgba(109,184,255,0.3);}
-.cg{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;width:100%;box-sizing:border-box;}
+.cg{
+  display:grid;grid-template-columns:repeat(7,1fr);gap:4px;width:100%;box-sizing:border-box;
+  /* Each cell below is a square (aspect-ratio:1), sized off this grid's
+     column WIDTH only. In portrait that's fine — width is the scarce
+     dimension, height is plentiful. In landscape the container is much
+     wider (near-full screen width) while height is short, so every
+     square cell balloons in both directions right when vertical space
+     is tightest — a 6-row month ends up needing far more height than
+     the screen has, and only the first row (plus a sliver of the
+     second) is visible before the bottom nav. Same fix pattern already
+     used for the hero deity image (--rv-w): bound the grid's width by
+     viewport HEIGHT too, so cell size shrinks to fit when height is the
+     scarce dimension instead of growing to match a wide-but-short
+     screen. Has no visible effect in normal portrait use, where 100%
+     width is already the smaller/binding constraint. */
+  max-width:min(100%, 58vh);
+  margin:0 auto;
+}
 .cdl{text-align:center;font-size:10px;color:var(--td);padding:4px 0;letter-spacing:0.5px;}
 
 /* Calendar nav buttons — premium */
@@ -562,7 +629,12 @@ button.hpb.active{
 .bsb.g .bv{color:#4DED9A;text-shadow:0 0 16px rgba(46,204,113,0.6),0 0 32px rgba(46,204,113,0.25);}
 .bsb.r .bv{color:#FF7068;text-shadow:0 0 16px rgba(231,76,60,0.6),0 0 32px rgba(231,76,60,0.25);}
 .bsb .bl{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;color:rgba(255,255,255,0.45);font-weight:600;}
-.bcal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:12px;width:100%;box-sizing:border-box;}
+.bcal{
+  display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:12px;width:100%;box-sizing:border-box;
+  /* Same landscape-oversize issue and fix as .cg above. */
+  max-width:min(100%, 58vh);
+  margin-left:auto;margin-right:auto;
+}
 .bcl{aspect-ratio:1;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;
   font-size:11px;cursor:pointer;border:1px solid transparent;min-width:0;overflow:hidden;}
 .bcl.m{background:rgba(46,204,113,0.2);border-color:rgba(46,204,113,0.4);color:var(--green);}
@@ -1220,7 +1292,7 @@ button.n28-gold-btn-danger,
 /* Two-line floating naam for RV mode */
 .fn-rv{position:absolute;pointer-events:none;z-index:10;animation:fu 2.4s ease-out forwards;
   display:flex;flex-direction:column;align-items:center;line-height:1.15;}
-.fn-rv span{font-family:'Tiro Devanagari Hindi',serif;display:block;}
+.fn-rv span{font-family:'Tiro Devanagari Hindi',serif;display:block;white-space:nowrap;}
 /* Two-line floating naam for KV mode — deliberately slower fade/rise than
    RV/SS/Radha (fu, 2.4s) so there's time to recite the name before it
    disappears, per request. */
@@ -1236,7 +1308,7 @@ button.n28-gold-btn-danger,
 /* Two-line floating naam for Samba Sadashiv (SS) mode */
 .fn-ss{position:absolute;pointer-events:none;z-index:10;animation:fu 2.4s ease-out forwards;
   display:flex;flex-direction:column;align-items:center;line-height:1.15;}
-.fn-ss span{font-family:'Tiro Devanagari Hindi',serif;display:block;}
+.fn-ss span{font-family:'Tiro Devanagari Hindi',serif;display:block;white-space:nowrap;}
 
 /* MILESTONES VIEW — dedicated tab */
 #vms{background:radial-gradient(ellipse at top,#0A1535 0%,var(--bd) 60%);padding:0;overflow:hidden;}
@@ -1254,6 +1326,8 @@ button.n28-gold-btn-danger,
 .ms-phase-title{font-family:'Cinzel Decorative',serif;font-size:13px;color:var(--a2);letter-spacing:3px;text-transform:uppercase;margin:24px 0 12px;text-align:center;text-shadow:0 0 12px rgba(109,184,255,0.4);}
 .ms-phase-sub{font-size:10px;color:var(--td);letter-spacing:2px;text-align:center;margin-top:-8px;margin-bottom:14px;}
 .ms-toggle-wrap{display:flex;justify-content:center;gap:8px;margin-bottom:18px;}
+.vt-row-settings{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:18px;}
+.vt-row-settings .vt{margin-bottom:0;}
 .ms-toggle-btn{padding:6px 16px;border-radius:20px;border:1px solid rgba(74,144,226,0.25);background:rgba(74,144,226,0.08);color:var(--td);font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.3s;}
 .ms-toggle-btn.active{background:rgba(255,215,0,0.15);border-color:rgba(255,215,0,0.4);color:var(--gold);}
 .ms-card{position:relative;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:18px;padding:16px;margin-bottom:14px;-webkit-cursor:pointer;transition:transform 0.25s ease,box-shadow 0.3s ease;overflow:hidden;}
@@ -1268,16 +1342,28 @@ button.n28-gold-btn-danger,
 .ms-card.million .ms-icon{font-size:28px;}
 @keyframes ms-shimmer{0%{background-position:-200% center;}100%{background-position:200% center;}}
 .ms-card.million::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 30%,rgba(255,215,0,0.08) 50%,transparent 70%);background-size:200% 100%;animation:ms-shimmer 3s linear infinite;border-radius:18px;pointer-events:none;}
+
+/* 9 Crore — Saakshaatkaar (direct divine vision): a distinct glowing,
+   pulsing treatment so this milestone stands out from the rest of the
+   saffron tier. */
+@keyframes ms-special-pulse{
+  0%,100%{box-shadow:0 0 22px rgba(255,153,51,0.45),inset 0 0 30px rgba(255,153,51,0.08);border-color:rgba(255,153,51,0.5);}
+  50%{box-shadow:0 0 42px rgba(255,215,0,0.85),inset 0 0 46px rgba(255,215,0,0.18);border-color:rgba(255,215,0,0.9);}
+}
+.ms-card.ms-special-glow{border-width:2px;animation:ms-special-pulse 2.2s ease-in-out infinite;}
+.ms-special-badge{position:absolute;top:12px;right:14px;font-size:10px;font-weight:700;letter-spacing:1px;color:#1a1200;background:linear-gradient(135deg,#FFE38A,#FFB700);padding:3px 10px;border-radius:20px;box-shadow:0 0 10px rgba(255,215,0,0.6);z-index:2;}
 .ms-card-header{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
 .ms-icon{font-size:22px;flex-shrink:0;}
 .ms-label{font-family:'Cinzel Decorative',serif;font-size:13px;color:var(--tl);letter-spacing:1px;}
 .ms-eng{font-size:10px;color:var(--td);letter-spacing:1px;margin-top:1px;}
 .ms-count-label{font-family:'EB Garamond',serif;font-size:11px;color:var(--a2);margin-left:auto;white-space:nowrap;}
-.ms-desc{font-size:12px;line-height:1.7;color:var(--td);margin:8px 0;font-family:'Hind Siliguri',sans-serif;
-  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;}
-.ms-desc.expanded{display:block;-webkit-line-clamp:unset;}
+.ms-link-icons{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.ms-link-btn{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer;flex-shrink:0;background:rgba(255,153,51,0.1);border:1px solid rgba(255,153,51,0.3);transition:transform 0.15s ease;}
+.ms-link-btn:active{transform:scale(0.9);}
+.ms-link-btn.play{background:transparent;border:none;}
+.ms-link-btn.edit{background:rgba(255,215,0,0.08);border-color:rgba(255,215,0,0.3);font-size:12px;}
+.ms-desc{font-size:12px;line-height:1.7;color:var(--td);margin:8px 0;font-family:'Hind Siliguri',sans-serif;max-width:none;text-align:left;}
 .ms-desc.bangla{font-family:'Noto Sans Bengali','Hind Siliguri',sans-serif;}
-.ms-read-more{font-size:10px;color:var(--a2);cursor:pointer;margin-top:2px;opacity:0.8;}
 .ms-progress-wrap{position:relative;height:3px;background:rgba(255,255,255,0.06);border-radius:3px;margin-top:10px;overflow:hidden;}
 .ms-progress-fill{height:100%;border-radius:3px;transition:width 0.6s ease;}
 .ms-progress-fill.bronze{background:linear-gradient(90deg,#B87333,#D4956A);box-shadow:0 0 8px rgba(184,115,51,0.6);}
@@ -1380,12 +1466,12 @@ button.n28-gold-btn-danger,
 .bead-frame .bead-blue.filled{
   fill:#4a90e2;
   stroke:#4a90e2;
-  filter:drop-shadow(0 0 2px rgba(74,144,226,0.55));
+  filter:drop-shadow(0 0 3px rgba(74,144,226,0.75)) drop-shadow(0 0 9px rgba(74,144,226,0.5)) drop-shadow(0 0 18px rgba(74,144,226,0.3));
 }
 .bead-frame .bead-gold.filled{
   fill:#FFD700;
   stroke:#FFD700;
-  filter:drop-shadow(0 0 3px rgba(255,215,0,0.85));
+  filter:drop-shadow(0 0 4px rgba(255,215,0,0.95)) drop-shadow(0 0 12px rgba(255,215,0,0.6)) drop-shadow(0 0 24px rgba(255,215,0,0.35));
 }
 .bead-frame .bead-guru{
   fill:transparent;
@@ -1396,11 +1482,11 @@ button.n28-gold-btn-danger,
 .bead-frame .bead-guru.filled{
   fill:#FFB700;
   stroke:#FFB700;
-  filter:drop-shadow(0 0 4px rgba(255,200,0,0.95));
+  filter:drop-shadow(0 0 5px rgba(255,200,0,1)) drop-shadow(0 0 14px rgba(255,200,0,0.65)) drop-shadow(0 0 28px rgba(255,200,0,0.4));
 }
 @keyframes beadPulse{
   0%{transform:scale(1);}
-  40%{transform:scale(1.9); filter:drop-shadow(0 0 8px rgba(255,215,0,1));}
+  40%{transform:scale(1.9); filter:drop-shadow(0 0 5px rgba(255,215,0,1)) drop-shadow(0 0 14px rgba(255,215,0,0.65)) drop-shadow(0 0 28px rgba(255,215,0,0.4));}
   100%{transform:scale(1);}
 }
 .bead-frame .bead-pulse{animation:beadPulse 0.5s ease-out;}
@@ -1476,7 +1562,7 @@ button.n28-gold-btn-danger,
   position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
   pointer-events:none;z-index:10;
   font-family:'Tiro Devanagari Hindi','Hind Siliguri',serif;
-  font-size:clamp(26px,7.5vw,44px);font-weight:700;line-height:1.6;text-align:center;
+  font-size:calc(clamp(26px,7.5vw,44px) * var(--jap-text-scale,1));font-weight:700;line-height:1.6;text-align:center;
   padding:16px;letter-spacing:1.5px;
   opacity:0;
   transition:opacity 0.22s ease;
@@ -1498,7 +1584,7 @@ button.n28-gold-btn-danger,
   position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
   pointer-events:none;z-index:10;
   font-family:'Tiro Devanagari Hindi','Hind Siliguri',serif;
-  font-size:clamp(26px,7.5vw,44px);font-weight:700;line-height:1.6;text-align:center;
+  font-size:calc(clamp(26px,7.5vw,44px) * var(--jap-text-scale,1));font-weight:700;line-height:1.6;text-align:center;
   padding:16px;letter-spacing:1.5px;
   opacity:0;
   transition:opacity 0.22s ease;
@@ -1529,7 +1615,7 @@ button.n28-gold-btn-danger,
   position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
   pointer-events:none;z-index:10;
   font-family:'Tiro Devanagari Hindi','Hind Siliguri',serif;
-  font-size:clamp(17px,4.7vw,30px);font-weight:700;line-height:1.55;text-align:center;
+  font-size:calc(clamp(17px,4.7vw,30px) * var(--jap-text-scale,1));font-weight:700;line-height:1.55;text-align:center;
   padding:16px;letter-spacing:0.5px;
   opacity:0;
   transition:opacity 0.22s ease;
@@ -1555,12 +1641,12 @@ button.n28-gold-btn-danger,
    which is what caused the Kaam Vijay floating verse text to overflow off
    both edges of the screen instead of wrapping, and to render at a
    different size than the persistent (settled) text underneath it. */
-.hk-float-name.kaam-float-name{white-space:normal;width:calc(100% - 24px);font-size:clamp(17px,4.7vw,30px);line-height:1.55;}
+.hk-float-name.kaam-float-name{white-space:normal;width:calc(100% - 24px);font-size:calc(clamp(17px,4.7vw,30px) * var(--jap-text-scale,1));line-height:1.55;}
 
 /* HK floating name animation — rises upward from center */
 .hk-float-name{position:absolute;pointer-events:none;z-index:11;animation:hkRise 2.2s ease-out forwards;
   font-family:'Tiro Devanagari Hindi','Hind Siliguri',serif;
-  font-size:clamp(26px,7.5vw,44px);font-weight:700;line-height:1.6;text-align:center;
+  font-size:calc(clamp(26px,7.5vw,44px) * var(--jap-text-scale,1));font-weight:700;line-height:1.6;text-align:center;
   left:50%;transform:translateX(-50%);top:50%;margin-top:-80px;letter-spacing:1.5px;white-space:nowrap;}
 .hk-float-name div{display:block;}
 
@@ -2874,6 +2960,85 @@ body.naam-bn #naamLangBtnSa{opacity:0.55;}
   box-shadow:0 0 10px rgba(255,215,0,0.5);
 }
 
+/* ── Jap Display Text settings (gear) icon — mirrors the photo settings
+   gear above but sits on the LEFT and opens a small panel to adjust the
+   size of the jap chanting text (राधा / mantras). ── */
+.jap-text-settings-btn{
+  position:absolute; top:8px; left:8px; z-index:40;
+  width:26px; height:26px; border-radius:50%;
+  background:rgba(6,13,31,0.55); border:1px solid rgba(255,215,0,0.35);
+  color:#FFD700; font-size:13px; line-height:1;
+  display:flex; align-items:center; justify-content:center; padding:0;
+  cursor:pointer; -webkit-tap-highlight-color:transparent;
+  box-shadow:0 2px 8px rgba(0,0,0,0.35);
+}
+.jap-text-settings-btn.active{
+  background:rgba(255,215,0,0.28); border-color:#FFD700;
+  box-shadow:0 0 10px rgba(255,215,0,0.5);
+}
+.jap-text-settings-panel{
+  position:absolute; top:40px; left:8px; z-index:42;
+  width:170px; padding:10px 12px 12px;
+  background:rgba(6,13,31,0.92); border:1px solid rgba(255,215,0,0.35);
+  border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,0.5);
+  display:none; flex-direction:column; gap:8px;
+}
+.jap-text-settings-panel.open{display:flex;}
+.jtsp-title{font-size:11px;letter-spacing:1px;color:var(--gold);font-weight:700;text-transform:uppercase;opacity:0.85;}
+.jtsp-row{display:flex;align-items:center;justify-content:space-between;gap:6px;}
+.jtsp-lbl{font-size:12px;color:var(--tl);font-family:Inter,sans-serif;}
+.jtsp-ctrl{display:flex;align-items:center;gap:6px;}
+.jtsp-ctrl button{
+  width:22px;height:22px;border-radius:50%;border:1px solid rgba(255,215,0,0.4);
+  background:rgba(255,215,0,0.1);color:#FFD700;font-size:14px;line-height:1;
+  display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;
+}
+.jtsp-ctrl button:active{background:rgba(255,215,0,0.28);}
+.jtsp-val{min-width:34px;text-align:center;font-size:11.5px;color:var(--tl);font-variant-numeric:tabular-nums;}
+.jtsp-reset{
+  margin-top:2px;background:rgba(232,51,109,0.12);border:1px solid rgba(232,51,109,0.3);
+  color:var(--rl);font-size:11px;border-radius:8px;padding:6px 8px;cursor:pointer;
+  font-family:Inter,sans-serif;
+}
+
+/* Live preview shown in the Jap display itself while the Text Size panel
+   is open — grows/shrinks immediately as +/- is tapped, so the person can
+   see the actual size before it's applied to real chanting text. Sized per
+   currently-selected jap mode (radha/RV/SS/HK/KV/Kaam/Ram) to match what
+   that mode actually renders at while chanting — see buildJapTextDemo in
+   app.js, which fills this container and picks the right jtd-* classes. */
+.jap-text-demo{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  width:calc(100% - 24px); max-width:340px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+  font-family:'Tiro Devanagari Hindi',serif; font-weight:700; text-align:center;
+  pointer-events:none; z-index:41; opacity:0; transition:opacity 0.18s ease;
+}
+.jap-text-demo.show{opacity:1;}
+.jap-text-demo div,.jap-text-demo span{display:block;}
+/* राधा — matches the flying-burst size in spawn() (110–170px random, so
+   this uses the midpoint, 140px, times the same scale var). */
+.jtd-radha{font-size:calc(140px * var(--jap-text-scale,1));color:#FFD700;
+  text-shadow:0 0 30px rgba(255,215,0,0.9);letter-spacing:1px;}
+/* Radha Vallabh / Saamb Sadashiv — matches spawnRV/spawnSS (55–80px first
+   line, ×0.85 second line random, so midpoints 67px/57px times scale). */
+.jtd-line1{font-size:calc(67px * var(--jap-text-scale,1));color:#FFD700;
+  text-shadow:0 0 30px rgba(255,215,0,0.9);white-space:nowrap;}
+.jtd-line2{font-size:calc(57px * var(--jap-text-scale,1));color:#6DB8FF;
+  text-shadow:0 0 30px rgba(109,184,255,0.9);white-space:nowrap;}
+/* Hare Krishna Mahamantra / Ram Vijay Mantra — matches #hkPersist/#ramPersist. */
+.jtd-hk{font-size:calc(clamp(26px,7.5vw,44px) * var(--jap-text-scale,1));
+  line-height:1.6;color:#FFD700;text-shadow:0 0 20px rgba(255,215,0,0.85);letter-spacing:1.5px;}
+/* Krishnay Vasudevay — approximates spawnKV's auto-fit sizing (first
+   half-verse slightly larger than the second, like its baseMax/×0.85). */
+.jtd-kv-1{font-size:calc(45px * var(--jap-text-scale,1));color:#FFD700;
+  text-shadow:0 0 20px rgba(255,215,0,0.85);letter-spacing:1px;}
+.jtd-kv-2{font-size:calc(38px * var(--jap-text-scale,1));color:#FFD700;
+  text-shadow:0 0 20px rgba(255,215,0,0.85);letter-spacing:1px;}
+/* Kaam Vijay — matches #kaamPersist. */
+.jtd-kaam{font-size:calc(clamp(17px,4.7vw,30px) * var(--jap-text-scale,1));
+  line-height:1.55;color:#FFD700;text-shadow:0 0 20px rgba(255,215,0,0.85);letter-spacing:0.5px;}
+
 /* While editing: make each photo draggable and outline it so it reads as
    "selected"; the images are normally pointer-events:none (decorative). */
 .tz.photo-edit-mode .rv-wm,
@@ -2924,6 +3089,17 @@ body.naam-bn #naamLangBtnSa{opacity:0.55;}
 .tz .rv-wm{
   position:absolute; top:var(--rv-top); left:50%; transform:translateX(-50%);
   width:var(--rv-w); height:auto; max-height:78%;
+  /* On short/wide (landscape) screens, --rv-w is driven mostly by vw and
+     can compute an aspect-correct height taller than the 78% cap above.
+     Without object-fit, a plain <img> defaults to object-fit:fill, so the
+     browser squashes the image content to fit the shrunk box instead of
+     scaling it proportionally — the image looks fine in portrait (where
+     the cap rarely binds) and stretched in landscape (where it does).
+     The side images (.hitju-wm/.gurudev-wm below) never had this problem
+     because they only set width + height:auto with no competing
+     max-height to conflict with. contain scales to fit within the box
+     while preserving aspect ratio, same as those already do implicitly. */
+  object-fit:contain;
   opacity:.50;
   filter:none;
   pointer-events:none; user-select:none; z-index:1;
@@ -3061,6 +3237,8 @@ body.gaudiya-mode .tz .gurudev-wm{display:none !important;animation:none !import
 .tz .cm-wm{
   position:absolute; top:var(--rv-top); left:50%; transform:translateX(-50%);
   width:var(--rv-w); height:auto; max-height:78%;
+  /* Same landscape-squash issue and fix as .rv-wm above — see its comment. */
+  object-fit:contain;
   opacity:.6;
   filter:drop-shadow(0 0 22px rgba(245,209,122,.45));
   pointer-events:none; user-select:none; z-index:1;
@@ -3849,3 +4027,16 @@ body.gaudiya-mode .tz .gurudev-wm{display:none !important;animation:none !import
   0%, 100% { box-shadow: 0 0 8px 0 rgba(70, 150, 255, 0.35); }
   50% { box-shadow: 0 0 22px 5px rgba(70, 150, 255, 0.8); }
 }
+
+/* ── Milestone video link buttons (N&M) ── */
+.ms-vid-wrap{display:inline-flex;align-items:center;gap:6px;margin-left:8px;}
+.ms-vid-btn,.ms-vid-edit{width:32px;height:26px;border-radius:7px;display:inline-flex;
+  align-items:center;justify-content:center;font-size:12px;cursor:pointer;line-height:1;flex-shrink:0;}
+/* Brand logo (YouTube / Instagram / Telegram / Drive) sits inside, so the
+   button itself stays a neutral chip instead of a coloured play pill. */
+.ms-vid-btn{border:1px solid rgba(255,255,255,0.16);background:rgba(255,255,255,0.06);color:#fff;padding:0 3px;}
+.ms-vid-btn img{width:18px;height:18px;display:block;border-radius:4px;}
+.ms-vid-locked img{opacity:0.55;}
+.ms-vid-locked{border-style:dashed;}
+.ms-vid-edit{border:1px solid rgba(245,209,122,0.35);color:var(--gold);background:rgba(245,209,122,0.10);}
+.ms-vid-btn:active,.ms-vid-edit:active{transform:scale(0.94);}

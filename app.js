@@ -676,7 +676,6 @@ const App = {
     stotrams: {},
     brahma: {},
     customSt: [],
-    customJaps: [],
     timerHistory: {},
     timer28History: {},
     sankalpas: [],
@@ -749,6 +748,7 @@ const App = {
     sriBranch: "ramananda",  // when sampraday === "sri" — "ramanuj" | "ramananda"
     hkLang: "hi",
     naamLang: "sa",  // Radha / Radha Vallabh / Samba Sadashiv jap text script: "sa" (Sanskrit/Devanagari) or "bn" (Bangla)
+    stotramLang: "bn",  // Stotram list names + lyrics script: "hi" (Hindi/Devanagari) or "bn" (Bangla)
     lbOptIn: false,        // leaderboard opt-in
     lbDisplayName: "",     // leaderboard display name
     driveBackupDailyEnabled: false,  // opt-in daily auto-backup to Google Drive
@@ -1172,6 +1172,7 @@ const App = {
     }
     if (!this.S.hkLang) this.S.hkLang = "hi";
     if (!this.S.naamLang) this.S.naamLang = "sa";
+    if (!this.S.stotramLang) this.S.stotramLang = "bn";
     if (this.S.bgIskconAcharya === undefined) this.S.bgIskconAcharya = 1;
     if (this.S.bgIskconGurudev === undefined) this.S.bgIskconGurudev = 1;
     if (this.S.bgCM === undefined) this.S.bgCM = 1;
@@ -1484,19 +1485,12 @@ const App = {
       Object.values(this.S.historyKaam || {}).reduce((a, b) => a + b, 0) -
         (this.S.nameJapDeductKaam || 0),
     );
-    // Custom (user-created) japs/naam -- each entry's own lifetime tap count,
-    // summed in as requested so they count toward the combined target too.
-    const customTotal = (this.S.customJaps || []).reduce(
-      (a, j) => a + (j.count || 0),
-      0,
-    );
     return {
       radha: radhaTotal,
       rv: rvTotal,
       kv: kvTotal,
       kaam: kaamTotal,
-      custom: customTotal,
-      total: radhaTotal + rvTotal + kvTotal + kaamTotal + customTotal,
+      total: radhaTotal + rvTotal + kvTotal + kaamTotal,
     };
   },
 
@@ -2213,6 +2207,10 @@ const App = {
   ht(e) {
     if (isGhostMode()) return; // ghost mode: read-only, no jap
     if (window.japPhotoEditMode) return; // photo edit mode: dragging/resizing photos, not counting
+    // First-ever tap on the counter: surface the tutorial hint (see
+    // _firstTapHintWatch/_firstTapHintDismiss below). Purely a UI nudge —
+    // never blocks or delays the tap itself.
+    _maybeShowFirstTapHint();
     // Mark main Jap as the actively-tapped mode (see _activeJapMode below).
     this._activeJapMode = "main";
     // Suppress synthesized mousedown that follows a touchstart on the same tap
@@ -2719,6 +2717,129 @@ function setSoundType(v) {
   playMalaSound();
 }
 
+// ==========================================
+// JAP TEXT SIZE PREFERENCE
+// ------------------------------------------
+// A small gear icon on the LEFT of the Jap tap area (#tz) opens a panel
+// where the user can bump the chanting text (राधा / mantras) bigger or
+// smaller. Mirrors the existing photo-settings gear on the right in
+// storage style (device-only localStorage, applied instantly via a CSS
+// custom property) so both gears behave consistently. While the panel is
+// open, a live "राधा" demo text sits in the Jap display itself and grows
+// or shrinks with every +/- tap, so the size is seen before it's applied.
+// ==========================================
+const JAP_TEXT_PREF_STORE_KEY = 'japTextPrefs';
+const JAP_TEXT_SCALE_MIN = 0.7, JAP_TEXT_SCALE_MAX = 3.0, JAP_TEXT_SCALE_STEP = 0.1;
+
+function loadJapTextPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem(JAP_TEXT_PREF_STORE_KEY) || '{}');
+    return { scale: (typeof p.scale === 'number' && p.scale > 0) ? p.scale : 1 };
+  } catch (e) { return { scale: 1 }; }
+}
+function saveJapTextPrefsToStorage() {
+  try { localStorage.setItem(JAP_TEXT_PREF_STORE_KEY, JSON.stringify(window._japTextPrefs || {})); } catch (e) {}
+}
+window._japTextPrefs = loadJapTextPrefs();
+
+// Pushes the current scale onto :root as a CSS var (so every jap text
+// element — hkPersist, kvPersist, kaamPersist, ramPersist, the floating
+// राधा burst, the demo preview, etc — picks it up live) and refreshes the
+// panel's percentage label + the demo preview if either is on screen.
+window.applyJapTextPrefs = function() {
+  const p = window._japTextPrefs || { scale: 1 };
+  document.documentElement.style.setProperty('--jap-text-scale', p.scale);
+  const scaleVal = document.getElementById('japTextScaleVal');
+  if (scaleVal) scaleVal.textContent = Math.round(p.scale * 100) + '%';
+};
+window.applyJapTextPrefs();
+
+// Reads the current text-size multiplier for use in JS-computed font sizes
+// (the flying राधा burst and the RV/SS two-line bursts set font-size
+// directly in JS rather than via CSS, so they can't pick up the CSS var).
+window.getJapTextScale = function() {
+  return (window._japTextPrefs && window._japTextPrefs.scale) || 1;
+};
+
+// Builds the Jap Text Size panel's live preview to match whichever jap
+// mode (राधा / RV / SS / HK / KV / Kaam / Ram) is currently selected —
+// each mode renders its chanting text at a different size on screen, so
+// the demo mirrors that mode's actual text and font-size classes instead
+// of always showing राधा (see .jtd-* rules in style.css).
+window.buildJapTextDemo = function() {
+  const mode = (App.S && App.S.japMode) || 'radha';
+  const _nt = (typeof naamText === 'function') ? naamText() : null;
+  if (mode === 'rv' && _nt) {
+    return '<div class="jtd-line1">' + _nt.rv1 + '</div><div class="jtd-line2">' + _nt.rv2 + '</div>';
+  }
+  if (mode === 'ss' && _nt) {
+    return '<div class="jtd-line1">' + _nt.ss1 + '</div><div class="jtd-line2">' + _nt.ss2 + '</div>';
+  }
+  if (mode === 'hk') {
+    const lang = (App.S && App.S.hkLang) || 'hi';
+    const text = lang === 'bn' ? HK_TEXT_BN : HK_TEXT;
+    return text.split('\n').map((l) => '<div class="jtd-hk">' + l + '</div>').join('');
+  }
+  if (mode === 'ram' && _nt) {
+    return '<div class="jtd-hk">' + _nt.ram1 + '</div><div class="jtd-hk">' + _nt.ram2 + '</div>';
+  }
+  if (mode === 'kv' && _nt) {
+    const kv1Lines = _nt.kv1.split('\n');
+    const kv2Lines = _nt.kv2.split('\n');
+    return kv1Lines.map((l) => '<div class="jtd-kv-1">' + l + '</div>').join('') +
+      kv2Lines.map((l) => '<div class="jtd-kv-2">' + l + '</div>').join('');
+  }
+  if (mode === 'kaam') {
+    const kaamText = (App.S && App.S.naamLang === 'bn') ? KAAM_TEXT_BN : KAAM_TEXT_SA;
+    return kaamText.split('\n').map((l) => '<div class="jtd-kaam">' + l + '</div>').join('');
+  }
+  // Default: राधा
+  return '<div class="jtd-radha">' + (_nt ? _nt.radha : 'राधा') + '</div>';
+};
+
+window.toggleJapTextSettingsPanel = function(e) {
+  if (e) e.stopPropagation();
+  const panel = document.getElementById('japTextSettingsPanel');
+  const btn = document.getElementById('japTextSettingsBtn');
+  const demo = document.getElementById('japTextDemo');
+  if (!panel) return;
+  const opening = !panel.classList.contains('open');
+  panel.classList.toggle('open', opening);
+  if (btn) btn.classList.toggle('active', opening);
+  if (demo) {
+    demo.classList.toggle('show', opening);
+    if (opening) demo.innerHTML = window.buildJapTextDemo();
+  }
+  if (opening) window.applyJapTextPrefs();
+};
+
+window.adjustJapTextPref = function(kind, dir) {
+  const p = window._japTextPrefs || (window._japTextPrefs = { scale: 1 });
+  p.scale = Math.max(JAP_TEXT_SCALE_MIN, Math.min(JAP_TEXT_SCALE_MAX, Math.round((p.scale + dir * JAP_TEXT_SCALE_STEP) * 100) / 100));
+  window.applyJapTextPrefs();
+  saveJapTextPrefsToStorage();
+};
+
+window.resetJapTextPrefs = function() {
+  window._japTextPrefs = { scale: 1 };
+  window.applyJapTextPrefs();
+  saveJapTextPrefsToStorage();
+  if (typeof toast === 'function') toast('Jap text size reset 🙏');
+};
+
+// Tapping anywhere outside the panel/gear closes it (the panel itself and
+// the gear button both stopPropagation, so this only fires on outside taps).
+document.addEventListener('click', function() {
+  const panel = document.getElementById('japTextSettingsPanel');
+  const btn = document.getElementById('japTextSettingsBtn');
+  const demo = document.getElementById('japTextDemo');
+  if (panel && panel.classList.contains('open')) {
+    panel.classList.remove('open');
+    if (btn) btn.classList.remove('active');
+    if (demo) demo.classList.remove('show');
+  }
+});
+
 // Floating राधा spawn
 let acf = false;
 function spawn(e, zone) {
@@ -2734,7 +2855,7 @@ function spawn(e, zone) {
   const el = document.createElement("div");
   el.className = "fn";
   el.textContent = naamText().radha;
-  const fs = 110 + Math.random() * 60;
+  const fs = (110 + Math.random() * 60) * getJapTextScale();
   el.style.left = x - fs * 0.6 + "px";
   el.style.top = y - fs * 0.4 + "px";
   el.style.fontSize = fs + "px";
@@ -2759,7 +2880,7 @@ function spawnRV(e, zone) {
   }
   const el = document.createElement("div");
   el.className = "fn-rv";
-  const fs = 55 + Math.random() * 25;
+  const fs = (55 + Math.random() * 25) * getJapTextScale();
   const _nt = naamText();
   el.innerHTML =
     '<span style="font-size:' +
@@ -2790,7 +2911,7 @@ function spawnSS(e, zone) {
   }
   const el = document.createElement("div");
   el.className = "fn-ss";
-  const fs = 55 + Math.random() * 25;
+  const fs = (55 + Math.random() * 25) * getJapTextScale();
   const _nt = naamText();
   el.innerHTML =
     '<span style="font-size:' +
@@ -2860,9 +2981,13 @@ function spawnKV() {
   // and desktop (iPad/Windows), which keep the original larger size —
   // narrow phone screens were overflowing off both edges at the old size.
   const isPhone = Math.min(window.innerWidth, window.innerHeight) < 600;
-  const maxBoxW = Math.min(r.width - (isPhone ? 32 : 24), isPhone ? 300 : 340);
-  const baseMax = isPhone ? 34 + Math.random() * 14 : 55 + Math.random() * 25; // keep the original size flavor/randomness
-  const minFs = isPhone ? 14 : 20;
+  const _japScale = getJapTextScale();
+  // A bit of extra box width is granted alongside the scale bump (capped)
+  // so a larger Text Size setting can actually grow the KV lines instead
+  // of just re-hitting the same width-fit ceiling every time.
+  const maxBoxW = Math.min(r.width - (isPhone ? 32 : 24), isPhone ? 300 : 340) * Math.min(_japScale, 1.3);
+  const baseMax = (isPhone ? 34 + Math.random() * 14 : 55 + Math.random() * 25) * _japScale; // keep the original size flavor/randomness
+  const minFs = (isPhone ? 14 : 20) * _japScale;
   const sizes = allLines.map((line, i) =>
     _kvFitFontSize(line, maxBoxW, i < kv1Lines.length ? baseMax : baseMax * 0.85, minFs)
   );
@@ -3262,6 +3387,15 @@ const RJAP_PWA_URL = "https://radharadharadha.vercel.app/";
 // URL itself ever changes (e.g. moved to a different Drive account/folder).
 const RJAP_APK_URL = "https://drive.google.com/drive/folders/1f5LsU7nL0KycW1_KkTu6lWivrEnd8l48";
 
+// Fallback direct-download link for the "Manual APK Link" card, used
+// whenever no developer-set link has been loaded from Firestore yet —
+// most notably for signed-out visitors, since Firestore reads require
+// auth and we can't fetch config/manualApkLink for them. This keeps the
+// card always tappable instead of dead-ending on "sign in first". Once
+// the developer saves a link (see saveManualApkLink below), that link
+// takes over as soon as it's loaded (i.e. once the user signs in).
+const RJAP_APK_FALLBACK_URL = "https://drive.google.com/file/d/1FfS0LR_a9NiKErFtwuYJlbpkgTSc2D63/view?usp=drivesdk";
+
 function _getAppUrl() {
   return RJAP_PWA_URL;
 }
@@ -3315,6 +3449,38 @@ async function openExternalLink(url) {
   try { window.open(url, "_blank"); } catch (_e) {}
 }
 
+// ── First-tap tutorial hint ──────────────────────────────────────
+// Shown once, inline above the tap zone, the first time the person
+// ever taps the Jap counter. Same tutorial link as the Settings ›
+// "App Tutorial Video" row. Never blocks counting; dismissible via
+// either the bar itself (watch) or the ✕ (dismiss) — either one
+// marks it seen for good.
+const FIRST_TAP_HINT_SEEN_KEY = "firstTapTutorialSeen";
+const APP_TUTORIAL_VIDEO_URL = "https://youtu.be/IsrueqcsHL4?si=Nqn9io_MJCsrNi4Z";
+
+function _maybeShowFirstTapHint() {
+  try {
+    if (localStorage.getItem(FIRST_TAP_HINT_SEEN_KEY)) return;
+  } catch (_e) {}
+  const el = document.getElementById("firstTapTutorialHint");
+  if (el) el.style.display = "flex";
+}
+
+function _markFirstTapHintSeen() {
+  const el = document.getElementById("firstTapTutorialHint");
+  if (el) el.style.display = "none";
+  try { localStorage.setItem(FIRST_TAP_HINT_SEEN_KEY, "1"); } catch (_e) {}
+}
+
+function _firstTapHintWatch() {
+  _markFirstTapHintSeen();
+  openExternalLink(APP_TUTORIAL_VIDEO_URL);
+}
+
+function _firstTapHintDismiss() {
+  _markFirstTapHintSeen();
+}
+
 function shareApp() {
   const url = _getAppUrl();
   const shareText =
@@ -3357,32 +3523,64 @@ async function _loadManualApkLink() {
   _renderManualApkCard();
 }
 
+// Effective link the card should download from: the developer's
+// Firestore-saved link if one has been loaded, otherwise the hardcoded
+// fallback — so there is always something to tap, signed in or not.
+function _effectiveManualApkUrl() {
+  return _manualApkLinkCache || RJAP_APK_FALLBACK_URL;
+}
+
 function _renderManualApkCard() {
   const titleEl = document.getElementById("manualApkTitle");
   const statusEl = document.getElementById("manualApkStatus");
   const rowEl = document.getElementById("manualApkRow");
   const editWrap = document.getElementById("manualApkEditWrap");
+  const editIconEl = document.getElementById("manualApkEditIcon");
+  const chevronEl = document.getElementById("manualApkChevron");
   if (!titleEl || !statusEl) return;
 
+  const effectiveUrl = _effectiveManualApkUrl();
+
   if (isDeveloper()) {
-    titleEl.textContent = "🛠️ Manual APK Link (Developer)";
-    statusEl.textContent = "Paste a Google Drive link below and tap Save — every user sees it instantly.";
-    if (editWrap) editWrap.style.display = "block";
+    // The row itself now always downloads, same as for regular users —
+    // the pencil icon is the only thing that opens the paste-a-link
+    // editor, so developers don't lose the ability to just grab the APK.
+    const isOpen = !!window._manualApkEditOpen;
+    titleEl.textContent = "Download APK file";
+    statusEl.textContent = _manualApkLinkCache
+      ? "Tap to download. Tap ✏️ to replace the link."
+      : "Tap to download (default link). Tap ✏️ to set your own.";
+    if (editIconEl) editIconEl.style.display = "flex";
+    if (editWrap) editWrap.style.display = isOpen ? "block" : "none";
+    if (chevronEl) chevronEl.style.transform = isOpen ? "rotate(90deg)" : "rotate(0deg)";
     const input = document.getElementById("manualApkInput");
     if (input && !input.value) input.value = _manualApkLinkCache || "";
-    if (rowEl) rowEl.onclick = null; // whole-row tap disabled for the developer; Save drives this now
+    if (rowEl) rowEl.onclick = () => openExternalLink(effectiveUrl);
   } else {
+    if (editIconEl) editIconEl.style.display = "none";
     if (editWrap) editWrap.style.display = "none";
-    if (_manualApkLinkCache) {
-      titleEl.textContent = "Download APK file";
+    titleEl.textContent = "Download APK file";
+    if (!fbUser) {
+      // Not signed in — Firestore reads require auth, so we can't fetch
+      // the developer's link yet. Give the fallback link instead of
+      // dead-ending on "sign in first"; signing in will swap in the
+      // developer's own link automatically once it loads.
+      statusEl.textContent = "Tap to download the APK";
+    } else if (_manualApkLinkCache) {
       statusEl.textContent = "Tap to download the APK from a developer-shared link";
-      if (rowEl) rowEl.onclick = () => openExternalLink(_manualApkLinkCache);
     } else {
-      titleEl.textContent = "Download APK file";
-      statusEl.textContent = "Developer hasn't shared a link yet";
-      if (rowEl) rowEl.onclick = () => toast("Developer hasn't shared a link yet 🙏");
+      statusEl.textContent = "Tap to download the APK";
     }
+    if (rowEl) rowEl.onclick = () => openExternalLink(effectiveUrl);
   }
+}
+
+// Developer-only: toggles the paste-a-link editor open/closed. Wired to
+// the pencil icon in index.html (manualApkEditIcon), kept separate from
+// the row's own onclick so tapping the row always downloads instead.
+function toggleManualApkEdit() {
+  window._manualApkEditOpen = !window._manualApkEditOpen;
+  _renderManualApkCard();
 }
 
 async function saveManualApkLink() {
@@ -3678,7 +3876,7 @@ function initJapModeUI() {
     App.S.ramanandiMode ? tgR.classList.add("on") : tgR.classList.remove("on");
   if (App.S.ramanandiMode) document.body.classList.add("ramanandi-mode");
   if (typeof renderSampradaySelector === "function") renderSampradaySelector();
-  window._dedTypes = new Set([App.S.trahimamMode ? "ss" : App.S.ramanandiMode ? "ram" : "radha"]);
+  window._dedTypes = new Set(); // Gift section: unselected by default
   _placeTarget28Card();
   if (typeof applyBgPhotos === "function") applyBgPhotos();
   // Init Horizon Mode toggle state
@@ -3693,6 +3891,12 @@ function initJapModeUI() {
   // Apply all language-sensitive labels on load
   applyHKLangLabels(App.S.hkLang || "hi");
   applyNaamLangLabels(App.S.naamLang || "sa");
+  // Init Settings-header Stotram language toggle (Hindi/Bangla) state
+  const setLangHiBtn = document.getElementById("setLangHi");
+  const setLangBnBtn = document.getElementById("setLangBn");
+  const curStLang = App.S.stotramLang || "bn";
+  if (setLangHiBtn) setLangHiBtn.classList.toggle("active", curStLang === "hi");
+  if (setLangBnBtn) setLangBnBtn.classList.toggle("active", curStLang === "bn");
   try { populateSettingsUI(); } catch (_e) {}
 }
 
@@ -3702,7 +3906,6 @@ function toggleNaamSel() {
   const btn = document.getElementById("naamSelBtn");
   dd.classList.toggle("show");
   btn.classList.toggle("open");
-  if (dd.classList.contains("show")) renderCustomJapDropdown();
   // Close on outside click
   if (dd.classList.contains("show")) {
     setTimeout(() => {
@@ -4070,6 +4273,16 @@ function fmtIN(n) {
 }
 
 // setSyncPill
+// Display-only watchdog: if the pill is still showing "syncing" 2 minutes
+// after being set (from ANY caller — fbAutoSync, fbPushFull, the manual
+// Sync button, etc.), flip what's SHOWN to "Sync failed". This never
+// touches any actual sync call — fbAutoSync()/fbPushFull()/etc keep
+// running exactly as before in the background and will still land
+// normally if/when they finish; this only stops the pill from silently
+// sitting on "Syncing…" forever. Any other pill update (success, error,
+// or a fresh "syncing" call) clears and restarts this timer.
+let _syncPillWatchdogTimer = null;
+const SYNC_PILL_WATCHDOG_MS = 120000;
 function setSyncPill(state, text) {
   const p = document.getElementById("syncPill");
   const tx = document.getElementById("syncPillText");
@@ -4078,6 +4291,35 @@ function setSyncPill(state, text) {
     "sync-pill" +
     (state === "syncing" ? " syncing" : state === "error" ? " error" : "");
   tx.textContent = text;
+
+  if (_syncPillWatchdogTimer) {
+    clearTimeout(_syncPillWatchdogTimer);
+    _syncPillWatchdogTimer = null;
+  }
+  if (state === "syncing") {
+    _syncPillWatchdogTimer = setTimeout(() => {
+      _syncPillWatchdogTimer = null;
+      const p2 = document.getElementById("syncPill");
+      const tx2 = document.getElementById("syncPillText");
+      // Only overwrite if nothing else has already updated the pill —
+      // classList still says "syncing" means no real outcome has landed yet.
+      if (p2 && tx2 && p2.classList.contains("syncing")) {
+        p2.className = "sync-pill error";
+        tx2.textContent = "Sync failed";
+      }
+      // If the manual Sync button caused this, free it up so it can be
+      // pressed again right away — it's meant to be usable as a backup
+      // at any time, even while the earlier attempt is still pending.
+      if (typeof _fbManualSyncInFlight !== "undefined" && _fbManualSyncInFlight) {
+        _fbManualSyncInFlight = false;
+        const btn = document.getElementById("fbManualSyncBtn");
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "❌ Sync failed — tap to retry";
+        }
+      }
+    }, SYNC_PILL_WATCHDOG_MS);
+  }
 }
 
 // ── View Switcher ──
@@ -4505,10 +4747,10 @@ function tgs(k) {
     // Auto-switch jap mode so only valid options are visible at the top toggle
     if (App.S.trahimamMode) {
       if (App.S.japMode !== "ss") switchJapMode("ss");
-      window._dedTypes = new Set(["ss"]);
+      window._dedTypes = new Set();
     } else {
       if (App.S.japMode === "ss") switchJapMode("radha");
-      window._dedTypes = new Set(["radha"]);
+      window._dedTypes = new Set();
     }
     window._dedAmounts = {};
     if (typeof renderDedTypePanels === "function") renderDedTypePanels();
@@ -4554,10 +4796,10 @@ function tgs(k) {
     // Auto-switch jap mode so only valid options are visible at the top toggle
     if (App.S.ramanandiMode) {
       if (App.S.japMode !== "ram") switchJapMode("ram");
-      window._dedTypes = new Set(["ram"]);
+      window._dedTypes = new Set();
     } else {
       if (App.S.japMode === "ram") switchJapMode("radha");
-      window._dedTypes = new Set(["radha"]);
+      window._dedTypes = new Set();
     }
     window._dedAmounts = {};
     if (typeof renderDedTypePanels === "function") renderDedTypePanels();
@@ -4594,7 +4836,7 @@ function tgs(k) {
     if (App.S.trahimamMode) { App.S.trahimamMode = false; document.body.classList.remove("trahimam-mode"); const tgT = document.getElementById("tgTrahimam"); if (tgT) tgT.classList.remove("on"); if (App.S.japMode === "ss") switchJapMode("radha"); }
     if (App.S.ramanandiMode) { App.S.ramanandiMode = false; document.body.classList.remove("ramanandi-mode"); const tgR = document.getElementById("tgRamanandi"); if (tgR) tgR.classList.remove("on"); if (App.S.japMode === "ram") switchJapMode("radha"); }
     App.S.sampraday = which;
-    window._dedTypes = new Set(["radha"]);
+    window._dedTypes = new Set();
     window._dedAmounts = {};
     if (typeof renderDedTypePanels === "function") renderDedTypePanels();
     App.save();
@@ -5390,7 +5632,7 @@ function removeNameJapDeduct() {
 // each with its own lifetime total, its own jap/mala input, and its own
 // live "remaining after gift" preview — plus a combined preview of
 // everything about to be gifted, shown before the Dedicate button.
-window._dedTypes = new Set(["radha"]);
+window._dedTypes = new Set();
 window._dedAmounts = {}; // type -> jap amount currently entered (unsaved, in-progress)
 window._dedStotrams = window._dedStotrams || []; // [{name, count}] manually entered stotram gifts (unsaved, in-progress)
 
@@ -5400,7 +5642,7 @@ function _dedTypeMeta(type) {
   if (type === "hk") return { label: "Hare Krishna", color: "#c9a7ff" };
   if (type === "ss") return { label: "Samba Sadashiv", color: "#ffb86c" };
   if (type === "ram") return { label: "Raam Vijay Mantra", color: "#FF9933" };
-  if (type === "kaam") return { label: "Kaam Vijay", color: "#FF6B9D" };
+  if (type === "kaam") return { label: "Kaam Vijay", color: "#B8C4F5" };
   return { label: "Radha", color: "#f5c842" };
 }
 
@@ -5476,11 +5718,8 @@ function _dedAdjustCounter(type, delta) {
 
 function toggleDedicationType(type, el) {
   if (window._dedTypes.has(type)) {
-    // Don't allow deselecting the last remaining type
-    if (window._dedTypes.size > 1) {
-      window._dedTypes.delete(type);
-      delete window._dedAmounts[type];
-    }
+    window._dedTypes.delete(type);
+    delete window._dedAmounts[type];
   } else {
     window._dedTypes.add(type);
   }
@@ -8072,7 +8311,6 @@ function _buildBackupPayload() {
     stotrams: App.S.stotrams || {},
     brahma: App.S.brahma || {},
     customSt: App.S.customSt || [],
-    customJaps: App.S.customJaps || [],
     sankalpas: App.S.sankalpas || [],
     occasions: App.S.occasions || {},
     ms: App.S.ms || 108,
@@ -8263,7 +8501,6 @@ function importAllData(input) {
       App.S.stotrams = data.stotrams || {};
       App.S.brahma = data.brahma || {};
       App.S.customSt = data.customSt || [];
-      App.S.customJaps = data.customJaps || [];
       App.S.sankalpas = data.sankalpas || [];
       App.S.occasions = data.occasions || {};
       App.S.ms = data.ms || 108;
@@ -8445,10 +8682,29 @@ function renderVelocityTracker() {
 // ── Milestones "Consideration" ──────────────────────────────────────────
 // Lets each user choose which jap types count toward their Milestones
 // (Bhagvat Prapti) total — any combination of Radha, Radha Vallabh, Hare
-// Krishna, KV, and 28 Names. Defaults to all types (unchanged behavior)
-// until the user customizes it.
+// Krishna, KV, Samba Sadashiv, Ram Vijay Mantra, and 28 Names. Defaults
+// to only the type(s) that match the user's active sampraday/mode — NOT
+// all types — so the Consideration chips start already lined up with
+// however they're currently chanting. 28 Names is independent of any
+// sampraday and defaults on regardless. The user can still freely
+// customize from there; any manual choice is preserved in
+// App.S.msConsider and overrides these mode-based defaults.
 function _msConsiderDefaults() {
-  return { radha: true, rv: true, hk: true, kv: true, ss: true, ram: true, n28: true };
+  if (App.S.gaudiyaMode) {
+    // Gaudiya/ISKCON: Hare Krishna only
+    return { radha: false, rv: false, hk: true, kv: false, ss: false, ram: false, n28: true };
+  }
+  if (App.S.trahimamMode) {
+    // Gopeshwar Mahadev: Samba Sadashiv only
+    return { radha: false, rv: false, hk: false, kv: false, ss: true, ram: false, n28: true };
+  }
+  if (App.S.ramanandiMode) {
+    // Ramanandi: Raam Vijay Mantra only
+    return { radha: false, rv: false, hk: false, kv: false, ss: false, ram: true, n28: true };
+  }
+  // Default (Rashik/Harivangshi/Haridashi/Sri-Ramanuj etc.): the combined
+  // Radha + Radha Vallabh + Krishnay Vasudevay engine
+  return { radha: true, rv: true, hk: false, kv: true, ss: false, ram: false, n28: true };
 }
 function getMsConsider() {
   return { ..._msConsiderDefaults(), ...(App.S.msConsider || {}) };
@@ -8563,22 +8819,22 @@ function _msConsiderChipsHtml() {
   ];
   let h =
     '<div class="ms-consider-wrap" style="margin-bottom:14px;">' +
-    '<div style="font-size:9px;letter-spacing:1px;text-transform:uppercase;font-weight:700;opacity:0.7;margin-bottom:6px;">🙏 Consider for Bhagvat Prapti Milestones</div>' +
+    '<div style="font-size:9px;letter-spacing:1px;text-transform:uppercase;font-weight:700;opacity:0.7;margin-bottom:6px;">🙏 Select Your Naam Jap Sections for Bhagvat Prapti</div>' +
     '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
   types.forEach((t) => {
     const on = !!c[t.key];
     h +=
       '<div class="ded-type-pill' +
       (on ? " active" : "") +
-      '" style="padding:6px 10px;flex:none;border-color:rgba(' +
-      t.color +
-      "," +
-      (on ? "0.45" : "0.18") +
-      ');background:rgba(' +
-      t.color +
-      "," +
-      (on ? "0.1" : "0.03") +
-      ');" onclick="setMsConsider(\'' +
+      '" style="padding:6px 10px;flex:none;' +
+      (on
+        ? "border-color:rgba(255,224,130,0.95);background:linear-gradient(145deg,#FFE9B0,#E8B94D);color:#4a2f06;text-shadow:0 1px 0 rgba(255,255,255,0.3);box-shadow:0 0 10px rgba(245,209,122,0.6),0 0 2px rgba(255,255,255,0.5),inset 0 1px 2px rgba(255,255,255,0.5);"
+        : "border-color:rgba(" +
+          t.color +
+          ',0.18);background:rgba(' +
+          t.color +
+          ',0.03);') +
+      '" onclick="setMsConsider(\'' +
       t.key +
       "'," +
       !on +
@@ -8687,8 +8943,81 @@ function renderMilestonesTab() {
     return d.getDate() + " " + months[d.getMonth()] + ", " + d.getFullYear();
   }
 
+  _msEnsureVideoLinks();
+
   let out = "";
   out += _msConsiderChipsHtml();
+
+  // ─── SPIRITUAL CRORE MILESTONES ───
+  PHASES.forEach((phase) => {
+    out += '<div class="ms-phase-title">' + phase.name + "</div>";
+    out += '<div class="ms-phase-sub">' + phase.sub + "</div>";
+    SPIRITUAL_MILESTONES.filter((sm) => {
+      const crNum = sm.count / CRORE;
+      return crNum >= phase.range[0] && crNum <= phase.range[1];
+    }).forEach((sm) => {
+      const pct = Math.min(100, (total / sm.count) * 100);
+      const achieved = total >= sm.count;
+      const remaining = Math.max(0, sm.count - total);
+      const pred = !achieved ? predictDate(remaining) : null;
+      const crNum = sm.count / CRORE;
+      const isBig = crNum >= 10;
+      const descHi = CRORE_DESCS_HI[crNum] || sm.desc;
+      const descBn = CRORE_DESCS_BN[crNum] || "";
+      const desc = lang === "bn" && descBn ? descBn : descHi;
+      out +=
+        '<div class="ms-card tier-saffron' +
+        (achieved ? " achieved" : " locked") +
+        (isBig ? " million" : "") +
+        "\" onclick=\"openMsDetail('crore'," +
+        sm.count +
+        "," +
+        pct.toFixed(1) +
+        "," +
+        achieved +
+        ')">';
+      out += '<div class="ms-card-header">';
+      out += '<span class="ms-icon">' + sm.icon + "</span>";
+      out += '<div><div class="ms-label">' + crNum + " Crore</div>";
+      out += '<div class="ms-eng">' + sm.eng + "</div></div>";
+      out += msVideoBtnsHtml(String(crNum));
+      out += '<span class="ms-count-label">' + sm.tag + "</span>";
+      out += "</div>";
+      const descId = "msDesc" + sm.count;
+      out +=
+        '<div class="ms-desc' +
+        (lang === "bn" ? " bangla" : "") +
+        '" id="' +
+        descId +
+        '">' +
+        desc +
+        "</div>";
+      if (achieved) {
+        out += '<div class="ms-badge achieved">✓ ACHIEVED</div>';
+      } else if (pred) {
+        out +=
+          '<div class="ms-badge prediction">⏳ Estimated: ' + pred + "</div>";
+      } else {
+        out +=
+          '<div class="ms-badge locked">🙏 Keep chanting to see prediction</div>';
+      }
+      out +=
+        '<div class="ms-pct">' +
+        pct.toFixed(1) +
+        "% — " +
+        formatMsCount(total) +
+        " / " +
+        formatMsCount(sm.count) +
+        "</div>";
+      out +=
+        '<div class="ms-progress-wrap"><div class="ms-progress-fill saffron" style="width:' +
+        pct +
+        '%"></div></div>';
+      out += "</div>";
+    });
+  });
+
+  out += '<div class="ms-section-sep"></div>';
 
   // ─── LAKH MILESTONES ───
   out += '<div class="ms-phase-title">📿 Lakh Milestones</div>';
@@ -8783,86 +9112,156 @@ function renderMilestonesTab() {
     out += "</div>";
   }
 
-  out += '<div class="ms-section-sep"></div>';
-
-  // ─── SPIRITUAL CRORE MILESTONES ───
-  PHASES.forEach((phase) => {
-    out += '<div class="ms-phase-title">' + phase.name + "</div>";
-    out += '<div class="ms-phase-sub">' + phase.sub + "</div>";
-    SPIRITUAL_MILESTONES.filter((sm) => {
-      const crNum = sm.count / CRORE;
-      return crNum >= phase.range[0] && crNum <= phase.range[1];
-    }).forEach((sm) => {
-      const pct = Math.min(100, (total / sm.count) * 100);
-      const achieved = total >= sm.count;
-      const remaining = Math.max(0, sm.count - total);
-      const pred = !achieved ? predictDate(remaining) : null;
-      const crNum = sm.count / CRORE;
-      const isBig = crNum >= 10;
-      const descHi = CRORE_DESCS_HI[crNum] || sm.desc;
-      const descBn = CRORE_DESCS_BN[crNum] || "";
-      const desc = lang === "bn" && descBn ? descBn : descHi;
-      out +=
-        '<div class="ms-card tier-saffron' +
-        (achieved ? " achieved" : " locked") +
-        (isBig ? " million" : "") +
-        "\" onclick=\"openMsDetail('crore'," +
-        sm.count +
-        "," +
-        pct.toFixed(1) +
-        "," +
-        achieved +
-        ')">';
-      out += '<div class="ms-card-header">';
-      out += '<span class="ms-icon">' + sm.icon + "</span>";
-      out += '<div><div class="ms-label">' + crNum + " Crore</div>";
-      out += '<div class="ms-eng">' + sm.eng + "</div></div>";
-      out += '<span class="ms-count-label">' + sm.tag + "</span>";
-      out += "</div>";
-      const descId = "msDesc" + sm.count;
-      out +=
-        '<div class="ms-desc' +
-        (lang === "bn" ? " bangla" : "") +
-        '" id="' +
-        descId +
-        '">' +
-        desc +
-        "</div>";
-      out +=
-        '<span class="ms-read-more" onclick="event.stopPropagation();toggleMsDesc(\'' +
-        descId +
-        "',this)\">Read more ▾</span>";
-      if (achieved) {
-        out += '<div class="ms-badge achieved">✓ ACHIEVED</div>';
-      } else if (pred) {
-        out +=
-          '<div class="ms-badge prediction">⏳ Estimated: ' + pred + "</div>";
-      } else {
-        out +=
-          '<div class="ms-badge locked">🙏 Keep chanting to see prediction</div>';
-      }
-      out +=
-        '<div class="ms-pct">' +
-        pct.toFixed(1) +
-        "% — " +
-        formatMsCount(total) +
-        " / " +
-        formatMsCount(sm.count) +
-        "</div>";
-      out +=
-        '<div class="ms-progress-wrap"><div class="ms-progress-fill saffron" style="width:' +
-        pct +
-        '%"></div></div>';
-      out += "</div>";
-    });
-  });
-
   el.innerHTML = out;
+}
+
+// ── MILESTONE VIDEO LINKS (developer-editable) ──────────────────
+// One Firestore doc in the existing "config" collection (read: any
+// signed-in user, write: isDeveloper() only) holds a map of milestone
+// key -> video URL. Any link works: YouTube, Google Drive, Instagram.
+// Not-signed-in users can't read that Firestore doc, so they fall back to
+// this hardcoded default map instead — same videos, baked into the app
+// itself so everyone can watch regardless of sign-in status. A developer
+// override in Firestore (via the ✎ edit button below) takes priority for
+// signed-in users; guests always see these defaults, since editing them
+// only ever happens through the developer-only Firestore write.
+const CRORE_DEFAULT_VIDEO_LINKS = {
+  1: "https://www.instagram.com/reel/DdT3x1ZSIlX/?stkn=MWlpcDdnempyOXRicg==",
+  2: "https://www.instagram.com/reel/DdVssWsSmfq/?stkn=YmllZnN5OXJ0ZHN2",
+  3: "https://www.instagram.com/reel/DdV_bZ0SEF7/?stkn=d2FiN3gyY2xsdHc1",
+  4: "https://www.instagram.com/reel/DdV_7K3yxJp/?stkn=bmF6Y2xqaWtueGgz",
+  5: "https://www.instagram.com/reel/DdWANPfStpp/?stkn=MW50c3YzenllaWlvMg==",
+  6: "https://www.instagram.com/reel/DdWAXXPSvw_/?stkn=dTU1bWlpMm8zYW12",
+  7: "https://www.instagram.com/reel/DdWBBNAymX5/?stkn=dXZoMmpvbWxhcW5p",
+  8: "https://www.instagram.com/reel/DdWBD5oSxO0/?stkn=MWU1Z3h2cHBmZHlteA==",
+  9: "https://www.instagram.com/reel/DdWBKsqyTBh/?stkn=MWhwZnE3dWVheDNscQ==",
+  10: "https://www.instagram.com/reel/DdWBWu1yR1v/?stkn=N3FobTV4dnJoYWli",
+  11: "https://www.instagram.com/reel/DdWCIpjSc8X/?stkn=dzdqazBxdjUzZG51",
+  12: "https://www.instagram.com/reel/DdWDoF2SINt/?stkn=MXI4OWY5YWlwZnFxcg==",
+  13: "https://www.instagram.com/reel/DdWELC_y-WZ/?stkn=NmpucmNhbGc2ZGtl",
+};
+let _msVidCache = null;
+let _msVidLoading = false;
+async function loadMsVideoLinks(force) {
+  if (_msVidCache && !force) return _msVidCache;
+  try {
+    const snap = await fbDb.collection("config").doc("milestoneVideoLinks").get();
+    _msVidCache = snap.exists ? (snap.data() || {}) : {};
+  } catch (e) {
+    _msVidCache = _msVidCache || {};
+  }
+  return _msVidCache;
+}
+// Kicks off a one-time load, then re-renders so the buttons appear.
+function _msEnsureVideoLinks() {
+  if (_msVidCache || _msVidLoading) return;
+  if (typeof fbDb === "undefined" || !fbDb) return;
+  _msVidLoading = true;
+  loadMsVideoLinks(true)
+    .then(() => { _msVidLoading = false; renderMilestonesTab(); })
+    .catch(() => { _msVidLoading = false; });
+}
+function msVideoLink(key) {
+  const override = _msVidCache && _msVidCache[key];
+  return override || CRORE_DEFAULT_VIDEO_LINKS[key] || "";
+}
+// Sends a not-signed-in user to the app's sign-in area. The sign-in
+// controls live in index.html, so we find them by the handler they call
+// rather than hard-coding an element id, activate the .view they sit in
+// (plus its bottom-nav button) and scroll them into sight.
+function msGoToSignIn() {
+  if (typeof toast === "function") toast("ভিডিওটি দেখতে সাইন ইন করুন 🙏 (Sign in to see the video)");
+  try {
+    const target =
+      document.querySelector('[onclick*="fbSignInGoogle"]') ||
+      document.querySelector('[onclick*="fbSignInEmail"]') ||
+      document.getElementById("fbEmail") ||
+      document.getElementById("fbPass");
+    if (!target) return;
+    const view = target.closest(".view");
+    if (view) {
+      const navBtn = document.querySelector('.nb[onclick*="' + view.id + '"]');
+      if (typeof sv === "function") sv(view.id, navBtn || null);
+    }
+    setTimeout(function () {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+  } catch (e) {}
+}
+// Plays a milestone video with the same handling as Favourite Videos:
+// YouTube / Telegram / Instagram play inside the app, Drive / Facebook /
+// other links open externally. Available to signed-in users AND guests —
+// the video itself doesn't require an account, only editing its link does.
+function msOpenVideo(key) {
+  const url = msVideoLink(key);
+  if (!url) { if (typeof toast === "function") toast("এই মাইলস্টোনে এখনো কোনো ভিডিও নেই"); return; }
+  const title = key + " Crore";
+  const platform = typeof favvidDetectPlatform === "function" ? favvidDetectPlatform(url) : "other";
+  const ext = function () {
+    if (typeof openExternalLink === "function") openExternalLink(url);
+    else window.open(url, "_blank", "noopener");
+  };
+  if (typeof openFavVideoPlayer !== "function") { ext(); return; }
+  if (platform === "youtube") {
+    const id = favvidYoutubeId(url);
+    if (id) openFavVideoPlayer(title, "youtube", id); else ext();
+  } else if (platform === "telegram") {
+    const embed = favvidTelegramEmbed(url);
+    if (embed) openFavVideoPlayer(title, "telegram", embed); else ext();
+  } else if (platform === "instagram") {
+    openFavVideoPlayer(title, "instagram", url);
+  } else {
+    ext();
+  }
+}
+async function msEditVideo(key) {
+  if (!isDeveloper()) return;
+  const cur = msVideoLink(key);
+  const val = prompt(
+    "Video link for " + key + " Crore\n(YouTube / Drive / Instagram — leave empty to remove)",
+    cur
+  );
+  if (val === null) return;
+  const url = val.trim();
+  const next = Object.assign({}, await loadMsVideoLinks(true));
+  if (url) next[key] = url;
+  else delete next[key];
+  try {
+    await fbDb.collection("config").doc("milestoneVideoLinks").set(
+      Object.assign({}, next, { updatedAt: Date.now() })
+    );
+    _msVidCache = next;
+    if (typeof toast === "function") toast(url ? "Video link saved \ud83c\udfa5" : "Video link removed");
+    renderMilestonesTab();
+  } catch (e) {
+    if (typeof toast === "function") toast("Could not save the link \ud83d\ude4f");
+  }
+}
+// ▶ button for everyone (guests get the same default-map video as signed-in
+// users, unless a developer has set a Firestore override) + ✎ edit button
+// for developers only.
+function msVideoBtnsHtml(key) {
+  let h = "";
+  const url = msVideoLink(key);
+  if (url) {
+    const platform = typeof favvidDetectPlatform === "function" ? favvidDetectPlatform(url) : "other";
+    h +=
+      '<button class="ms-vid-btn ms-vid-brand" title="Watch video" onclick="event.stopPropagation();msOpenVideo(\'' +
+      key + '\')">' +
+      (typeof favvidPlatformIconHtml === "function" ? favvidPlatformIconHtml(platform) : "\u25b6") +
+      "</button>";
+  }
+  if (typeof isDeveloper === "function" && isDeveloper()) {
+    h +=
+      '<button class="ms-vid-edit" title="Edit video link" onclick="event.stopPropagation();msEditVideo(\'' +
+      key + '\')">\u270e</button>';
+  }
+  return h ? '<span class="ms-vid-wrap">' + h + "</span>" : "";
 }
 
 // ─── CRORE DESCRIPTIONS ───
 const CRORE_DESCS_HI = {
-  1: "Tanu Shuddhi: Sharir puri tarah nishpaap aur pavitra ho jata hai. Rajogun aur Tamogun ka nash hota hai, aur har samay Shuddh Satogun bana rehta hai. Har samay Bhagwan ka bhajan hota he. Bimariyon ke 'paap beej' (root causes) khatam ho jate hain. Agar koi rog hai bhi, toh use sehne ki taqat mil jati hai. Sapne mein devta, rishi-muni aur sant, bhakta aakar baatein karte hain.",
+  1: "Tanu Shuddhi: Sharir puri tarah nishpaap aur pavitra ho jata hai. Rajogun aur Tamogun ka nash hota hai, aur har samay Shuddh Satogun bana rehta hai. Har samay Bhagwan ka bhajan hota he. Bimariyon ke 'paap beej' (root causes) khatam ho jate hain. Agar koi rog hai bhi, toh use sehne ki taqat mil jati hai. Swapne mein devta, rishi-muni aur sant-bhakt aakar baatein karte hain.",
   2: "Dhan (Wealth): Dhan ka abhaav (lack of money) khatam ho jata hai. Sabse badi baat ye hai ki insan ke andar se ameer banne ki chah (desire) hi mit jati hai. Bhagwan do tarah se madad karte hain—ya toh desire hata dete hain, ya fir bina maange itna dhan dete hain ki chah khatam ho jaye. Jaise nadiyaan apne aap samundar mein milti hain, saara vaibhav sadhak ko gher leta hai. Return to home from abroad.",
   3: "Mental Purity: Antahkaran param pavitra hota hai. Jo buri aadatein (kaam, krodh) pehle 'asadhy' (impossible) lagti thi, wo aasaan ho jati hain. Pura sansaar sadhak ko sage bhai ki tarah pyar karne lagta hai.",
   4: "Sukha Sthan: Hriday mein Bhagvadanand (Divine Bliss) prakat hota hai. Stability: Maan-apmaan ya dukh-sukh ka hriday par koi asar nahi padta. Self-Realization: Bina shastra padhe hi 'Nityatva Bodh' ho jata hai ki 'Main nitya hoon, ye sharir anitya hai'.",
@@ -8878,7 +9277,7 @@ const CRORE_DESCS_HI = {
 };
 
 const CRORE_DESCS_BN = {
-  1: "তনু শুদ্ধি: শরীর পুরোপুরি নিষ্পাপ ও পবিত্র হয়ে যায়। রজোগুণ ও তমোগুণ নাশ হয় এবং সর্বদা শুদ্ধ সত্যগুণ বজায় থাকে। সব সময় ভগবানের ভজন হতে থাকে। রোগের 'পাপ বীজ' (মূল কারণ) খতম হয়ে যায়। যদি কোনো রোগ থাকেও, তবে তা সহ্য করার শক্তি পাওয়া যায়। স্বপ.S�নে দেবতা, ঋষি-মুনি এবং সন্ত-ভক্তরা এসে কথা বলেন।",
+  1: "তনু শুদ্ধি: শরীর পুরোপুরি নিষ্পাপ ও পবিত্র হয়ে যায়। রজোগুণ ও তমোগুণ নাশ হয় এবং সর্বদা শুদ্ধ সত্যগুণ বজায় থাকে। সব সময় ভগবানের ভজন হতে থাকে। রোগের 'পাপ বীজ' (মূল কারণ) খতম হয়ে যায়। যদি কোনো রোগ থাকেও, তবে তা সহ্য করার শক্তি পাওয়া যায়। স্বপ্নে দেবতা, ঋষি-মুনি এবং সন্ত-ভক্তরা এসে কথা বলেন।",
   2: "ধন (সম্পদ): ধনের অভাব খতম হয়ে যায়। সবচেয়ে বড় কথা হলো মানুষের ভিতর থেকে ধনী হওয়ার তৃষ্ণা (ইচ্ছা) মিটে যায়। ভগবান দুইভাবে সাহায্য করেন—হয় ইচ্ছা সরিয়ে দেন, না হয় না চাইতেই এত ধন দেন যে ইচ্ছা শেষ হয়ে যায়। যেমন নদী নিজে থেকেই সমুদ্রে গিয়ে মেশে, তেমনই সমস্ত বৈভব সাধককে ঘিরে ধরে। বিদেশ থেকে স্বদেশে প্রত্যাবর্তন।",
   3: "মানসিক পবিত্রতা: অন্তঃকরণ পরম পবিত্র হয়। যে খারাপ অভ্যাসগুলো (কাম, ক্রোধ) আগে 'অসাধ্য' (অসম্ভব) মনে হতো, তা সহজ হয়ে যায়। সারা পৃথিবী সাধককে নিজের আপন ভাইয়ের মতো ভালোবাসতে শুরু করে।",
   4: "সুখ স্থান: হৃদয়ে ভগবদানন্দ (দিব্য আনন্দ) প্রকট হয়। স্থায়িত্ব: মান-অপমান বা সুখ-দুঃখের হৃদয়ের ওপর কোনো প্রভাব পড়ে না। আত্ম-উপলব্ধি: শাস্ত্র না পড়েই 'নিত্যত্ব বোধ' হয়ে যায় যে 'আমি নিত্য, এই শরীর অনিত্য'।",
@@ -8893,7 +9292,7 @@ const CRORE_DESCS_BN = {
   13: "১৩ কোটি: সাধক যেকোনো পাপী মানুষকেও 'মোক্ষ' পাইয়ে দিতে পারেন।",
 };
 
-window._msLang = "hi";
+window._msLang = "bn";
 function setMsLang(lang) {
   window._msLang = lang;
   document.getElementById("msLangHi").classList.toggle("active", lang === "hi");
@@ -8929,6 +9328,120 @@ function setMsLang(lang) {
     if (App.S.japMode === "hk") switchJapMode("hk");
     App.save();
   }
+}
+
+// ── Stotram list language toggle (Hindi/Devanagari vs Bangla) ──
+// Controls: (1) which script the Settings-header toggle shows as active,
+// (2) which STLIST name/sub fields render in the Stotram folder cards,
+// (3) which title shows atop the lyrics-reader modal.
+// Falls back to the Bangla fields whenever a Hindi field is missing on a
+// given STLIST/customSt entry, so nothing goes blank mid-rollout.
+function setStotramLang(lang) {
+  if (!App || !App.S || App.S.stotramLang === lang) return;
+  App.S.stotramLang = lang;
+  const btnHi = document.getElementById("setLangHi");
+  const btnBn = document.getElementById("setLangBn");
+  if (btnHi) btnHi.classList.toggle("active", lang === "hi");
+  if (btnBn) btnBn.classList.toggle("active", lang === "bn");
+  App.save();
+  try { renderSt(); } catch (_e) {}
+  // If the lyrics-reader modal is currently open, refresh its title too.
+  try {
+    const lmo = document.getElementById("lmo");
+    const lmTitle = document.getElementById("lmTitle");
+    if (lmo && lmo.classList.contains("show") && lmTitle && _currentStotramId) {
+      if (_currentStotramId === "hcj" && lang === "hi" && !_hcjHindiLyrics) {
+        loadHcjHindiLyrics()
+          .then(() => showLyrics("hcj"))
+          .catch(() => toast("हिंदी चौरासी पाठ लोड नहीं हो पाया 🙏"));
+        return;
+      }
+      if (_currentStotramId === "hcj") {
+        showLyrics("hcj");
+        return;
+      }
+      const allSt = [...STLIST, ...(App.S.customSt || [])];
+      const nm = allSt.find((x) => x.id === _currentStotramId);
+      if (nm) {
+        lmTitle.textContent = (lang === "hi" && nm.nameHi) ? nm.nameHi : nm.name;
+      }
+    }
+  } catch (_e) {}
+}
+
+// Hindi श्री हित चौरासी is kept in a small companion text file so the
+// existing Bangla stotram bundle does not become unnecessarily larger.
+// The source contains one blank-line-separated block per पद (all 84).
+let _hcjHindiLyrics = "";
+let _hcjHindiLoadPromise = null;
+const HCJ_HINDI_DATA_URLS = [
+  "./Hit_Caturashi_Ji_clean_lyrics.txt",
+  "../Hit_Caturashi_Ji_clean_lyrics.txt",
+  "./attached_assets/Hit_Caturashi_Ji_clean_lyrics.txt",
+];
+
+function _cleanHcjHindiSource(source) {
+  const lines = source
+    .replace(/\r/g, "")
+    .split("\n");
+  const colophonIndex = lines.findIndex((line) =>
+    line.trim().startsWith("॥ जय जय श्रीगोस्वामी")
+  );
+  return lines
+    .slice(0, colophonIndex === -1 ? lines.length : colophonIndex)
+    .filter((line) => {
+      const trimmed = line.trim();
+      return (
+        trimmed !== "श्री हित चतुरासी जी" &&
+        !/^पद\s+\d+[-–]\d+$/.test(trimmed)
+      );
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function loadHcjHindiLyrics() {
+  if (_hcjHindiLyrics) return Promise.resolve(_hcjHindiLyrics);
+  if (_hcjHindiLoadPromise) return _hcjHindiLoadPromise;
+
+  _hcjHindiLoadPromise = HCJ_HINDI_DATA_URLS.reduce(
+    (promise, url) =>
+      promise.catch(() =>
+        fetch(url).then((response) => {
+          if (!response.ok) throw new Error("Hindi HCJ data request failed");
+          return response.text();
+        })
+      ),
+    Promise.reject(new Error("Hindi HCJ data not attempted"))
+  )
+    .then((source) => {
+      const lyrics = _cleanHcjHindiSource(source);
+      const verseCount = lyrics
+        .split(/\n{2,}/)
+        .filter((verse) => verse.trim().length > 0).length;
+      if (verseCount !== 84) {
+        throw new Error("Hindi HCJ contains " + verseCount + " verses");
+      }
+      _hcjHindiLyrics = lyrics;
+      return lyrics;
+    })
+    .catch((error) => {
+      _hcjHindiLoadPromise = null;
+      throw error;
+    });
+
+  return _hcjHindiLoadPromise;
+}
+
+// Small helper: pick the language-appropriate name/sub for a STLIST/customSt
+// entry, falling back to the Bangla (default) fields when a Hindi one isn't
+// present yet.
+function stName(st) {
+  return (App.S.stotramLang === "hi" && st.nameHi) ? st.nameHi : st.name;
+}
+function stSub(st) {
+  return (App.S.stotramLang === "hi" && st.subHi) ? st.subHi : (st.sub || "");
 }
 
 function toggleMsDesc(id, btn) {
@@ -9301,6 +9814,51 @@ window.vpFirestore = {
       return false;
     }
   },
+
+  // ── Saved profiles for OTHER people (spouse, child, friend, etc.) ──
+  // Separate subcollection from the single users/{uid}/horoscope/profile
+  // doc above — each saved person is one document under
+  // users/{uid}/horoscopeProfiles/{profileId}.
+  async getOtherProfiles() {
+    if (!fbInit() || !fbUser) return [];
+    try {
+      const snap = await fbDb.collection('users').doc(fbUser.uid)
+        .collection('horoscopeProfiles').get();
+      const list = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+      list.sort((a, b) => (a.id < b.id ? -1 : 1)); // ids are Date.now()-based -> oldest first
+      return list;
+    } catch (e) {
+      console.warn('[vpFirestore] getOtherProfiles failed:', e && e.message);
+      return [];
+    }
+  },
+  // profileId: pass an existing id to update that profile, or null to
+  // create a new one. Returns the profile's id on success, false on failure.
+  async saveOtherProfile(profileId, data) {
+    if (!fbInit() || !fbUser) return false;
+    try {
+      const col = fbDb.collection('users').doc(fbUser.uid).collection('horoscopeProfiles');
+      const id = profileId || col.doc().id;
+      await col.doc(id).set(Object.assign({}, data, {
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      }), { merge: true });
+      return id;
+    } catch (e) {
+      console.warn('[vpFirestore] saveOtherProfile failed:', e && e.message);
+      return false;
+    }
+  },
+  async deleteOtherProfile(profileId) {
+    if (!fbInit() || !fbUser) return false;
+    try {
+      await fbDb.collection('users').doc(fbUser.uid)
+        .collection('horoscopeProfiles').doc(profileId).delete();
+      return true;
+    } catch (e) {
+      console.warn('[vpFirestore] deleteOtherProfile failed:', e && e.message);
+      return false;
+    }
+  },
 };
 
 function fbShowAuthChecking() {
@@ -9321,6 +9879,8 @@ function fbShowAuthChecking() {
     // will correct the panel back to signed-out a moment later.
     loggedOutEl.style.display = "none";
     loggedInEl.style.display = "block";
+    const _fbCardRefreshBtnEarly = document.getElementById("fbCardRefreshBtn");
+    if (_fbCardRefreshBtnEarly) _fbCardRefreshBtnEarly.style.display = _lcIsNative() ? "block" : "none";
     const emailEl = document.getElementById("fbUserEmail");
     if (emailEl) emailEl.textContent = cachedLabel;
     setSyncPill("syncing", "Loading from cloud…");
@@ -9415,39 +9975,24 @@ function fbInit() {
       }
     };
 
+    // Automatic retrying has been removed — cloud sync no longer retries
+    // itself on a timer after a hydration failure (no exponential backoff,
+    // no scheduled retries). It only notifies once that syncing failed;
+    // from here on, resyncing happens only when the user taps the manual
+    // "Sync failed? Press here to manually Sync" button (Cloud Sync &
+    // Backup card → forceManualSyncNow()). Kept as a function (rather than
+    // deleted outright) since several call sites elsewhere still call it —
+    // they just no longer get an automatic retry out of it.
     window._scheduleHydrationRetry = function () {
       if (App._cloudHydrated) return;
-      if (App._hydrationRetryTimer) return; // already scheduled
       if (!fbUser || fbForcedSignout) return;
       if (typeof isGhostMode === "function" && isGhostMode()) return; // never fight ghost mode
-      if (typeof navigator !== "undefined" && navigator.onLine === false) return; // wait for 'online' instead
-
-      App._hydrationRetryAttempts++;
-      const delayMs = Math.min(120000, 5000 * Math.pow(2, App._hydrationRetryAttempts - 1));
 
       if (!App._hydrationFailureNotified) {
         App._hydrationFailureNotified = true;
-        setSyncPill("error", "Not synced — retrying…");
-        toast("⚠️ Could not sync with cloud yet — retrying automatically");
+        setSyncPill("error", "Sync failed — tap Sync Now to retry");
+        toast("⚠️ Could not sync with cloud — tap \"Sync failed? Press here to manually Sync\" to retry");
       }
-
-      App._hydrationRetryTimer = setTimeout(async () => {
-        App._hydrationRetryTimer = null;
-        // After 3 straight failures, assume the local cache may be wedged
-        // (not just a slow network) and rebuild it before trying again.
-        if (App._hydrationRetryAttempts >= 3 && App._hydrationRetryAttempts % 3 === 0) {
-          console.warn("Hydration still failing after retries — rebuilding local Firestore cache");
-          toast("⚠️ Still not synced — resetting local cache and retrying…");
-          await window._fbRecoverPersistence();
-        }
-        try {
-          await fbAutoSync();
-        } catch (e) {
-          console.warn("Hydration retry failed:", e && e.message);
-        }
-        window._markHydrationRecovered();
-        if (!App._cloudHydrated) window._scheduleHydrationRetry();
-      }, delayMs);
     };
 
     window._markHydrationRecovered = function () {
@@ -9514,6 +10059,11 @@ function fbInit() {
       }
       const prevUid = App._uid;
       fbUser = user;
+      // Milestone video buttons differ for signed-in vs signed-out users
+      // (real platform logos vs a locked "sign in" logo), so re-render the
+      // N&M tab and drop the cached links whenever auth state flips.
+      _msVidCache = null;
+      if (typeof renderMilestonesTab === "function") renderMilestonesTab();
       // Foreground catch-up for the daily Google Drive backup. Moved here
       // (instead of the "load" handler) because fbUser is only ever set
       // inside this callback — calling checkDailyDriveBackupCatchUp() from
@@ -9594,7 +10144,6 @@ function fbInit() {
             stotrams: {},
             brahma: {},
             customSt: [],
-            customJaps: [],
             timerHistory: {},
             timer28History: {},
             sankalpas: [],
@@ -9679,6 +10228,11 @@ function fbInit() {
         fbHideAuthChecking();
         document.getElementById("fbLoggedOut").style.display = "none";
         document.getElementById("fbLoggedIn").style.display = "block";
+        // Manual "Refresh Now" button — Capacitor/native apk only (the web
+        // PWA already re-syncs on every page load/reload, so it would be
+        // redundant there). See refreshAppFromBackupArea() below.
+        const _fbCardRefreshBtn = document.getElementById("fbCardRefreshBtn");
+        if (_fbCardRefreshBtn) _fbCardRefreshBtn.style.display = _lcIsNative() ? "block" : "none";
         const _authLabel =
           user.phoneNumber || user.email || user.displayName || "Devotee";
         document.getElementById("fbUserEmail").textContent = _authLabel;
@@ -9770,6 +10324,8 @@ function fbInit() {
         try { localStorage.removeItem("rjap_lastAuthLabel"); } catch (_) {}
         document.getElementById("fbLoggedOut").style.display = "block";
         document.getElementById("fbLoggedIn").style.display = "none";
+        const _fbCardRefreshBtnOff = document.getElementById("fbCardRefreshBtn");
+        if (_fbCardRefreshBtnOff) _fbCardRefreshBtnOff.style.display = "none";
         _fbStopVerifyCountdownTimer();
         _fbHideVerifyBlock();
         _loadManualApkLink(); // signed out — falls back to local cache instead of Firestore
@@ -9811,7 +10367,6 @@ function fbInit() {
             stotrams: {},
             brahma: {},
             customSt: [],
-            customJaps: [],
             timerHistory: {},
             timer28History: {},
             sankalpas: [],
@@ -10925,6 +11480,105 @@ async function clearLocalUserData(uid) {
   try { localStorage.removeItem("rjap_sadhana_start"); } catch (_) {}
 }
 
+// ── Manual "Refresh Now" (Cloud Sync & Backup card, native apk only) ──
+// The web PWA re-syncs on every reload for free; the installed Capacitor
+// app can sit open for a long time (or resume from background with a
+// stale/dropped Firestore listener), so this gives native users a
+// visible way to force a fresh pull + re-subscribe right now, instead of
+// only ever finding out something didn't sync when data looks off later.
+let _fbCardRefreshInFlight = false;
+async function refreshAppFromBackupArea() {
+  if (!fbUser) return; // button only shows while signed in, but guard anyway
+  if (_fbCardRefreshInFlight) return; // ignore double-taps mid-refresh
+  const btn = document.getElementById("fbCardRefreshBtn");
+  _fbCardRefreshInFlight = true;
+  const _origLabel = btn ? btn.textContent : null;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "🔄 Refreshing…";
+  }
+  setSyncPill("syncing", "Refreshing…");
+  try {
+    await fbAutoSync(); // direct pull + re-subscribes the real-time listener; sets its own pill text on success/failure
+  } catch (e) {
+    console.warn("refreshAppFromBackupArea failed:", e && e.message);
+    setSyncPill("error", "Refresh failed — tap to retry");
+  } finally {
+    _fbCardRefreshInFlight = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = _origLabel || "🔄 Refresh Now";
+    }
+  }
+}
+
+// ── Manual "Sync failed? Press here to manually Sync" (Cloud Sync & Backup
+//    card, signed-in users, any platform) ──
+// Sometimes a sync gets stacked/stuck for a long stretch even on a good
+// connection — e.g. a dropped real-time listener, or the hydration-retry
+// backoff (_scheduleHydrationRetry) sitting mid-countdown from an earlier
+// failure — and it doesn't resume on its own until something else (a tap,
+// a foreground event) happens to nudge it. This button changes NO sync
+// logic of its own: it only clears whatever local timers/backoff are
+// currently stacked, then calls the existing fbAutoSync() (pull + re-
+// subscribe listener) and fbPushFull() (flush anything not yet confirmed
+// in Firestore) — the same functions the app already runs on its own,
+// just triggered immediately instead of waiting.
+const FB_MANUAL_SYNC_LABEL = "Sync failed? Press here to manually Sync";
+let _fbManualSyncInFlight = false;
+async function forceManualSyncNow() {
+  if (!fbUser) return; // button only shows while signed in, but guard anyway
+  if (_fbManualSyncInFlight) return; // ignore double-taps mid-sync
+  const btn = document.getElementById("fbManualSyncBtn");
+  _fbManualSyncInFlight = true;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Syncing…";
+  }
+  // setSyncPill("syncing", …) below also arms the global 2-minute display
+  // watchdog (see setSyncPill) — if this is still going after 2 minutes,
+  // that watchdog flips the pill AND this button to "Sync failed" and
+  // frees the button back up on its own, even if the calls below never
+  // settle. It does not cancel or otherwise touch fbAutoSync()/fbPushFull().
+  setSyncPill("syncing", "Syncing…");
+
+  // Clear any stacked/stuck timers so this runs right now instead of
+  // waiting for whatever debounce or backoff is currently in flight.
+  try { clearTimeout(_fbDeb); _fbDeb = null; } catch (_e) {}
+  try { clearTimeout(_fbMaxWaitTimer); _fbMaxWaitTimer = null; } catch (_e) {}
+  try {
+    if (App._hydrationRetryTimer) {
+      clearTimeout(App._hydrationRetryTimer);
+      App._hydrationRetryTimer = null;
+    }
+    App._hydrationRetryAttempts = 0;
+  } catch (_e) {}
+
+  try {
+    await fbAutoSync(); // direct pull + re-subscribes the real-time listener
+    if (typeof window._markHydrationRecovered === "function") window._markHydrationRecovered();
+    await fbPushFull(); // flush any local changes not yet confirmed in Firestore (sets its own pill text)
+    if (!App._cloudHydrated) {
+      // fbAutoSync couldn't confirm cloud state (offline, etc.) — let the
+      // existing hydration-retry system take back over rather than
+      // reporting success.
+      if (typeof window._scheduleHydrationRetry === "function") window._scheduleHydrationRetry();
+    } else {
+      setSyncPill("", "✅ Synced");
+      toast("✅ Synced with cloud 🙏");
+      if (btn) btn.textContent = FB_MANUAL_SYNC_LABEL;
+    }
+  } catch (e) {
+    console.warn("forceManualSyncNow failed:", e && e.message);
+    setSyncPill("error", "Sync failed");
+    toast("❌ Sync failed: " + (e && e.message ? e.message : e));
+    if (btn) btn.textContent = "❌ Sync failed — tap to retry";
+  } finally {
+    _fbManualSyncInFlight = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
 // ── Sign-out warning gate ──
 // fbSignOut() wipes local data (clearLocalUserData) as part of its normal
 // flow, so — same as the native cache-refresh warning — ask the user to
@@ -10989,7 +11643,7 @@ async function fbSignOut() {
   App.S = {
     tk: App.getTk(), ms: 108, dt: 0, lt: 0,
     cfg: { vib: true, sound: true, soundType: "shankya" },
-    history: {}, h28: {}, stotrams: {}, brahma: {}, customSt: [], customJaps: [],
+    history: {}, h28: {}, stotrams: {}, brahma: {}, customSt: [],
     timerHistory: {}, timer28History: {}, sankalpas: [], dedications: [], occasions: {},
     syncBaseline: {}, syncBaseline28: {}, syncBaselineTimer: {}, syncBaselineTimer28: {},
     migrationV2Done: false, japMode: "radha",
@@ -11054,7 +11708,6 @@ async function fbPushToUid(targetUid, fullReplace) {
     stotrams: App.S.stotrams || {},
     brahma: App.S.brahma || {},
     customSt: App.S.customSt || [],
-    customJaps: App.S.customJaps || [],
     timerHistory: App.S.timerHistory || {},
     timer28History: App.S.timer28History || {},
     sankalpas: App.S.sankalpas || [],
@@ -11170,7 +11823,6 @@ async function fbPushFull() {
     stotrams: App.S.stotrams || {},
     brahma: App.S.brahma || {},
     customSt: App.S.customSt || [],
-    customJaps: App.S.customJaps || [],
     timerHistory: App.S.timerHistory || {},
     timer28History: App.S.timer28History || {},
     sankalpas: App.S.sankalpas || [],
@@ -11350,8 +12002,6 @@ function fbApplyRemote(d) {
   if ("brahma" in d) App.S.brahma = JSON.parse(JSON.stringify(d.brahma || {}));
   if ("customSt" in d)
     App.S.customSt = JSON.parse(JSON.stringify(d.customSt || []));
-  if ("customJaps" in d)
-    App.S.customJaps = JSON.parse(JSON.stringify(d.customJaps || []));
   if ("sankalpas" in d)
     App.S.sankalpas = JSON.parse(JSON.stringify(d.sankalpas || []));
   if ("occasions" in d)
@@ -13610,9 +14260,860 @@ const INDEPENDENT_MODE_IMG = {
   if (sgt) sgt.src = INDEPENDENT_MODE_IMG.tilak;
 })();
 
+// ─────────────────────────────────────────────────────────
+// FAVOURITE VIDEOS (4th-level folder inside Stotram section)
+// Three sources:
+//  - GitHub-hosted videos (Motivation / Naam Jap Mahima / Law of Karma):
+//    dev uploads an .mp4 straight into the matching /videos/<slug>/ repo
+//    folder — that's the ONLY step. A GitHub Action
+//    (.github/workflows/video-manifest.yml) watches that folder and
+//    auto-regenerates videos/manifest.json with whatever's actually
+//    there; the app just fetches that one small JSON file (a plain
+//    static file, not a live GitHub API directory listing, so no
+//    rate limit) and lists whatever it says. The video itself still
+//    streams from raw.githubusercontent.com only when a user taps it,
+//    and is never bundled into the APK/PWA build (setup-www.sh's
+//    rsync into www/ never touches /videos/).
+//  - Links (YouTube / Instagram / Telegram): developer-only, added via
+//    an in-app form, stored in Firestore /config/favouriteVideoLinks
+//    (reuses the existing "config" collection — read: any signed-in
+//    user, write: isDeveloper() only — see firestore.rules, no rule
+//    change needed).
+// ─────────────────────────────────────────────────────────
+const FAVVID_GH_OWNER = 'drakthephenomenal';
+const FAVVID_GH_REPO = 'Lalu-Chotopushu';
+const FAVVID_GH_BRANCH = 'main';
+const FAVVID_MANIFEST_URL = 'https://raw.githubusercontent.com/' + FAVVID_GH_OWNER + '/' + FAVVID_GH_REPO + '/' + FAVVID_GH_BRANCH + '/videos/manifest.json';
+
+const VIDEO_SUBFOLDERS = [
+  { key: 'motivation', title: 'Motivation',     icon: '🔥', type: 'github', path: 'videos/motivation' },
+  { key: 'naamjap',    title: 'Naam Jap Mahima', icon: '📿', type: 'github', path: 'videos/naam-jap-mahima' },
+  { key: 'karma',      title: 'Law of Karma',    icon: '⚖️', type: 'github', path: 'videos/law-of-karma' },
+  { key: 'links',      title: 'Random Links',     icon: '🔗', type: 'links' },
+];
+
+// "Why-Karma-Never-Forgets.mp4" -> "Why Karma Never Forgets"
+function favvidTitleFromFilename(name) {
+  return name.replace(/\.[a-zA-Z0-9]+$/, '').replace(/[-_]+/g, ' ').trim();
+}
+
+// Fetches videos/manifest.json once per 5 minutes (cached in between so
+// re-opening a subfolder doesn't re-fetch every time). The manifest is
+// keyed by the repo folder name (e.g. "motivation",
+// "naam-jap-mahima") — see the workflow file for how it's built.
+let _favvidManifestCache = null;
+let _favvidManifestFetchedAt = 0;
+async function fetchFavVideoManifest(force) {
+  const fresh = _favvidManifestCache && (Date.now() - _favvidManifestFetchedAt) < 5 * 60 * 1000;
+  if (fresh && !force) return _favvidManifestCache;
+  try {
+    const res = await fetch(FAVVID_MANIFEST_URL, { cache: 'no-store' });
+    if (!res.ok) {
+      if (res.status === 404) { _favvidManifestCache = {}; _favvidManifestFetchedAt = Date.now(); return {}; }
+      throw new Error('manifest fetch error ' + res.status);
+    }
+    _favvidManifestCache = await res.json();
+    _favvidManifestFetchedAt = Date.now();
+    return _favvidManifestCache;
+  } catch (e) {
+    if (_favvidManifestCache) return _favvidManifestCache; // stale-but-usable on a transient network error
+    throw e;
+  }
+}
+
+// Builds the video list for one subfolder from the fetched manifest.
+async function getFavVideoFiles(sub) {
+  const folderSlug = sub.path.split('/').pop(); // "videos/naam-jap-mahima" -> "naam-jap-mahima"
+  const manifest = await fetchFavVideoManifest();
+  const names = manifest[folderSlug] || [];
+  return names.map((name) => ({
+    name: name,
+    key: name,
+    title: favvidTitleFromFilename(name),
+    url: 'https://raw.githubusercontent.com/' + FAVVID_GH_OWNER + '/' + FAVVID_GH_REPO + '/' + FAVVID_GH_BRANCH + '/' + sub.path + '/' + encodeURIComponent(name),
+  }));
+}
+
+// Firestore-backed link list (YouTube / Instagram / Telegram).
+let _favvidLinksCache = null;
+async function loadFavVideoLinks(force) {
+  if (_favvidLinksCache && !force) return _favvidLinksCache;
+  try {
+    const snap = await fbDb.collection('config').doc('favouriteVideoLinks').get();
+    const data = snap.exists ? snap.data() : {};
+    _favvidLinksCache = Array.isArray(data.items) ? data.items : [];
+  } catch (e) {
+    _favvidLinksCache = _favvidLinksCache || [];
+  }
+  return _favvidLinksCache;
+}
+async function saveFavVideoLinks(items) {
+  await fbDb.collection('config').doc('favouriteVideoLinks').set({ items: items, updatedAt: Date.now() });
+  _favvidLinksCache = items;
+}
+
+// ── Link folders (developer-only) ──
+// Links can optionally be grouped into folders the developer creates.
+// A link with no folderId (or one whose folder was deleted) shows in
+// the "orphan" section instead of inside any folder.
+let _favvidLinkFoldersCache = null;
+async function loadFavVideoLinkFolders(force) {
+  if (_favvidLinkFoldersCache && !force) return _favvidLinkFoldersCache;
+  try {
+    const snap = await fbDb.collection('config').doc('favouriteVideoLinkFolders').get();
+    const data = snap.exists ? snap.data() : {};
+    _favvidLinkFoldersCache = Array.isArray(data.folders) ? data.folders : [];
+  } catch (e) {
+    _favvidLinkFoldersCache = _favvidLinkFoldersCache || [];
+  }
+  return _favvidLinkFoldersCache;
+}
+async function saveFavVideoLinkFolders(folders) {
+  await fbDb.collection('config').doc('favouriteVideoLinkFolders').set({ folders: folders, updatedAt: Date.now() });
+  _favvidLinkFoldersCache = folders;
+}
+
+// ── Manual ordering (developer-only) ──
+// One Firestore doc holds the developer's chosen order for each
+// subfolder — keyed by filename for GitHub videos, by link id for
+// Links. Anything not yet in the order list keeps its natural order,
+// appended after the explicitly-ordered items. Reuses the existing
+// "config" collection (read: any signed-in user, write: isDeveloper()
+// only) — no rules change needed.
+let _favvidOrderCache = null;
+async function loadFavVideoOrder(force) {
+  if (_favvidOrderCache && !force) return _favvidOrderCache;
+  try {
+    const snap = await fbDb.collection('config').doc('favouriteVideoOrder').get();
+    _favvidOrderCache = snap.exists ? (snap.data() || {}) : {};
+  } catch (e) {
+    _favvidOrderCache = _favvidOrderCache || {};
+  }
+  return _favvidOrderCache;
+}
+async function saveFavVideoOrderFor(bucketKey, orderArr) {
+  const cur = Object.assign({}, await loadFavVideoOrder(true));
+  cur[bucketKey] = orderArr;
+  await fbDb.collection('config').doc('favouriteVideoOrder').set(cur);
+  _favvidOrderCache = cur;
+}
+// Sorts `items` (each must have a `.key` string) by orderArr; anything
+// missing from orderArr keeps its original relative order at the end.
+function favvidApplyOrder(items, orderArr) {
+  if (!orderArr || !orderArr.length) return items.slice();
+  const pos = {};
+  orderArr.forEach((k, i) => { pos[k] = i; });
+  return items.slice().sort((a, b) => {
+    const pa = pos.hasOwnProperty(a.key) ? pos[a.key] : Infinity;
+    const pb = pos.hasOwnProperty(b.key) ? pos[b.key] : Infinity;
+    if (pa !== pb) return pa - pb;
+    return 0; // stable: keeps original relative order for ties
+  });
+}
+// Swaps the item identified by `key` with its neighbor within the FULL
+// (unfiltered) `items` array — looked up by key rather than a display
+// position, so this stays correct even when the visible list is
+// currently narrowed by a search filter. Persists the new order for
+// bucketKey, then re-renders. Used by the developer-only ↑/↓ buttons.
+async function favvidReorder(bucketKey, items, key, dir) {
+  const i = items.findIndex((x) => x.key === key);
+  if (i === -1) return;
+  const j = i + dir;
+  if (j < 0 || j >= items.length) return;
+  const copy = items.slice();
+  const tmp = copy[i];
+  copy[i] = copy[j];
+  copy[j] = tmp;
+  await saveFavVideoOrderFor(bucketKey, copy.map((x) => x.key));
+  renderSt();
+}
+
+// ── "New/unseen" tracking (per device, not synced) ──
+// A video or link stays marked unseen — and shows a small badge — until
+// the user actually opens it once on this device.
+function favvidSeenSet() {
+  try {
+    return JSON.parse(localStorage.getItem('favVidSeen') || '{}');
+  } catch (e) {
+    return {};
+  }
+}
+function favvidIsSeen(key) {
+  return !!favvidSeenSet()[key];
+}
+function favvidMarkSeen(key) {
+  try {
+    const seen = favvidSeenSet();
+    if (seen[key]) return;
+    seen[key] = true;
+    localStorage.setItem('favVidSeen', JSON.stringify(seen));
+  } catch (e) { /* storage unavailable — badge just won't persist, harmless */ }
+}
+
+// ── Shared search-bar harness ──
+// Renders a text input plus a cards container below it, and re-filters
+// on every keystroke by matching each item's .title (case-insensitive,
+// substring match). Only the cards container is rebuilt on input — the
+// search input itself is never re-rendered, so it keeps focus and
+// cursor position while typing. opts: { placeholder, allItems,
+// renderCards(filteredItems, container) }.
+function favvidSearchableSection(list, opts) {
+  const searchWrap = document.createElement('div');
+  searchWrap.innerHTML = '<input type="text" placeholder="' + escHtml(opts.placeholder) + '" style="width:100%;margin-bottom:10px;background:rgba(0,0,0,0.35);border:1px solid rgba(255,215,0,0.25);border-radius:10px;padding:9px 12px;color:var(--tl);font-size:14px;box-sizing:border-box;font-family:Inter,sans-serif">';
+  list.appendChild(searchWrap);
+  const input = searchWrap.querySelector('input');
+
+  const cardsDiv = document.createElement('div');
+  list.appendChild(cardsDiv);
+
+  function renderFiltered() {
+    const q = input.value.trim().toLowerCase();
+    const filtered = q ? opts.allItems.filter((v) => v.title.toLowerCase().indexOf(q) !== -1) : opts.allItems;
+    cardsDiv.innerHTML = '';
+    if (!filtered.length) {
+      const empty = document.createElement('div');
+      empty.className = 'st-folder-empty';
+      empty.textContent = q ? 'কিছু পাওয়া যায়নি' : 'শীঘ্রই আসছে 🙏';
+      cardsDiv.appendChild(empty);
+      return;
+    }
+    opts.renderCards(filtered, cardsDiv);
+  }
+  input.addEventListener('input', renderFiltered);
+  renderFiltered();
+}
+function favvidDetectPlatform(url) {
+  const u = (url || '').toLowerCase();
+  if (u.indexOf('youtube.com') !== -1 || u.indexOf('youtu.be') !== -1) return 'youtube';
+  if (u.indexOf('instagram.com') !== -1) return 'instagram';
+  if (u.indexOf('t.me') !== -1 || u.indexOf('telegram.me') !== -1) return 'telegram';
+  // Drive share links come in several shapes depending on how they were
+  // copied: drive.google.com/file/d/..., drive.google.com/open?id=...,
+  // drive.usercontent.google.com/download?id=..., and the older
+  // docs.google.com/file/d/... form.
+  if (u.indexOf('drive.google.com') !== -1 || u.indexOf('drive.usercontent.google.com') !== -1 || u.indexOf('docs.google.com/file') !== -1) return 'drive';
+  if (u.indexOf('facebook.com') !== -1 || u.indexOf('fb.watch') !== -1) return 'facebook';
+  return 'other';
+}
+function favvidYoutubeId(url) {
+  const m = url.match(/(?:youtu\.be\/|v=|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{6,})/);
+  return m ? m[1] : null;
+}
+function favvidTelegramEmbed(url) {
+  const m = url.match(/t\.me\/([^/?]+)\/(\d+)/);
+  if (!m) return null;
+  return 'https://t.me/' + m[1] + '/' + m[2] + '?embed=1';
+}
+// Google Drive: works only if the file's sharing is set to "Anyone with
+// the link" — Drive's own /preview page shows a "request access" screen
+// otherwise, which we can't detect from a cross-origin iframe.
+// Drive links open externally (see the click handler below) rather than
+// embedding inline — two attempts at inline playback (an iframe /preview,
+// then a direct-content <video> URL) both proved unreliable, since Drive
+// has no officially-supported anonymous video-streaming endpoint.
+// Facebook and Drive links open externally (see click handlers below)
+// rather than embedding inline — both platforms' inline-embed options
+// proved unreliable in practice (Drive has no official anonymous
+// streaming endpoint; Facebook's plugin only works for Page-published
+// videos, not personal posts or Reels).
+
+// Inline modal player. kind: 'file' (GitHub mp4, native <video>),
+// 'youtube' (iframe embed), 'telegram' (official public-post iframe
+// embed), 'instagram' (official embed.js widget with a fallback
+// "open externally" link if it fails to render within a few seconds).
+function openFavVideoPlayer(title, kind, urlOrId, originalUrl) {
+  var old = document.getElementById('favVidOverlay');
+  if (old) old.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'favVidOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px;box-sizing:border-box';
+
+  var mediaHtml = '';
+  if (kind === 'file') {
+    mediaHtml = '<video src="' + urlOrId + '" controls autoplay playsinline style="width:100%;max-width:640px;max-height:70vh;border-radius:10px;background:#000"></video>';
+  } else if (kind === 'youtube') {
+    mediaHtml = '<iframe src="https://www.youtube.com/embed/' + urlOrId + '?autoplay=1&playsinline=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen style="width:100%;max-width:640px;aspect-ratio:16/9;border:none;border-radius:10px"></iframe>';
+  } else if (kind === 'telegram') {
+    mediaHtml = '<iframe src="' + urlOrId + '" allow="autoplay" style="width:100%;max-width:420px;height:70vh;border:none;border-radius:10px;background:#000"></iframe>';
+  } else if (kind === 'instagram') {
+    mediaHtml =
+      '<blockquote class="instagram-media" data-instgrm-permalink="' + urlOrId + '" data-instgrm-version="14" style="width:100%;max-width:420px;margin:0;border-radius:10px;overflow:hidden;background:#000"></blockquote>' +
+      '<div id="favVidIgFallback" style="display:none;margin-top:10px;text-align:center">' +
+        '<div style="color:rgba(255,215,0,0.7);font-size:13px;margin-bottom:8px">এই ভিডিওটি এখানে দেখানো যাচ্ছে না</div>' +
+        '<a href="' + urlOrId + '" target="_blank" rel="noopener" style="display:inline-block;padding:10px 18px;border-radius:10px;background:rgba(255,215,0,0.12);border:1px solid rgba(255,215,0,0.35);color:#ffd700;text-decoration:none;font-family:Inter,sans-serif;font-size:13px">Instagram-এ খুলুন ↗</a>' +
+      '</div>';
+  }
+
+  overlay.innerHTML =
+    '<div style="width:100%;max-width:640px;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">' +
+      '<div style="color:#ffd700;font-family:\'Hind Siliguri\',serif;font-size:15px;font-weight:600;flex:1;margin-right:10px">' + escHtml(title) + '</div>' +
+      '<button id="favVidCloseBtn" style="width:38px;height:38px;border-radius:10px;border:1px solid rgba(255,215,0,0.3);background:rgba(255,215,0,0.08);color:#ffd700;font-size:18px;cursor:pointer;flex-shrink:0">✕</button>' +
+    '</div>' +
+    mediaHtml;
+
+  document.body.appendChild(overlay);
+  overlay.querySelector('#favVidCloseBtn').addEventListener('click', function () { overlay.remove(); });
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+
+  if (kind === 'instagram') {
+    var processIg = function () {
+      if (window.instgrm && window.instgrm.Embeds) window.instgrm.Embeds.process();
+    };
+    if (window.instgrm) {
+      processIg();
+    } else if (!document.getElementById('favVidIgScript')) {
+      var s = document.createElement('script');
+      s.id = 'favVidIgScript';
+      s.async = true;
+      s.src = 'https://www.instagram.com/embed.js';
+      s.onload = processIg;
+      document.body.appendChild(s);
+    }
+    setTimeout(function () {
+      var bq = overlay.querySelector('blockquote.instagram-media');
+      var fb = document.getElementById('favVidIgFallback');
+      if (bq && !bq.querySelector('iframe') && fb) fb.style.display = 'block';
+    }, 4000);
+  }
+}
+
+function renderFavVideoFolder(list) {
+  const backRow = document.createElement('div');
+  backRow.className = 'st-back-row';
+  const subKey = window._stActiveVideoFolder || null;
+
+  if (!subKey) {
+    backRow.innerHTML =
+      '<button class="st-back-btn">← ফোল্ডার তালিকা</button>' +
+      '<span class="st-back-title">Favourite Videos</span>';
+    backRow.querySelector('.st-back-btn').addEventListener('click', () => {
+      window._stActiveFolder = null;
+      window._stActiveVideoFolder = null;
+      window._stActiveLinkFolder = null;
+      renderSt();
+    });
+    list.appendChild(backRow);
+
+    VIDEO_SUBFOLDERS.forEach((sub) => {
+      const tile = document.createElement('div');
+      tile.className = 'st-folder-tile';
+      tile.innerHTML =
+        '<span class="st-folder-tile-icon">' + sub.icon + '</span>' +
+        '<span class="st-folder-tile-title">' + escHtml(sub.title) + '</span>' +
+        '<span class="st-folder-tile-arrow">›</span>';
+      tile.addEventListener('click', () => {
+        window._stActiveVideoFolder = sub.key;
+        window._stActiveLinkFolder = null;
+        renderSt();
+      });
+      list.appendChild(tile);
+    });
+    return;
+  }
+
+  // Inside a specific folder (created within any of the 4 subfolders) —
+  // it builds its own back row (needs the folder's name, which is only
+  // known after an async fetch) rather than the generic one below.
+  if (window._stActiveLinkFolder) {
+    renderFavVideoLinksFolderView(list, window._stActiveLinkFolder, subKey);
+    return;
+  }
+
+  const sub = VIDEO_SUBFOLDERS.find((s) => s.key === subKey);
+  backRow.innerHTML =
+    '<button class="st-back-btn">←</button>' +
+    '<span class="st-back-title">' + escHtml(sub ? sub.title : '') + '</span>';
+  backRow.querySelector('.st-back-btn').addEventListener('click', () => {
+    window._stActiveVideoFolder = null;
+    window._stActiveLinkFolder = null;
+    renderSt();
+  });
+  list.appendChild(backRow);
+
+  if (!sub) { window._stActiveVideoFolder = null; renderSt(); return; }
+
+  if (sub.type === 'github') {
+    renderGithubVideoList(list, sub);
+  } else if (sub.type === 'links') {
+    renderFavVideoLinksTop(list, sub.key);
+  }
+}
+
+function favvidNewBadgeHtml(key) {
+  return favvidIsSeen(key) ? '' : '<span class="favvid-new-badge" style="background:#ff4d4d;color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;margin-left:6px;letter-spacing:0.5px;flex-shrink:0">NEW</span>';
+}
+function favvidReorderButtonsHtml() {
+  return (
+    '<div class="favvid-reorder" style="display:flex;flex-direction:column;gap:2px;margin-left:6px;flex-shrink:0">' +
+      '<button class="favvid-up" style="width:26px;height:22px;border-radius:6px;border:1px solid rgba(255,215,0,0.25);background:rgba(255,215,0,0.06);color:#ffd700;font-size:11px;cursor:pointer;line-height:1;padding:0">▲</button>' +
+      '<button class="favvid-down" style="width:26px;height:22px;border-radius:6px;border:1px solid rgba(255,215,0,0.25);background:rgba(255,215,0,0.06);color:#ffd700;font-size:11px;cursor:pointer;line-height:1;padding:0">▼</button>' +
+    '</div>'
+  );
+}
+
+// Top-level entry for a GitHub-backed subfolder (Motivation/Naam Jap
+// Mahima/Law of Karma): the auto-listed repo files, then — below —
+// the same folders/links system as Random Links, scoped to this
+// subfolder. Two containers appended up front (in order) so the file
+// list and the links section each render into a fixed slot regardless
+// of which async fetch resolves first.
+function renderGithubVideoList(list, sub) {
+  const fileSectionContainer = document.createElement('div');
+  list.appendChild(fileSectionContainer);
+  renderGithubFileSection(fileSectionContainer, sub);
+
+  const linksSectionContainer = document.createElement('div');
+  list.appendChild(linksSectionContainer);
+  renderFavVideoLinksTop(linksSectionContainer, sub.key);
+}
+
+function renderGithubFileSection(list, sub) {
+  const loading = document.createElement('div');
+  loading.className = 'st-folder-empty';
+  loading.textContent = 'লোড হচ্ছে…';
+  list.appendChild(loading);
+
+  Promise.all([getFavVideoFiles(sub), loadFavVideoOrder()]).then(([rawItems, orderDoc]) => {
+    if (window._stActiveFolder !== 'videos' || window._stActiveVideoFolder !== sub.key) return; // navigated away meanwhile
+    loading.remove();
+    const items = favvidApplyOrder(rawItems, orderDoc[sub.key]);
+    if (!items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'st-folder-empty';
+      empty.textContent = 'শীঘ্রই আসছে 🙏';
+      list.appendChild(empty);
+      return;
+    }
+    favvidSearchableSection(list, {
+      placeholder: 'ভিডিও খুঁজুন…',
+      allItems: items,
+      renderCards: (filtered, container) => {
+        filtered.forEach((v) => {
+          const seenKey = 'video:' + sub.key + ':' + v.key;
+          const card = document.createElement('div');
+          card.className = 'st-card';
+          card.innerHTML =
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
+              '<div class="favvid-open" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer">' +
+                '<span style="font-size:22px">▶️</span>' +
+                '<div class="st-name" style="font-size:15px">' + escHtml(v.title) + '</div>' +
+                favvidNewBadgeHtml(seenKey) +
+              '</div>' +
+              (isDeveloper() ? favvidReorderButtonsHtml() : '') +
+            '</div>';
+          card.querySelector('.favvid-open').addEventListener('click', () => {
+            favvidMarkSeen(seenKey);
+            const badge = card.querySelector('.favvid-new-badge');
+            if (badge) badge.remove();
+            openFavVideoPlayer(v.title, 'file', v.url);
+          });
+          if (isDeveloper()) {
+            card.querySelector('.favvid-up').addEventListener('click', (e) => { e.stopPropagation(); favvidReorder(sub.key, items, v.key, -1); });
+            card.querySelector('.favvid-down').addEventListener('click', (e) => { e.stopPropagation(); favvidReorder(sub.key, items, v.key, 1); });
+          }
+          container.appendChild(card);
+        });
+      },
+    });
+  }).catch(() => {
+    if (window._stActiveFolder !== 'videos' || window._stActiveVideoFolder !== sub.key) return;
+    loading.textContent = 'ভিডিও তালিকা লোড করা যায়নি — ইন্টারনেট সংযোগ পরীক্ষা করুন';
+  });
+}
+
+// Real brand icons via Simple Icons' free CDN (cdn.simpleicons.org) —
+// CC0-licensed SVG recreations made specifically for this kind of use,
+// not the platforms' own proprietary app-icon artwork. Falls back to an
+// emoji if the icon fails to load (e.g. no internet yet).
+function favvidIconFallback(img) {
+  const span = document.createElement('span');
+  span.style.fontSize = '22px';
+  span.textContent = img.getAttribute('data-fallback') || '🔗';
+  img.replaceWith(span);
+}
+function favvidPlatformIconHtml(platform) {
+  const map = {
+    youtube: ['youtube', '▶️'],
+    instagram: ['instagram', '📷'],
+    telegram: ['telegram', '✈️'],
+    drive: ['googledrive', '📁'],
+    facebook: ['facebook', '📘'],
+  };
+  const entry = map[platform];
+  if (!entry) return '<span style="font-size:22px">🔗</span>';
+  return '<img src="https://cdn.simpleicons.org/' + entry[0] + '" alt="" width="22" height="22" data-fallback="' + entry[1] + '" onerror="favvidIconFallback(this)" style="display:block;border-radius:5px;flex-shrink:0">';
+}
+
+// Builds one link card (icon, title, NEW badge, dev-only edit/reorder/
+// delete) and wires up its click-to-play routing. `items` must be the
+// FULL (unfiltered) array for this bucket, so reorder stays correct
+// even under an active search filter.
+function favvidRenderLinkCard(v, items, bucketKey, container) {
+  const seenKey = 'link:' + v.id;
+  const platform = favvidDetectPlatform(v.url); // re-detect live so a detection fix auto-heals older saved links
+  const card = document.createElement('div');
+  card.className = 'st-card';
+
+  function renderDisplayMode() {
+    const platformIconHtml = favvidPlatformIconHtml(platform);
+    let headerRight = '';
+    if (isDeveloper()) {
+      headerRight =
+        '<button class="st-edit-btn favvid-edit" style="margin-right:4px">✎</button>' +
+        favvidReorderButtonsHtml() +
+        '<button class="st-edit-btn favvid-del" style="border-color:rgba(255,80,80,0.35);color:#ff8888;background:rgba(255,80,80,0.08);margin-left:4px">✕</button>';
+    }
+    card.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
+        '<div class="favvid-open" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer">' +
+          platformIconHtml +
+          '<div class="st-name" style="font-size:15px">' + escHtml(v.title) + '</div>' +
+          favvidNewBadgeHtml(seenKey) +
+        '</div>' +
+        headerRight +
+      '</div>';
+    card.querySelector('.favvid-open').addEventListener('click', () => {
+      favvidMarkSeen(seenKey);
+      const badge = card.querySelector('.favvid-new-badge');
+      if (badge) badge.remove();
+      if (platform === 'youtube') {
+        const id = favvidYoutubeId(v.url);
+        if (id) openFavVideoPlayer(v.title, 'youtube', id); else openExternalLink(v.url);
+      } else if (platform === 'telegram') {
+        const embed = favvidTelegramEmbed(v.url);
+        if (embed) openFavVideoPlayer(v.title, 'telegram', embed); else openExternalLink(v.url);
+      } else if (platform === 'instagram') {
+        openFavVideoPlayer(v.title, 'instagram', v.url);
+      } else {
+        // drive/facebook/other: open externally — see the fixed platforms'
+        // history above for why inline embedding was dropped for these.
+        openExternalLink(v.url);
+      }
+    });
+    if (isDeveloper()) {
+      card.querySelector('.favvid-edit').addEventListener('click', (e) => { e.stopPropagation(); renderEditMode(); });
+      card.querySelector('.favvid-up').addEventListener('click', (e) => { e.stopPropagation(); favvidReorder(bucketKey, items, v.key, -1); });
+      card.querySelector('.favvid-down').addEventListener('click', (e) => { e.stopPropagation(); favvidReorder(bucketKey, items, v.key, 1); });
+      card.querySelector('.favvid-del').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const cur = (await loadFavVideoLinks(true)).filter((x) => x.id !== v.id);
+        await saveFavVideoLinks(cur);
+        renderSt();
+      });
+    }
+  }
+
+  function renderEditMode() {
+    card.innerHTML =
+      '<div style="font-size:11px;color:rgba(255,215,0,0.8);margin-bottom:6px;letter-spacing:1px">✎ Edit Link</div>' +
+      '<input class="favvid-edit-title" value="' + escHtml(v.title) + '" style="width:100%;margin-bottom:8px;background:rgba(0,0,0,0.40);border:1px solid rgba(255,215,0,0.25);border-radius:10px;padding:9px 12px;color:var(--tl);font-size:14px;box-sizing:border-box;font-family:Inter,sans-serif">' +
+      '<input class="favvid-edit-url" value="' + escHtml(v.url) + '" style="width:100%;margin-bottom:8px;background:rgba(0,0,0,0.40);border:1px solid rgba(255,215,0,0.25);border-radius:10px;padding:9px 12px;color:var(--tl);font-size:14px;box-sizing:border-box;font-family:Inter,sans-serif">' +
+      '<div style="display:flex;gap:8px">' +
+        '<button class="favvid-edit-save" style="padding:9px 18px;border-radius:10px;background:rgba(255,215,0,0.12);color:#ffd700;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;border:1px solid rgba(255,215,0,0.30)">💾 Save</button>' +
+        '<button class="favvid-edit-cancel" style="padding:9px 18px;border-radius:10px;background:rgba(255,255,255,0.06);color:var(--tl);font-size:13px;cursor:pointer;font-family:Inter,sans-serif;border:1px solid rgba(255,255,255,0.15)">Cancel</button>' +
+      '</div>';
+    card.querySelector('.favvid-edit-cancel').addEventListener('click', () => renderSt());
+    card.querySelector('.favvid-edit-save').addEventListener('click', async () => {
+      const newTitle = card.querySelector('.favvid-edit-title').value.trim();
+      const newUrl = card.querySelector('.favvid-edit-url').value.trim();
+      if (!newTitle || !newUrl) return;
+      const cur = (await loadFavVideoLinks(true)).map((x) =>
+        x.id === v.id ? Object.assign({}, x, { title: newTitle, url: newUrl, platform: favvidDetectPlatform(newUrl) }) : x
+      );
+      await saveFavVideoLinks(cur);
+      renderSt();
+    });
+  }
+
+  renderDisplayMode();
+  container.appendChild(card);
+}
+
+// Top-level Links view: add-link form (with a folder picker), a
+// new-folder form, the folder tiles themselves, and — below those — an
+// "orphan" section (search + list) for links not filed into any folder.
+function renderFavVideoLinksTop(list, subfolderKey) {
+  // Links live in Firestore behind an auth-required read, so a casual
+  // visitor who hasn't signed in yet would otherwise always get an
+  // empty list back and see the generic "coming soon" empty state —
+  // even when the developer has already added links. Tell them to
+  // sign in instead of implying nothing's there.
+  if (!fbUser) {
+    const signInMsg = document.createElement('div');
+    signInMsg.className = 'st-folder-empty';
+    signInMsg.textContent = 'Sign in to get links 🙏';
+    list.appendChild(signInMsg);
+    return;
+  }
+
+  const loading = document.createElement('div');
+  loading.className = 'st-folder-empty';
+  loading.textContent = 'লোড হচ্ছে…';
+  list.appendChild(loading);
+
+  Promise.all([loadFavVideoLinks(true), loadFavVideoLinkFolders(true), loadFavVideoOrder()]).then(([rawLinksAll, foldersAll, orderDoc]) => {
+    if (window._stActiveFolder !== 'videos' || window._stActiveVideoFolder !== subfolderKey || window._stActiveLinkFolder) return;
+    loading.remove();
+
+    // Pre-existing links/folders saved before this feature had a
+    // subfolder field default to 'links' (the original Random Links
+    // folder), so nothing already saved disappears.
+    const rawLinks = rawLinksAll.filter((l) => (l.subfolder || 'links') === subfolderKey);
+    const folders = foldersAll.filter((f) => (f.subfolder || 'links') === subfolderKey);
+
+    // ── Search bar, first thing shown ── filters folder names AND
+    // orphan link titles together, live.
+    const searchWrap = document.createElement('div');
+    searchWrap.innerHTML = '<input type="text" placeholder="ফোল্ডার বা লিংক খুঁজুন…" style="width:100%;margin-bottom:10px;background:rgba(0,0,0,0.35);border:1px solid rgba(255,215,0,0.25);border-radius:10px;padding:9px 12px;color:var(--tl);font-size:14px;box-sizing:border-box;font-family:Inter,sans-serif">';
+    list.appendChild(searchWrap);
+    const searchInput = searchWrap.querySelector('input');
+
+    if (isDeveloper()) {
+      // ── Add Video Link — collapsed by default, tap header to expand.
+      // window._favVidShowForm is keyed per subfolder so each of the
+      // 4 folders remembers its own open/closed state independently,
+      // and doesn't re-collapse after every add within a session.
+      const addFormKey = 'add:' + subfolderKey;
+      const folderOptionsHtml = '<option value="">(কোনো ফোল্ডার নয়)</option>' +
+        folders.map((f) => '<option value="' + f.id + '">' + escHtml(f.name) + '</option>').join('');
+      const form = document.createElement('div');
+      form.className = 'st-card';
+      form.innerHTML =
+        '<div id="favVidAddFormHeader" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">' +
+          '<div style="color:rgba(255,215,0,0.85);font-size:13px;font-weight:600;letter-spacing:0.5px">➕ Add Video Link</div>' +
+          '<span id="favVidAddFormChevron" style="color:#ffd700;font-size:13px">' + (window._favVidShowForm && window._favVidShowForm[addFormKey] ? '▾' : '▸') + '</span>' +
+        '</div>' +
+        '<div id="favVidAddFormBody" style="display:' + (window._favVidShowForm && window._favVidShowForm[addFormKey] ? 'block' : 'none') + ';margin-top:10px">' +
+          '<input id="favVidNewTitle" placeholder="Title" style="width:100%;margin-bottom:8px;background:rgba(0,0,0,0.40);border:1px solid rgba(255,215,0,0.25);border-radius:10px;padding:9px 12px;color:var(--tl);font-size:14px;box-sizing:border-box;font-family:Inter,sans-serif">' +
+          '<input id="favVidNewUrl" placeholder="YouTube / Instagram / Telegram / Google Drive / Facebook link" style="width:100%;margin-bottom:8px;background:rgba(0,0,0,0.40);border:1px solid rgba(255,215,0,0.25);border-radius:10px;padding:9px 12px;color:var(--tl);font-size:14px;box-sizing:border-box;font-family:Inter,sans-serif">' +
+          '<select id="favVidNewFolder" style="width:100%;margin-bottom:8px;background:rgba(0,0,0,0.40);border:1px solid rgba(255,215,0,0.25);border-radius:10px;padding:9px 12px;color:var(--tl);font-size:14px;box-sizing:border-box;font-family:Inter,sans-serif">' + folderOptionsHtml + '</select>' +
+          '<button id="favVidAddBtn" style="padding:9px 20px;border-radius:10px;background:rgba(255,215,0,0.12);color:#ffd700;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;border:1px solid rgba(255,215,0,0.30)">💾 Save</button>' +
+        '</div>';
+      list.appendChild(form);
+      form.querySelector('#favVidAddFormHeader').addEventListener('click', () => {
+        window._favVidShowForm = window._favVidShowForm || {};
+        window._favVidShowForm[addFormKey] = !window._favVidShowForm[addFormKey];
+        form.querySelector('#favVidAddFormBody').style.display = window._favVidShowForm[addFormKey] ? 'block' : 'none';
+        form.querySelector('#favVidAddFormChevron').textContent = window._favVidShowForm[addFormKey] ? '▾' : '▸';
+      });
+      form.querySelector('#favVidAddBtn').addEventListener('click', async () => {
+        const title = form.querySelector('#favVidNewTitle').value.trim();
+        const url = form.querySelector('#favVidNewUrl').value.trim();
+        const folderId = form.querySelector('#favVidNewFolder').value || null;
+        if (!title || !url) return;
+        const platform = favvidDetectPlatform(url);
+        const items = (await loadFavVideoLinks(true)).slice();
+        items.push({ id: 'v' + Date.now(), title: title, url: url, platform: platform, folderId: folderId, subfolder: subfolderKey, addedAt: Date.now() });
+        await saveFavVideoLinks(items);
+        renderSt();
+      });
+
+      // ── New Folder — same collapsed-by-default pattern.
+      const folderFormKey = 'folder:' + subfolderKey;
+      const folderForm = document.createElement('div');
+      folderForm.className = 'st-card';
+      folderForm.innerHTML =
+        '<div id="favVidNewFolderHeader" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">' +
+          '<div style="color:rgba(255,215,0,0.85);font-size:13px;font-weight:600;letter-spacing:0.5px">📁 New Folder</div>' +
+          '<span id="favVidNewFolderChevron" style="color:#ffd700;font-size:13px">' + (window._favVidShowForm && window._favVidShowForm[folderFormKey] ? '▾' : '▸') + '</span>' +
+        '</div>' +
+        '<div id="favVidNewFolderBody" style="display:' + (window._favVidShowForm && window._favVidShowForm[folderFormKey] ? 'flex' : 'none') + ';gap:8px;margin-top:10px">' +
+          '<input id="favVidNewFolderName" placeholder="Folder name" style="flex:1;min-width:0;background:rgba(0,0,0,0.40);border:1px solid rgba(255,215,0,0.25);border-radius:10px;padding:9px 12px;color:var(--tl);font-size:14px;box-sizing:border-box;font-family:Inter,sans-serif">' +
+          '<button id="favVidAddFolderBtn" style="padding:9px 16px;border-radius:10px;background:rgba(255,215,0,0.12);color:#ffd700;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;border:1px solid rgba(255,215,0,0.30);white-space:nowrap;flex-shrink:0">+ Create</button>' +
+        '</div>';
+      list.appendChild(folderForm);
+      folderForm.querySelector('#favVidNewFolderHeader').addEventListener('click', () => {
+        window._favVidShowForm = window._favVidShowForm || {};
+        window._favVidShowForm[folderFormKey] = !window._favVidShowForm[folderFormKey];
+        folderForm.querySelector('#favVidNewFolderBody').style.display = window._favVidShowForm[folderFormKey] ? 'flex' : 'none';
+        folderForm.querySelector('#favVidNewFolderChevron').textContent = window._favVidShowForm[folderFormKey] ? '▾' : '▸';
+      });
+      folderForm.querySelector('#favVidAddFolderBtn').addEventListener('click', async () => {
+        const name = folderForm.querySelector('#favVidNewFolderName').value.trim();
+        if (!name) return;
+        const cur = (await loadFavVideoLinkFolders(true)).slice();
+        cur.push({ id: 'lf' + Date.now(), name: name, subfolder: subfolderKey });
+        await saveFavVideoLinkFolders(cur);
+        renderSt();
+      });
+    }
+
+    // ── Folders, then orphan links below — both filtered live by the
+    // search bar above.
+    const bodyContainer = document.createElement('div');
+    list.appendChild(bodyContainer);
+
+    const orphanItemsFull = favvidApplyOrder(
+      rawLinks.filter((l) => !l.folderId).map((l) => Object.assign({}, l, { key: l.id })),
+      orderDoc[subfolderKey + ':_orphan']
+    );
+
+    function renderBody() {
+      const q = searchInput.value.trim().toLowerCase();
+      bodyContainer.innerHTML = '';
+      const filteredFolders = q ? folders.filter((f) => f.name.toLowerCase().indexOf(q) !== -1) : folders;
+      const filteredOrphans = q ? orphanItemsFull.filter((v) => v.title.toLowerCase().indexOf(q) !== -1) : orphanItemsFull;
+
+      filteredFolders.forEach((f) => {
+        const count = rawLinks.filter((l) => l.folderId === f.id).length;
+        const tile = document.createElement('div');
+        tile.className = 'st-folder-tile';
+
+        function renderTileDisplay() {
+          tile.innerHTML =
+            '<span class="st-folder-tile-icon">📁</span>' +
+            '<span class="st-folder-tile-title">' + escHtml(f.name) + '</span>' +
+            '<span class="st-folder-tile-count">' + count + '</span>' +
+            (isDeveloper() ? '<button class="favvid-folder-edit" style="margin-left:8px;width:26px;height:26px;border-radius:8px;border:1px solid rgba(255,215,0,0.3);color:#ffd700;background:rgba(255,215,0,0.08);font-size:13px;cursor:pointer;flex-shrink:0">✎</button><button class="favvid-folder-del" style="margin-left:6px;width:26px;height:26px;border-radius:8px;border:1px solid rgba(255,80,80,0.35);color:#ff8888;background:rgba(255,80,80,0.08);font-size:13px;cursor:pointer;flex-shrink:0">✕</button>' : '') +
+            '<span class="st-folder-tile-arrow">›</span>';
+          tile.onclick = (e) => {
+            if (e.target.closest('.favvid-folder-del') || e.target.closest('.favvid-folder-edit')) return;
+            window._stActiveLinkFolder = f.id;
+            renderSt();
+          };
+          const editBtn = tile.querySelector('.favvid-folder-edit');
+          if (editBtn) editBtn.addEventListener('click', (e) => { e.stopPropagation(); renderTileEdit(); });
+          const delBtn = tile.querySelector('.favvid-folder-del');
+          if (delBtn) {
+            delBtn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              // Deleting a folder only un-files its links (back to orphan) —
+              // never deletes the links themselves.
+              const links = (await loadFavVideoLinks(true)).map((l) => (l.folderId === f.id ? Object.assign({}, l, { folderId: null }) : l));
+              await saveFavVideoLinks(links);
+              const remaining = (await loadFavVideoLinkFolders(true)).filter((x) => x.id !== f.id);
+              await saveFavVideoLinkFolders(remaining);
+              renderSt();
+            });
+          }
+        }
+
+        function renderTileEdit() {
+          tile.innerHTML =
+            '<input class="favvid-folder-edit-name" value="' + escHtml(f.name) + '" style="flex:1;min-width:0;background:rgba(0,0,0,0.40);border:1px solid rgba(255,215,0,0.25);border-radius:10px;padding:8px 10px;color:var(--tl);font-size:14px;box-sizing:border-box;font-family:Inter,sans-serif;margin-right:8px">' +
+            '<button class="favvid-folder-edit-save" style="padding:8px 14px;border-radius:8px;background:rgba(255,215,0,0.12);color:#ffd700;font-size:12px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;border:1px solid rgba(255,215,0,0.30);white-space:nowrap;margin-right:6px">💾</button>' +
+            '<button class="favvid-folder-edit-cancel" style="padding:8px 14px;border-radius:8px;background:rgba(255,255,255,0.06);color:var(--tl);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;border:1px solid rgba(255,255,255,0.15);white-space:nowrap">✕</button>';
+          tile.onclick = null;
+          tile.querySelector('.favvid-folder-edit-cancel').addEventListener('click', (e) => { e.stopPropagation(); renderSt(); });
+          tile.querySelector('.favvid-folder-edit-save').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const newName = tile.querySelector('.favvid-folder-edit-name').value.trim();
+            if (!newName) return;
+            const cur = (await loadFavVideoLinkFolders(true)).map((x) => (x.id === f.id ? Object.assign({}, x, { name: newName }) : x));
+            await saveFavVideoLinkFolders(cur);
+            renderSt();
+          });
+        }
+
+        renderTileDisplay();
+        bodyContainer.appendChild(tile);
+      });
+
+      if (folders.length) {
+        const header = document.createElement('div');
+        header.style.cssText = 'margin:14px 0 8px;color:rgba(255,215,0,0.55);font-size:12px;letter-spacing:1px';
+        header.textContent = '— অন্যান্য লিংক (কোনো ফোল্ডারে নেই) —';
+        bodyContainer.appendChild(header);
+      }
+
+      if (!filteredOrphans.length) {
+        const empty = document.createElement('div');
+        empty.className = 'st-folder-empty';
+        empty.textContent = q ? 'কিছু পাওয়া যায়নি' : 'শীঘ্রই আসছে 🙏';
+        bodyContainer.appendChild(empty);
+      } else {
+        filteredOrphans.forEach((v) => favvidRenderLinkCard(v, orphanItemsFull, subfolderKey + ':_orphan', bodyContainer));
+      }
+    }
+    searchInput.addEventListener('input', renderBody);
+    renderBody();
+  });
+}
+
+// Inside one specific link folder — its own back row (needs the
+// folder's name, only known after the fetch resolves) plus a search bar
+// scoped to just this folder's links.
+function renderFavVideoLinksFolderView(list, folderId, subfolderKey) {
+  if (!fbUser) {
+    const signInMsg = document.createElement('div');
+    signInMsg.className = 'st-folder-empty';
+    signInMsg.textContent = 'Sign in to get links 🙏';
+    list.appendChild(signInMsg);
+    return;
+  }
+
+  const loading = document.createElement('div');
+  loading.className = 'st-folder-empty';
+  loading.textContent = 'লোড হচ্ছে…';
+  list.appendChild(loading);
+
+  Promise.all([loadFavVideoLinks(true), loadFavVideoLinkFolders(true), loadFavVideoOrder()]).then(([rawLinks, folders, orderDoc]) => {
+    if (window._stActiveFolder !== 'videos' || window._stActiveVideoFolder !== subfolderKey || window._stActiveLinkFolder !== folderId) return;
+    loading.remove();
+
+    const folder = folders.find((f) => f.id === folderId);
+    const parentSub = VIDEO_SUBFOLDERS.find((s) => s.key === subfolderKey);
+
+    const backRow = document.createElement('div');
+    backRow.className = 'st-back-row';
+    backRow.innerHTML =
+      '<button class="st-back-btn">← ' + escHtml(parentSub ? parentSub.title : '') + '</button>' +
+      '<span class="st-back-title">' + escHtml(folder ? folder.name : '') + '</span>';
+    backRow.querySelector('.st-back-btn').addEventListener('click', () => {
+      window._stActiveLinkFolder = null;
+      renderSt();
+    });
+    list.appendChild(backRow);
+
+    if (!folder) { window._stActiveLinkFolder = null; renderSt(); return; }
+
+    if (isDeveloper()) {
+      const form = document.createElement('div');
+      form.className = 'st-card';
+      form.innerHTML =
+        '<div style="font-size:11px;color:rgba(255,215,0,0.8);margin-bottom:6px;letter-spacing:1px">➕ Add Video Link to "' + escHtml(folder.name) + '"</div>' +
+        '<input id="favVidNewTitle" placeholder="Title" style="width:100%;margin-bottom:8px;background:rgba(0,0,0,0.40);border:1px solid rgba(255,215,0,0.25);border-radius:10px;padding:9px 12px;color:var(--tl);font-size:14px;box-sizing:border-box;font-family:Inter,sans-serif">' +
+        '<input id="favVidNewUrl" placeholder="YouTube / Instagram / Telegram / Google Drive / Facebook link" style="width:100%;margin-bottom:8px;background:rgba(0,0,0,0.40);border:1px solid rgba(255,215,0,0.25);border-radius:10px;padding:9px 12px;color:var(--tl);font-size:14px;box-sizing:border-box;font-family:Inter,sans-serif">' +
+        '<button id="favVidAddBtn" style="padding:9px 20px;border-radius:10px;background:rgba(255,215,0,0.12);color:#ffd700;font-size:13px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;border:1px solid rgba(255,215,0,0.30)">💾 Save</button>';
+      list.appendChild(form);
+      form.querySelector('#favVidAddBtn').addEventListener('click', async () => {
+        const title = form.querySelector('#favVidNewTitle').value.trim();
+        const url = form.querySelector('#favVidNewUrl').value.trim();
+        if (!title || !url) return;
+        const platform = favvidDetectPlatform(url);
+        const items2 = (await loadFavVideoLinks(true)).slice();
+        items2.push({ id: 'v' + Date.now(), title: title, url: url, platform: platform, folderId: folderId, subfolder: subfolderKey, addedAt: Date.now() });
+        await saveFavVideoLinks(items2);
+        renderSt();
+      });
+    }
+
+    const items = favvidApplyOrder(
+      rawLinks.filter((l) => l.folderId === folderId).map((l) => Object.assign({}, l, { key: l.id })),
+      orderDoc['folder:' + folderId]
+    );
+    favvidSearchableSection(list, {
+      placeholder: 'লিংক খুঁজুন…',
+      allItems: items,
+      renderCards: (filtered, container) => {
+        filtered.forEach((v) => favvidRenderLinkCard(v, items, 'folder:' + folderId, container));
+      },
+    });
+  });
+}
+
+
 function renderSt() {
   const list = document.getElementById("stList");
   list.innerHTML = "";
+
+  // "Stotram Tracker" title + "Add Your Stotram" box don't apply inside
+  // Favourite Videos — hide them there, restore for every other folder.
+  const trackerTitle = document.getElementById('stTrackerTitle');
+  const addForm = document.getElementById('stAddForm');
+  const inVideos = window._stActiveFolder === 'videos';
+  if (trackerTitle) trackerTitle.style.display = inVideos ? 'none' : '';
+  if (addForm) addForm.style.display = inVideos ? 'none' : '';
 
   // Inject premium glow animations once
   if (!document.getElementById('st-card-styles')) {
@@ -13643,12 +15144,17 @@ function renderSt() {
   }
 
   const FOLDERS = [
-    { key: 'rv',      title: 'রাধা বল্লভ সম্প্রদায়', icon: '🪷', img: ST_FOLDER_ICON_IMG.rv },
-    { key: 'krishna', title: 'কৃষ্ণ', icon: '🦚' },
-    { key: 'shiv',    title: 'ভগবান শিব', icon: '🔱', img: ST_FOLDER_ICON_IMG.shiv },
-    { key: 'bmg',     title: 'ব্রহ্মা মাধ্ব গৌড়ীয় সম্প্রদায়', icon: '🕉️', img: ST_FOLDER_ICON_IMG.bmg },
-    { key: 'hanuman', title: 'হনুমান জী মহারাজ', icon: '🚩' },
+    { key: 'videos',  title: 'Favourite Videos', titleHi: 'पसंदीदा वीडियो', icon: '🎬' },
+    { key: 'rv',      title: 'রাধা বল্লভ সম্প্রদায়', titleHi: 'राधावल्लभ सम्प्रदाय', icon: '🪷', img: ST_FOLDER_ICON_IMG.rv },
+    { key: 'bmg',     title: 'ব্রাহ্ম মাধ্ব গৌড়ীয় সম্প্রদায়', titleHi: 'ब्रह्म माध्व गौड़ीय सम्प्रदाय', icon: '🕉️', img: ST_FOLDER_ICON_IMG.bmg },
+    { key: 'krishna', title: 'শ্রীকৃষ্ণ', titleHi: 'श्रीकृष्ण', icon: '🦚' },
+    { key: 'shiv',    title: 'ভগবান শিব', titleHi: 'भगवान शिव', icon: '🔱', img: ST_FOLDER_ICON_IMG.shiv },
+    { key: 'hanuman', title: 'হনুমান জী মহারাজ', titleHi: 'हनुमान जी महाराज', icon: '🚩' },
   ];
+  // Pick the language-appropriate folder title, falling back to the
+  // Bangla (default) one whenever a Hindi title isn't set (e.g. custom
+  // group added later).
+  const folderTitle = (f) => (App.S.stotramLang === 'hi' && f.titleHi) ? f.titleHi : f.title;
 
   const customItems = (App.S.customSt || []).map((x) => ({ ...x, custom: true }));
   const groups = FOLDERS.map((f) => ({
@@ -13656,7 +15162,7 @@ function renderSt() {
     items: STLIST.filter((s) => s.cat === f.key),
   }));
   if (customItems.length) {
-    groups.push({ key: '__custom', title: 'আমার স্তোত্র', icon: '📝', items: customItems });
+    groups.push({ key: '__custom', title: 'আমার স্তোত্র', titleHi: 'मेरे स्तोत्र', icon: '📝', items: customItems });
   }
 
   const activeKey = window._stActiveFolder || null;
@@ -13672,11 +15178,12 @@ function renderSt() {
         : '<span class="st-folder-tile-icon">' + group.icon + '</span>';
       tile.innerHTML =
         iconHtml +
-        '<span class="st-folder-tile-title">' + escHtml(group.title) + '</span>' +
-        '<span class="st-folder-tile-count">' + group.items.length + '</span>' +
+        '<span class="st-folder-tile-title">' + escHtml(folderTitle(group)) + '</span>' +
+        (group.key === 'videos' ? '' : '<span class="st-folder-tile-count">' + group.items.length + '</span>') +
         '<span class="st-folder-tile-arrow">›</span>';
       tile.addEventListener('click', () => {
         window._stActiveFolder = group.key;
+        window._stActiveVideoFolder = null;
         renderSt();
       });
       list.appendChild(tile);
@@ -13693,11 +15200,18 @@ function renderSt() {
     return;
   }
 
+  // Favourite Videos is a different kind of folder (video subfolders,
+  // not jap-counter stotram cards) — hand off to its own renderer.
+  if (activeKey === 'videos') {
+    renderFavVideoFolder(list);
+    return;
+  }
+
   const backRow = document.createElement('div');
   backRow.className = 'st-back-row';
   backRow.innerHTML =
-    '<button class="st-back-btn">← ফোল্ডার তালিকা</button>' +
-    '<span class="st-back-title">' + escHtml(group.title) + '</span>';
+    '<button class="st-back-btn">← ' + (App.S.stotramLang === 'hi' ? 'फ़ोल्डर सूची' : 'ফোল্ডার তালিকা') + '</button>' +
+    '<span class="st-back-title">' + escHtml(folderTitle(group)) + '</span>';
   backRow.querySelector('.st-back-btn').addEventListener('click', () => {
     window._stActiveFolder = null;
     renderSt();
@@ -13707,7 +15221,7 @@ function renderSt() {
   if (!group.items.length) {
     const empty = document.createElement('div');
     empty.className = 'st-folder-empty';
-    empty.textContent = 'শীঘ্রই আসছে 🙏';
+    empty.textContent = App.S.stotramLang === 'hi' ? 'जल्द ही आ रहा है 🙏' : 'শীঘ্রই আসছে 🙏';
     list.appendChild(empty);
     return;
   }
@@ -13746,8 +15260,8 @@ function renderSt() {
     let inner =
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">' +
         '<div style="flex:1;min-width:0">' +
-          '<div class="st-name">' + escHtml(st.name) + globalTag + '</div>' +
-          (st.sub ? '<div class="st-sub">' + escHtml(st.sub) + '</div>' : '') +
+          '<div class="st-name">' + escHtml(stName(st)) + globalTag + '</div>' +
+          (stSub(st) ? '<div class="st-sub">' + escHtml(stSub(st)) + '</div>' : '') +
         '</div>' +
         headerRight +
       '</div>' +
@@ -14241,6 +15755,9 @@ window.devExitGhostMode = async function () {
 // ══════════════════════════════════════════════════════════════
 
 function getEffectiveLyrics(id) {
+  if (id === "hcj" && App.S.stotramLang === "hi" && _hcjHindiLyrics) {
+    return _hcjHindiLyrics;
+  }
   return (
     LYRICS[id] ||
     ((App.S.customSt || []).find((x) => x.id === id) || {}).lyrics ||
@@ -14320,148 +15837,6 @@ function delSt(id) {
   renderSt();
   toast("Removed");
 }
-
-// ── Custom Japs / Naam ──────────────────────────────────────────────
-// User-created jap entries (e.g. a Sampraday-specific Yugal Mantra):
-// own title + mantra/naam text, own tap counter, choice of animation
-// style. Listed inside the same Sampraday selection dropdown as the
-// built-in modes, but kept as a self-contained layer (own counter, own
-// animation) rather than plugging into the existing japMode system --
-// so it can't disturb the built-in Radha / RV / KV / HK / SS /
-// Ramanandi tap-and-animation logic.
-let _cjActiveId = null;
-
-function renderCustomJapDropdown() {
-  const list = document.getElementById("naamSelCustomList");
-  if (!list) return;
-  const items = App.S.customJaps || [];
-  list.innerHTML = items
-    .map(
-      (j) => `
-    <div class="naam-sel-opt" onclick="openCustomJapCounter('${j.id}')">
-      <span class="ns-check"></span> <span>${j.animation === "hk" ? "🪈" : "🌸"} ${_escHtml(j.title)}</span>
-    </div>`,
-    )
-    .join("");
-}
-
-function openCustomJapPanel() {
-  const dd = document.getElementById("naamSelDd");
-  if (dd) dd.classList.remove("show");
-  const el = document.getElementById("cjPanel");
-  if (!el) return;
-  el.style.display = "flex";
-  renderCustomJapManageList();
-}
-function closeCustomJapPanel() {
-  const el = document.getElementById("cjPanel");
-  if (el) el.style.display = "none";
-}
-
-function addCustomJap() {
-  const titleEl = document.getElementById("cjTitleIn");
-  const textEl = document.getElementById("cjTextIn");
-  const animEl = document.querySelector('input[name="cjAnim"]:checked');
-  const title = (titleEl.value || "").trim();
-  const text = (textEl.value || "").trim();
-  if (!title) {
-    toast("Please enter a title");
-    return;
-  }
-  if (!text) {
-    toast("Please enter the mantra / naam text");
-    return;
-  }
-  const anim = animEl ? animEl.value : "radha";
-  const id = "cj_" + Date.now();
-  if (!App.S.customJaps) App.S.customJaps = [];
-  App.S.customJaps.push({ id, title, text, animation: anim, count: 0 });
-  App.save();
-  fbDebouncedPush();
-  titleEl.value = "";
-  textEl.value = "";
-  renderCustomJapManageList();
-  renderCustomJapDropdown();
-  toast("Custom jap added! 🙏");
-}
-
-function delCustomJap(id) {
-  if (!window.confirm("Remove this custom jap? Its tap count will no longer count toward your Lifetime Target.")) return;
-  App.S.customJaps = (App.S.customJaps || []).filter((x) => x.id !== id);
-  App.save();
-  fbDebouncedPush();
-  renderCustomJapManageList();
-  renderCustomJapDropdown();
-  toast("Removed");
-}
-
-function renderCustomJapManageList() {
-  const list = document.getElementById("cjList");
-  if (!list) return;
-  const items = App.S.customJaps || [];
-  if (!items.length) {
-    list.innerHTML = '<div style="opacity:.6;font-size:12px;text-align:center;padding:10px">No custom japs yet. Add one above.</div>';
-    return;
-  }
-  list.innerHTML = items
-    .map(
-      (j) => `
-    <div class="cj-row">
-      <div class="cj-row-main" onclick="openCustomJapCounter('${j.id}')">
-        <div class="cj-row-title">${j.animation === "hk" ? "🪈" : "🌸"} ${_escHtml(j.title)}</div>
-        <div class="cj-row-count">${(j.count || 0).toLocaleString("en-IN")} japs</div>
-      </div>
-      <button class="cj-row-del" onclick="delCustomJap('${j.id}')">✕</button>
-    </div>`,
-    )
-    .join("");
-}
-
-function _escHtml(s) {
-  const d = document.createElement("div");
-  d.textContent = s;
-  return d.innerHTML;
-}
-
-function openCustomJapCounter(id) {
-  const j = (App.S.customJaps || []).find((x) => x.id === id);
-  if (!j) return;
-  _cjActiveId = id;
-  const dd = document.getElementById("naamSelDd");
-  if (dd) dd.classList.remove("show");
-  closeCustomJapPanel();
-  const screen = document.getElementById("cjCounterScreen");
-  screen.className = "cj-anim-" + (j.animation === "hk" ? "hk" : "radha");
-  screen.style.display = "flex";
-  document.getElementById("cjCounterTitle").textContent = j.title;
-  document.getElementById("cjCounterMantra").textContent = j.text;
-  document.getElementById("cjCounterCount").textContent = (j.count || 0).toLocaleString("en-IN");
-}
-
-function closeCustomJapCounter() {
-  const screen = document.getElementById("cjCounterScreen");
-  if (screen) screen.style.display = "none";
-  _cjActiveId = null;
-}
-
-function tapCustomJap() {
-  const j = (App.S.customJaps || []).find((x) => x.id === _cjActiveId);
-  if (!j) return;
-  j.count = (j.count || 0) + 1;
-  const ms = App.S.ms || 108;
-  const malaComplete = j.count % ms === 0;
-  App.vib(malaComplete ? [200, 80, 200, 80, 300] : [10]);
-  document.getElementById("cjCounterCount").textContent = j.count.toLocaleString("en-IN");
-  const screen = document.getElementById("cjCounterScreen");
-  if (screen) {
-    screen.classList.add("cj-pulse");
-    setTimeout(() => screen.classList.remove("cj-pulse"), malaComplete ? 700 : 180);
-  }
-  if (malaComplete) toast("🙏 Mala complete!");
-  App.save();
-  fbDebouncedPush();
-}
-
 
 // _ADHIK_MAAS_WINDOWS, _getAdhikMaasWindow, isAdhikMaasDate
 // defined in panchangData.js (loaded before app.js)
@@ -16417,49 +17792,55 @@ window.addEventListener("appinstalled", () => { _closeInstallModal(); });
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Service Worker
+// v211 offline fix: register immediately instead of waiting for the
+// window "load" event. app.js sits at the bottom of <body> with no
+// defer/async, so by the time this line runs the DOM (and this script)
+// is already parsed — "load" was needlessly waiting on every image/font/
+// external script to finish too, which meant on a slow first connection
+// the SW might not even start registering (let alone finish caching
+// CORE_ASSETS) before the person backgrounded/closed the app. Registering
+// here shrinks that window substantially.
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("./sw.js", { scope: "./" })
-      .then((r) => {
-        console.log("SW registered:", r.scope);
+  navigator.serviceWorker
+    .register("./sw.js", { scope: "./" })
+    .then((r) => {
+      console.log("SW registered:", r.scope);
 
-        // ── SW update path ──────────────────────────────────────────────────
-        // We listen for SW_UPDATED message (sent by the new SW on activate).
-        // We do NOT also listen on updatefound/statechange — that would fire a
-        // second reload on the same page load, causing the install popup flicker.
-        // One reload path only: the SW_UPDATED message below.
-        // ────────────────────────────────────────────────────────────────────
-      })
-      .catch((e) => console.warn("SW registration failed:", e.message));
+      // ── SW update path ──────────────────────────────────────────────────
+      // We listen for SW_UPDATED message (sent by the new SW on activate).
+      // We do NOT also listen on updatefound/statechange — that would fire a
+      // second reload on the same page load, causing the install popup flicker.
+      // One reload path only: the SW_UPDATED message below.
+      // ────────────────────────────────────────────────────────────────────
+    })
+    .catch((e) => console.warn("SW registration failed:", e.message));
 
-    navigator.serviceWorker.addEventListener("message", (e) => {
-      // ── SW_UPDATED (v154): NO auto-reload. ──
-      // Previous versions did window.location.reload() ~800ms after this
-      // message, which was the root cause of the "app loads twice / loading
-      // bar disappears then comes back" complaint on slow networks.
-      // The new SW (v154) no longer calls clients.claim(), so the current
-      // page keeps running on the old SW until the user navigates or
-      // manually refreshes — guaranteed clean, no flicker.
-      if (e.data && e.data.type === "SW_UPDATED") {
-        console.log("[SW] update ready (" + e.data.version + ") — will apply on next navigation");
-        // Optional: surface a soft toast / pill here if desired.
-        try { if (typeof toast === "function") toast("✨ Update ready — refresh anytime"); } catch (_) {}
-      }
-    });
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    // ── SW_UPDATED (v154): NO auto-reload. ──
+    // Previous versions did window.location.reload() ~800ms after this
+    // message, which was the root cause of the "app loads twice / loading
+    // bar disappears then comes back" complaint on slow networks.
+    // The new SW (v154) no longer calls clients.claim(), so the current
+    // page keeps running on the old SW until the user navigates or
+    // manually refreshes — guaranteed clean, no flicker.
+    if (e.data && e.data.type === "SW_UPDATED") {
+      console.log("[SW] update ready (" + e.data.version + ") — will apply on next navigation");
+      // Optional: surface a soft toast / pill here if desired.
+      try { if (typeof toast === "function") toast("✨ Update ready — refresh anytime"); } catch (_) {}
+    }
+  });
 
-    // ── SW_READY path: SW was already controlling when this page loaded ──────
-    // This fires when the page is a fresh load under an already-active SW
-    // (not a reload triggered by SW_UPDATED). Safe to show install modal here
-    // because beforeinstallprompt's own 3s timer is the primary trigger; this
-    // is only a fallback for cases where beforeinstallprompt already fired
-    // before the SW registration promise resolved.
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      // controllerchange fires when a new SW claims this client.
-      // This is the correct signal that a new SW is now in control.
-      // The SW_UPDATED message handles the reload; nothing extra needed here.
-      console.log("[SW] controllerchange — new SW is now controlling");
-    });
+  // ── SW_READY path: SW was already controlling when this page loaded ──────
+  // This fires when the page is a fresh load under an already-active SW
+  // (not a reload triggered by SW_UPDATED). Safe to show install modal here
+  // because beforeinstallprompt's own 3s timer is the primary trigger; this
+  // is only a fallback for cases where beforeinstallprompt already fired
+  // before the SW registration promise resolved.
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    // controllerchange fires when a new SW claims this client.
+    // This is the correct signal that a new SW is now in control.
+    // The SW_UPDATED message handles the reload; nothing extra needed here.
+    console.log("[SW] controllerchange — new SW is now controlling");
   });
 }
 
@@ -16530,7 +17911,7 @@ function _isProseBlock(verse) {
 }
 
 // ── IDs that support translation (অনুবাদ) button
-const TRANSLATION_IDS = ["nkc", "gms", "rsn", "svb", "dkc", "yms", "bg"];
+const TRANSLATION_IDS = ["nkc", "gms", "rsn", "svb", "dkc", "yms", "bg", "rks"];
 // ── IDs where prose sections need vertical-scroll mode
 const PROSE_IDS = ["nkc"];
 
@@ -16541,6 +17922,10 @@ let _verses = [],
   _verseIdx = 0,
   _currentStotramId = "";
 let _translationVisible = false;
+// Which meaning to show when a stotram has more than one translation
+// (currently only 'bn' Bengali অর্থ: and 'hi' Hindi-in-Bengali-script
+// অর্থ২:). Resets to 'bn' whenever a new stotram opens.
+let _translationLang = "bn";
 // Global preference set from the Stotram list screen toggle
 let _globalTranslationPref = false;
 
@@ -16654,6 +18039,15 @@ const SVG_SHIV_BOTTOM = `<svg width="160" height="36" viewBox="0 0 160 36" fill=
 // ──────────────────────────────────────────────────────────────
 
 function showLyrics(id) {
+  // Hindi HCJ is loaded only when it is actually opened. This keeps the
+  // initial stotram bundle fast while preserving one verse per reader page.
+  if (id === "hcj" && App.S.stotramLang === "hi" && !_hcjHindiLyrics) {
+    toast("हिंदी श्री हित चौरासी पाठ लोड हो रहा है… 🙏");
+    loadHcjHindiLyrics()
+      .then(() => showLyrics(id))
+      .catch(() => toast("हिंदी चौरासी पाठ लोड नहीं हो पाया 🙏"));
+    return;
+  }
   // The Gita is kept out of the initial bundle. Load and validate all
   // 700 Bengali shlokas the first time the reader is opened.
   if (id === "bg" && window.isGitaReady && !window.isGitaReady()) {
@@ -16689,6 +18083,7 @@ function showLyrics(id) {
   _translationVisible = TRANSLATION_IDS.includes(id)
     ? _globalTranslationPref
     : false;
+  _translationLang = "bn";
 
   // ── Sectioned stotrams (svb, blv, …): show section picker ──
   if (window.StotramSections && window.StotramSections.isSectioned(id)) {
@@ -16775,7 +18170,7 @@ function showLyrics(id) {
     const linesOnly = v.split("\n").filter((l) => l.trim().length > 0);
     const allArtha =
       linesOnly.length > 0 &&
-      linesOnly.every((l) => /^অর্থ\s*:/.test(l.trim()));
+      linesOnly.every((l) => /^অর্থ২?\s*:/.test(l.trim()));
     if (allArtha && mergedVerses.length > 0) {
       // Append to previous verse with a blank line separator
       mergedVerses[mergedVerses.length - 1] += "\n\n" + v;
@@ -16800,7 +18195,7 @@ function showLyrics(id) {
     ...(App.S.customSt || []),
   ];
   const nm = allSt.find((x) => x.id === id);
-  document.getElementById("lmTitle").textContent = nm ? nm.name : id;
+  document.getElementById("lmTitle").textContent = nm ? stName(nm) : id;
 
   _renderVerse(0, null);
   document.getElementById("lmo").classList.add("show");
@@ -16820,14 +18215,23 @@ function _renderVerse(idx, dir) {
   const isProse =
     PROSE_IDS.includes(_currentStotramId) && _isProseBlock(verseText);
   const hasTranslation = TRANSLATION_IDS.includes(_currentStotramId);
+  // The Translation toggle pill is a floating overlay (position:absolute,
+  // pinned top-right — see .lm-translate-wrap in style-stotram.css), so it
+  // can sit on top of the first line(s) of verse text. Reserve clearance
+  // for it here — applied for the whole stotram (not per-verse) so text
+  // doesn't jump up/down as you swipe between verses that do/don't have
+  // their own অর্থ: line.
+  if (body) body.style.paddingTop = hasTranslation ? "48px" : "";
 
-  // Does this verse have any অর্থ: lines at all?
-  const verseHasArtha = /^অর্থ\s*:/m.test(verseText);
+  // Does this verse have any অর্থ: or অর্থ২: lines at all?
+  const verseHasArtha = /^অর্থ২?\s*:/m.test(verseText);
+  // Does this verse specifically have a second-language (অর্থ২:) line?
+  const verseHasSecondLang = /^অর্থ২\s*:/m.test(verseText);
 
   // Does this verse have any non-artha, non-empty content lines?
   const verseHasContent = verseText.split("\n").some((l) => {
     const t = l.trim();
-    return t.length > 0 && !/^অর্থ\s*:/.test(t);
+    return t.length > 0 && !/^অর্থ২?\s*:/.test(t);
   });
 
   let linesHtml = "";
@@ -16855,9 +18259,16 @@ function _renderVerse(idx, dir) {
           .replace(/&/g, "&amp;")
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;");
+        if (/^অর্থ২\s*:/.test(content.trim())) {
+          // Hindi (second) meaning — only when translation ON and this
+          // language is the one currently selected.
+          if (!hasTranslation || !_translationVisible || _translationLang !== "hi") return "";
+          return '<span class="lyr-line lyr-artha' + extraClass + '">' + esc + "</span>";
+        }
         if (/^অর্থ\s*:/.test(content.trim())) {
-          // Only inject অর্থ: line when translation is ON
-          if (!hasTranslation || !_translationVisible) return "";
+          // Only inject অর্থ: line when translation is ON and Bengali
+          // (the default/original language) is selected.
+          if (!hasTranslation || !_translationVisible || _translationLang !== "bn") return "";
           return '<span class="lyr-line lyr-artha' + extraClass + '">' + esc + "</span>";
         }
         return '<span class="lyr-line' + extraClass + '">' + esc + "</span>";
@@ -16879,7 +18290,7 @@ function _renderVerse(idx, dir) {
   _reinjectThemeDecos();
 
   // Toggle: only show when this verse actually has অর্থ: lines
-  _renderTranslationToggle(verseHasArtha);
+  _renderTranslationToggle(verseHasArtha, verseHasSecondLang);
 
   body.classList.remove("lyr-slide-enter-left", "lyr-slide-enter-right");
   if (dir === 1) {
@@ -16914,11 +18325,14 @@ function _renderVerse(idx, dir) {
 
 // Render translation toggle — shown ONLY when current verse has অর্থ: lines.
 // verseHasArtha: boolean passed from _renderVerse
-function _renderTranslationToggle(verseHasArtha) {
+// verseHasSecondLang: boolean — does this verse have an অর্থ২: line too?
+function _renderTranslationToggle(verseHasArtha, verseHasSecondLang) {
   // Not a translatable stotram → always remove
   if (!TRANSLATION_IDS.includes(_currentStotramId)) {
     var old = document.getElementById("lm-translate-wrap");
     if (old) old.remove();
+    var oldLang = document.getElementById("lm-translate-lang-wrap");
+    if (oldLang) oldLang.remove();
     return;
   }
 
@@ -16927,6 +18341,8 @@ function _renderTranslationToggle(verseHasArtha) {
   // This verse has no অর্থ: → hide toggle (and reset translation state)
   if (!verseHasArtha) {
     if (existing) existing.style.display = "none";
+    var langWrapHide = document.getElementById("lm-translate-lang-wrap");
+    if (langWrapHide) langWrapHide.style.display = "none";
     return;
   }
 
@@ -16934,35 +18350,97 @@ function _renderTranslationToggle(verseHasArtha) {
   if (existing) {
     existing.style.display = "";
     _syncToggleUI();
+  } else {
+    // First time — build the toggle
+    const nav = document.getElementById("lmNav");
+    if (!nav) return;
+
+    var wrap = document.createElement("div");
+    wrap.id = "lm-translate-wrap";
+    wrap.className = "lm-translate-wrap";
+
+    var label = document.createElement("span");
+    label.className = "lm-toggle-label";
+    label.textContent = "Translation";
+
+    var sw = document.createElement("button");
+    sw.id = "lm-toggle-sw";
+    sw.className = "lm-toggle-sw" + (_translationVisible ? " on" : "");
+    sw.setAttribute("role", "switch");
+    sw.setAttribute("aria-checked", _translationVisible ? "true" : "false");
+    sw.innerHTML = '<span class="lm-toggle-thumb"></span>';
+    sw.onclick = function () {
+      _translationVisible = !_translationVisible;
+      _renderVerse(_verseIdx, null);
+    };
+
+    wrap.appendChild(label);
+    wrap.appendChild(sw);
+    nav.parentNode.insertBefore(wrap, nav);
+  }
+
+  // Bengali/Hindi language picker — only relevant for stotrams (like
+  // Radha Kripa Kataksha) that actually have a second translation, and
+  // only worth showing once Translation is switched on.
+  _renderTranslationLangPicker(verseHasSecondLang);
+}
+
+function _renderTranslationLangPicker(verseHasSecondLang) {
+  var existing = document.getElementById("lm-translate-lang-wrap");
+  var shouldShow = verseHasSecondLang && _translationVisible;
+
+  if (!shouldShow) {
+    if (existing) existing.style.display = "none";
     return;
   }
 
-  // First time — build the toggle
-  const nav = document.getElementById("lmNav");
-  if (!nav) return;
+  if (existing) {
+    existing.style.display = "";
+    _syncLangPickerUI();
+    return;
+  }
+
+  const translateWrap = document.getElementById("lm-translate-wrap");
+  if (!translateWrap) return;
 
   var wrap = document.createElement("div");
-  wrap.id = "lm-translate-wrap";
-  wrap.className = "lm-translate-wrap";
+  wrap.id = "lm-translate-lang-wrap";
+  wrap.className = "lm-translate-lang-wrap";
+  wrap.style.cssText = "display:flex;gap:6px;justify-content:center;margin-top:6px";
 
-  var label = document.createElement("span");
-  label.className = "lm-toggle-label";
-  label.textContent = "Translation";
+  ["bn", "hi"].forEach(function (code) {
+    var btn = document.createElement("button");
+    btn.className = "lm-lang-btn" + (_translationLang === code ? " active" : "");
+    btn.dataset.lang = code;
+    btn.textContent = code === "bn" ? "বাংলা" : "हिंदी";
+    btn.style.cssText =
+      "padding:4px 14px;border-radius:14px;font-size:11px;font-family:Inter,sans-serif;cursor:pointer;" +
+      (code === _translationLang
+        ? "background:rgba(255,215,0,0.18);color:#ffd700;border:1px solid rgba(255,215,0,0.4);font-weight:600"
+        : "background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.12)");
+    btn.onclick = function () {
+      if (_translationLang === code) return;
+      _translationLang = code;
+      _renderVerse(_verseIdx, null);
+    };
+    wrap.appendChild(btn);
+  });
 
-  var sw = document.createElement("button");
-  sw.id = "lm-toggle-sw";
-  sw.className = "lm-toggle-sw" + (_translationVisible ? " on" : "");
-  sw.setAttribute("role", "switch");
-  sw.setAttribute("aria-checked", _translationVisible ? "true" : "false");
-  sw.innerHTML = '<span class="lm-toggle-thumb"></span>';
-  sw.onclick = function () {
-    _translationVisible = !_translationVisible;
-    _renderVerse(_verseIdx, null);
-  };
+  translateWrap.parentNode.insertBefore(wrap, translateWrap.nextSibling);
+}
 
-  wrap.appendChild(label);
-  wrap.appendChild(sw);
-  nav.parentNode.insertBefore(wrap, nav);
+function _syncLangPickerUI() {
+  var wrap = document.getElementById("lm-translate-lang-wrap");
+  if (!wrap) return;
+  wrap.querySelectorAll(".lm-lang-btn").forEach(function (btn) {
+    var active = btn.dataset.lang === _translationLang;
+    btn.className = "lm-lang-btn" + (active ? " active" : "");
+    btn.style.cssText =
+      "padding:4px 14px;border-radius:14px;font-size:11px;font-family:Inter,sans-serif;cursor:pointer;" +
+      (active
+        ? "background:rgba(255,215,0,0.18);color:#ffd700;border:1px solid rgba(255,215,0,0.4);font-weight:600"
+        : "background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.12)");
+  });
 }
 
 function _reinjectThemeDecos() {
@@ -17132,9 +18610,12 @@ function closeLyrics() {
   _verseNavLocked = false;
   _currentStotramId = "";
   _translationVisible = false;
+  _translationLang = "bn";
   if (window.StotramSections) window.StotramSections.reset();
   var oldWrap = document.getElementById("lm-translate-wrap");
   if (oldWrap) oldWrap.remove();
+  var oldLangWrap = document.getElementById("lm-translate-lang-wrap");
+  if (oldLangWrap) oldLangWrap.remove();
   var mini = document.getElementById("hcj-mini-player");
   if (mini) mini.remove();
   var minimizeBtn = document.getElementById("lm-minimize");
@@ -17311,10 +18792,18 @@ var _AUDIO_STOTRAMS = {
     prefix: "rsn",
     labelOffset: 1,
     closingSuffix: "c",
+    // Second full reciter for the whole stotram (preamble + all 150 Shloks
+    // + closing verse) — "alt" is a placeholder key/filename until you
+    // tell me what to actually call the second recitation (same
+    // convention as gms/hnc/gg_5_2 above). Expected files, uploaded
+    // alongside the existing rsn_*.mp3 set: rsn_alt_0.mp3 (preamble),
+    // rsn_alt_1.mp3 ... rsn_alt_150.mp3, rsn_alt_c.mp3 (closing).
+    voices: { default: "rsn", alt: "rsn_alt" },
     // Shlok 150 only — Harindu's variation, available alongside the usual
-    // rsn_150.mp3, not selected by default. Every other verse has no
-    // voices entry at all, so the voice button stays hidden there.
-    voicesByVerse: { 150: { default: "rsn", harindu: "rsn_harindu" } }
+    // rsn_150.mp3 and the new rsn_alt_150.mp3. Every other verse has no
+    // per-verse entry, so it falls back to the stotram-wide `voices`
+    // above and the voice button just offers default/alt there.
+    voicesByVerse: { 150: { default: "rsn", harindu: "rsn_harindu", alt: "rsn_alt" } }
   },
   yms: { prefix: "yms" },
   hmg: { prefix: "hmg" },
@@ -17450,6 +18939,17 @@ function _hcjAudioPath(i) {
   // so rsn_1.mp3 is Shlok 1's clip, not the unlabeled preamble's.
   var offset = (cfg && cfg.labelOffset) || 0;
   return "audio/" + prefix + "_" + (i + 1 - offset) + ".mp3";
+}
+
+// Absolute fallback for a relative audio path (e.g. "audio/gms_5.mp3"),
+// pointing at the live deployed site instead of the app's own bundled
+// copy. Native builds (Capacitor) ship whatever was in /audio at build
+// time — a stotram's clips added to the repo afterward simply aren't in
+// that package until the next rebuild. Used by _hcjPlayVerse's onerror
+// fallback below; never touched on the web PWA, where the relative path
+// already resolves to the live site and always has the latest files.
+function _hcjRemoteAudioUrl(path) {
+  return RJAP_PWA_URL.replace(/\/$/, "") + "/" + path;
 }
 
 // Convert an internal 0-based verse array index to the number shown/typed
@@ -17609,20 +19109,32 @@ function _hcjPlayVerse(idx) {
       if (window._lyrHcjAudioChanged) window._lyrHcjAudioChanged(null, false);
     }
   };
-  _hcjAudio
-    .play()
-    .then(function () {
-      _hcjPlaying = true;
-      _hcjSyncUI();
-      _hcjStartProgressLoop();
-      if (window._lyrHcjAudioChanged)
-        window._lyrHcjAudioChanged(_hcjAudio, true);
-    })
-    .catch(function () {
-      _hcjPlaying = false;
-      _hcjAudioIdx = -1;
-      _hcjSyncUI();
-    });
+  function _hcjOnPlayStarted() {
+    _hcjPlaying = true;
+    _hcjSyncUI();
+    _hcjStartProgressLoop();
+    if (window._lyrHcjAudioChanged)
+      window._lyrHcjAudioChanged(_hcjAudio, true);
+  }
+  function _hcjOnPlayFailed() {
+    _hcjPlaying = false;
+    _hcjAudioIdx = -1;
+    _hcjSyncUI();
+  }
+  // If the locally bundled copy 404s — e.g. this clip was added to the
+  // repo after this APK build, so it never got packaged into www/audio —
+  // retry once from the live deployed site instead of silently failing.
+  // No-op on the web PWA, where the local path already works and "error"
+  // never fires here.
+  _hcjAudio.onerror = function () {
+    var a = _hcjAudio;
+    if (!a || a._triedRemoteFallback) return;
+    a._triedRemoteFallback = true;
+    a.onerror = null; // don't retry again if the remote copy fails too
+    a.src = _hcjRemoteAudioUrl(_hcjAudioPath(idx));
+    a.play().then(_hcjOnPlayStarted).catch(_hcjOnPlayFailed);
+  };
+  _hcjAudio.play().then(_hcjOnPlayStarted).catch(_hcjOnPlayFailed);
 }
 function _hcjTogglePlay() {
   if (_hcjPlaying) {
@@ -19852,6 +21364,18 @@ function _lbGetPeriodKeys(period) {
     }
     return [key];
   }
+  if (period === 'yesterday') {
+    // Same live-clock approach as 'today' above, just one day back — a
+    // single-day key, so it falls through to the generic per-day summing
+    // path in renderLeaderboard() below (only 'today' has its own
+    // precomputed-breakdown fast path).
+    const d = new Date(now);
+    d.setDate(d.getDate() - 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    return [`${y}-${m}-${dd}`];
+  }
   if (period === 'month') {
     const y = now.getFullYear(), m = now.getMonth();
     const days = new Date(y, m + 1, 0).getDate();
@@ -20287,7 +21811,7 @@ function renderLeaderboard(docs, period) {
 /** Switch leaderboard period tab */
 function lbSwitchPeriod(period) {
   window._lbPeriod = period;
-  ['alltime','month','week','today'].forEach(function(p) {
+  ['alltime','month','week','yesterday','today'].forEach(function(p) {
     const btn = document.getElementById('lbTab' + p.charAt(0).toUpperCase() + p.slice(1));
     if (btn) btn.classList.toggle('active', p === period);
   });
